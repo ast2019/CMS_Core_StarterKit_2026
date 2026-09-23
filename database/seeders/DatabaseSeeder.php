@@ -8,6 +8,7 @@ use App\Enums\ContentStatus;
 use App\Enums\UserRole;
 use App\Models\Category;
 use App\Models\ContactSetting;
+use App\Models\ContactSubmission;
 use App\Models\Content;
 use App\Models\Gallery;
 use App\Models\MenuItem;
@@ -31,6 +32,21 @@ class DatabaseSeeder extends Seeder
         $this->seedPages();
         $this->seedSlides();
         $this->seedNavigation();
+        $this->seedContactSubmissions();
+    }
+
+    /**
+     * A small inbox so the unread filter, the mark-read action and the read-only
+     * policy all have something to act on immediately after install.
+     */
+    protected function seedContactSubmissions(): void
+    {
+        if (ContactSubmission::query()->exists()) {
+            return;
+        }
+
+        ContactSubmission::factory()->count(3)->create();
+        ContactSubmission::factory()->read()->count(2)->create();
     }
 
     /**

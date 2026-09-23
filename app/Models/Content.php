@@ -11,6 +11,7 @@ use App\Concerns\HasSeoMeta;
 use App\Concerns\HasSlug;
 use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
+use App\Contracts\HasFeaturedMedia;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
 use App\Enums\ContentStatus;
@@ -44,7 +45,7 @@ use Spatie\Translatable\HasTranslations;
  * @property-read Collection<int, Category> $categories
  * @property-read Collection<int, Tag> $tags
  */
-class Content extends Model implements Publishable, TracksTranslationStatus
+class Content extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus
 {
     use HasContentVersions;
     use HasFactory;

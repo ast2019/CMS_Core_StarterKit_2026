@@ -10,6 +10,7 @@ use App\Concerns\HasSeoMeta;
 use App\Concerns\HasSlug;
 use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
+use App\Contracts\HasFeaturedMedia;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
 use App\Enums\ContentStatus;
@@ -33,7 +34,7 @@ use Spatie\Translatable\HasTranslations;
  * @property Carbon|null $publish_date
  * @property-read Collection<int, MediaAsset> $items
  */
-class Gallery extends Model implements Publishable, TracksTranslationStatus
+class Gallery extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus
 {
     use HasFactory;
     use HasFeaturedImage;

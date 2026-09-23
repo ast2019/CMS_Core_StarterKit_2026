@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Concerns\HasFeaturedImage;
 use App\Concerns\InteractsWithLocales;
 use App\Concerns\IsAuditable;
+use App\Contracts\HasFeaturedMedia;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,7 +18,7 @@ use Spatie\Translatable\HasTranslations;
  *
  * Requirements 3.4, 3.5 (max 5 active), 7.6 (no CLS, no autoplay video).
  */
-class Slide extends Model
+class Slide extends Model implements HasFeaturedMedia
 {
     use HasFactory;
     use HasFeaturedImage;
