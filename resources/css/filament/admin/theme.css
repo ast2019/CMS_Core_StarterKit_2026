@@ -1,0 +1,87 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/*
+ * ---------------------------------------------------------------------------
+ * CMS Core — custom branded admin theme (RULES #4 and #5)
+ * ---------------------------------------------------------------------------
+ *
+ * Persian, RTL, Vazirmatn, brandable. Every value here is a token with a
+ * sensible default; per-client customisation happens by overriding the CSS
+ * custom properties or the CMS_BRAND_PRIMARY env var, never by editing Core.
+ *
+ * There is no @import from an external host in this file. The Vazirmatn
+ * @font-face declarations live in public/css/vazirmatn.css, which the panel
+ * loads via LocalFontProvider. Requirements 4.1, 4.2, 4.3, 1.2.
+ */
+
+/* Vazirmatn is declared in public/css/vazirmatn.css and loaded by the panel's
+   font() call. Re-declaring the family here keeps the built theme
+   self-sufficient if the panel stylesheet order ever changes. */
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('/fonts/vazirmatn/Vazirmatn-Variable.woff2') format('woff2') tech(variations);
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --font-family: 'Vazirmatn', system-ui, sans-serif;
+
+    /* Persian text at the same pixel size reads smaller than Latin, and
+       Vazirmatn's diacritics need vertical room, so the panel gets slightly
+       looser line-height than Filament's default. */
+    --cms-line-height: 1.75;
+
+    /* Persian numerals in tabular contexts (tables, counts) stay legible when
+       digits share a common width. */
+    --cms-numeric-font-feature: 'tnum' 1;
+}
+
+[dir='rtl'] {
+    /* Filament's own RTL handling covers layout. These are typographic
+       corrections that only matter for Persian/Arabic script. */
+    line-height: var(--cms-line-height);
+}
+
+/* Latin strings inside an RTL interface — slugs, URLs, version numbers, API
+   keys — must not be bidi-reordered, or a URL like /fa/news/my-slug renders
+   with its segments visually shuffled and becomes impossible to proofread. */
+.cms-ltr,
+[dir='rtl'] input[type='url'],
+[dir='rtl'] input[name*='slug'],
+[dir='rtl'] code,
+[dir='rtl'] pre {
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: isolate;
+}
+
+/* Tabular numerals for table cells and badges. */
+[dir='rtl'] table td,
+[dir='rtl'] .fi-badge {
+    font-feature-settings: var(--cms-numeric-font-feature);
+}
+
+/*
+ * Translation status badges. Colours match App\Enums\TranslationStatus::color()
+ * so the panel and the API agree on what "outdated" looks like.
+ */
+.cms-translation-status {
+    --cms-status-size: 0.5rem;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.cms-translation-status::before {
+    content: '';
+    width: var(--cms-status-size);
+    height: var(--cms-status-size);
+    border-radius: 9999px;
+    background-color: currentColor;
+}
