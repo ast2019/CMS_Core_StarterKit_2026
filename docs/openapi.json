@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "CMS Core",
-        "version": "0.3.1",
+        "version": "0.4.0",
         "description": "Delivery API (public, read-only, cached) and Management API (Sanctum, admin-scoped). All routes are versioned under /api/v1/."
     },
     "servers": [

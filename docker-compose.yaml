@@ -1,0 +1,312 @@
+# =============================================================================
+# CMS Core Starter Kit — deployment stack
+#
+# Written for Coolify. It is ONE line away from plain Docker Compose: remove
+# `exclude_from_hc: true` from the migrate service, which is a Coolify extension that
+# standard Compose rejects as an unknown property, and supply the ${SERVICE_*} values
+# yourself in a .env file.
+#
+# Read docs/coolify.md before the first deploy. The one thing that must not be got
+# wrong is the cms-media volume: media lives on local disk by design (RULE #9), so
+# without that volume every client image, video and document is destroyed on the next
+# redeploy — silently, because the application keeps working with an empty library.
+#
+# Coolify notes:
+#   - Values written as ${VAR} appear as editable Environment Variables in Coolify.
+#   - ${VAR:?} blocks deployment until a value is supplied.
+#   - SERVICE_PASSWORD_* / SERVICE_REALBASE64_* are generated once by Coolify and then
+#     persist across deployments.
+#   - No service publishes a host port. Traffic reaches `app` through Coolify's proxy
+#     once a domain is assigned to it; publishing ports would bypass that and expose
+#     the database to the network.
+# =============================================================================
+
+# Shared by every PHP role, so the web process, the queue worker and the scheduler
+# cannot disagree about which database or cache they are using — a class of bug that
+# presents as "jobs write to the wrong place" and takes a long time to see.
+x-app-environment: &app-environment
+  APP_NAME: ${APP_NAME:-CMS Core}
+  APP_ENV: production
+  APP_DEBUG: "false"
+
+  # Generated once by Coolify, then stable. See docs/coolify.md — this key encrypts
+  # every admin's two-factor secret, so losing or changing it locks out the panel.
+  APP_KEY: ${APP_KEY:-base64:${SERVICE_REALBASE64_32_APP}}
+
+  # Canonical URLs, hreflang annotations, sitemap entries and signed preview links are
+  # all built from this. Wrong here means a sitemap full of the wrong hostname.
+  APP_URL: ${APP_URL:-${SERVICE_URL_APP}}
+
+  # Persian-first; all three locales are structural (blueprint §5).
+  APP_LOCALE: fa
+  APP_FALLBACK_LOCALE: fa
+  APP_FAKER_LOCALE: fa_IR
+
+  # Containers log to stdout/stderr, not to files inside the image.
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: ${LOG_LEVEL:-warning}
+
+  # MySQL, not SQLite: Decision D-1's per-locale slug uniqueness needs stored generated
+  # columns with unique indexes, which SQLite cannot express.
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_DATABASE: ${MYSQL_DATABASE:-cms_core}
+  DB_USERNAME: ${MYSQL_USER:-cms}
+  DB_PASSWORD: ${SERVICE_PASSWORD_MYSQL}
+
+  # RULE #9 — local disk only. There is deliberately no cloud driver to select, and
+  # CmsServiceProvider prunes cloud disks from the resolved config at boot.
+  FILESYSTEM_DISK: local
+
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: database
+  SESSION_LIFETIME: "120"
+
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${SERVICE_PASSWORD_REDIS}
+
+  # Self-hosted Meilisearch (blueprint §5): no external service dependency. Set
+  # SCOUT_DRIVER=collection to fall back to database matching and drop the container.
+  SCOUT_DRIVER: ${SCOUT_DRIVER:-meilisearch}
+  SCOUT_QUEUE: "true"
+  MEILISEARCH_HOST: http://meilisearch:7700
+  MEILISEARCH_KEY: ${SERVICE_PASSWORD_64_MEILISEARCH}
+
+  MAIL_MAILER: ${MAIL_MAILER:-log}
+  MAIL_HOST: ${MAIL_HOST:-}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME:-}
+  MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+  MAIL_SCHEME: ${MAIL_SCHEME:-tls}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@example.com}
+  MAIL_FROM_NAME: ${APP_NAME:-CMS Core}
+
+  # Public frontend, when it is a separate deployment — the normal case for this
+  # headless Core. Empty falls back to APP_URL.
+  CMS_FRONTEND_URL: ${CMS_FRONTEND_URL:-}
+
+  CMS_SOURCE_LOCALE: fa
+  CMS_PANEL_PATH: ${CMS_PANEL_PATH:-admin}
+  # Quoted: an unquoted value starting with # is a YAML comment, and the brand colour
+  # would silently become empty.
+  CMS_BRAND_PRIMARY: "${CMS_BRAND_PRIMARY:-#0F766E}"
+  CMS_SLIDES_MAX: "${CMS_SLIDES_MAX:-5}"
+  CMS_PREVIEW_TTL: "${CMS_PREVIEW_TTL:-60}"
+  CMS_VERSIONS_KEEP: "${CMS_VERSIONS_KEEP:-20}"
+
+  # Decision D-9: the Delivery API is public by default. If you enable the key, the
+  # application fails closed when the key is blank rather than serving unprotected.
+  CMS_DELIVERY_REQUIRE_KEY: "${CMS_DELIVERY_REQUIRE_KEY:-false}"
+  CMS_DELIVERY_API_KEY: ${CMS_DELIVERY_API_KEY:-}
+  CMS_DELIVERY_RATE_LIMIT: "${CMS_DELIVERY_RATE_LIMIT:-120}"
+  CMS_DELIVERY_CACHE_TTL: "${CMS_DELIVERY_CACHE_TTL:-300}"
+  CMS_MANAGEMENT_RATE_LIMIT: "${CMS_MANAGEMENT_RATE_LIMIT:-60}"
+
+  # Present in the image (Decision D-6), so video duration and dimensions are read on
+  # upload instead of demanding a hand-made thumbnail.
+  CMS_FFPROBE_PATH: ffprobe
+
+  # The app is reachable only through the reverse proxy, which is the only thing that
+  # can set X-Forwarded-*. Without trusting it, every visitor shares one rate-limit
+  # bucket and the audit log records the proxy's IP instead of the administrator's.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+
+services:
+  # ---------------------------------------------------------------------------
+  # Web: nginx + php-fpm. This is the service to assign your domain to.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment: *app-environment
+    volumes:
+      - cms-media:/var/www/html/storage/app/public
+    expose:
+      - "80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Never serve traffic against an unmigrated schema.
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Migrations — one-shot, so exactly one process touches the schema.
+  #
+  # Runs before app/worker/scheduler start. Without this, three containers would race
+  # to apply the same migrations on every deploy.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    command: ["php", "artisan", "migrate", "--force"]
+    environment: *app-environment
+    volumes:
+      - cms-media:/var/www/html/storage/app/public
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # A task that is expected to exit must not drag the stack's health down.
+    exclude_from_hc: true
+
+  # ---------------------------------------------------------------------------
+  # Queue worker — NOT optional.
+  #
+  # Image conversions, search indexing and sitemap regeneration are all queued. Without
+  # a worker, uploaded images never get thumbnails and search results never update,
+  # while the panel reports success.
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=5", "--max-time=3600", "--sleep=1"]
+    environment: *app-environment
+    volumes:
+      # The worker WRITES image conversions, so it needs the same media volume as the
+      # web container. Omitting it here is a subtle failure: uploads succeed, and only
+      # the generated thumbnails go missing.
+      - cms-media:/var/www/html/storage/app/public
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Proves the worker process can still reach the queue, which a bare "is the
+      # container running" check cannot.
+      test: ["CMD", "php", "artisan", "queue:monitor", "default"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Scheduler. schedule:work rather than cron: one fewer moving part in a container,
+  # and its output lands in the normal log stream.
+  # ---------------------------------------------------------------------------
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    environment: *app-environment
+    volumes:
+      - cms-media:/var/www/html/storage/app/public
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # MySQL 8 — required, not interchangeable with SQLite (Decision D-1).
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # Persian content is multi-byte throughout; utf8mb4 is not optional here.
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SERVICE_PASSWORD_64_MYSQLROOT}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cms_core}
+      MYSQL_USER: ${MYSQL_USER:-cms}
+      MYSQL_PASSWORD: ${SERVICE_PASSWORD_MYSQL}
+    volumes:
+      - cms-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache and queue.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly so a restart does not drop queued jobs — an image conversion lost
+    # here means a thumbnail that never appears.
+    command:
+      - redis-server
+      - --requirepass
+      - ${SERVICE_PASSWORD_REDIS}
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - noeviction
+      # noeviction, NOT allkeys-lru: this Redis holds the queue as well as the cache,
+      # and evicting a queued job to make room for a cached API response would lose
+      # work silently.
+    volumes:
+      - cms-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SERVICE_PASSWORD_REDIS}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Meilisearch — optional.
+  #
+  # Its absence returns a structured 503 from /api/v1/search and degrades nothing else,
+  # so this service can be deleted. If you do, set SCOUT_DRIVER=collection.
+  # ---------------------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:${MEILISEARCH_IMAGE_TAG:-v1.37}
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${SERVICE_PASSWORD_64_MEILISEARCH}
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - cms-meilisearch:/meili_data
+    healthcheck:
+      # curl is not guaranteed in this image across versions, so fall back to wget.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7700/health || wget -qO- http://127.0.0.1:7700/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  # RULE #9 — THE volume that must not be lost. Every uploaded image, video and
+  # document for the client lives here, on local disk, by design. Deleting it deletes
+  # the client's media library; the application will carry on with an empty one.
+  #
+  # Back this up together with the database: a database-only backup restores records
+  # that point at files which no longer exist.
+  cms-media:
+
+  cms-mysql:
+  cms-redis:
+  cms-meilisearch:

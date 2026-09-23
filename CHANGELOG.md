@@ -9,6 +9,17 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.4.0] - 2026-09-23
+
+### Added
+
+- Container deployment: multi-stage Dockerfile (PHP 8.4, nginx + php-fpm under supervisor, ffmpeg for Decision D-6) and docker-compose.yaml for Coolify, with a named volume for media so RULE #9 survives redeploys.
+- docs/coolify.md — Coolify setup, the APP_KEY warning, post-deploy commands and troubleshooting.
+
+### Fixed
+
+- The application did not trust reverse-proxy headers, so behind any proxy every visitor shared one rate-limit bucket and the audit log recorded the proxy's IP instead of the administrator's. Now configurable via TRUSTED_PROXIES.
+
 ## [0.3.1] - 2026-09-23
 
 ### Added
