@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\VersionWidget;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\Pages\EditProfile;
 use Filament\FontProviders\LocalFontProvider;
@@ -99,7 +100,11 @@ class AdminPanelProvider extends PanelProvider
                 Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
-            ->widgets([])
+            ->widgets([
+                // RULE #2 — the version is shown in the panel, to every role: it is the
+                // first thing anyone needs when reporting a problem.
+                VersionWidget::class,
+            ])
 
             ->middleware([
                 EncryptCookies::class,

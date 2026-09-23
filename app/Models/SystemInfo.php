@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * RULE #2 — VERSIONING: "Semantic Versioning in `system_info`, shown in admin
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  * Requirements 10.1, 10.2.
  *
  * @property string $version
+ * @property Carbon|null $installed_at
+ * @property Carbon|null $last_migrated_at
  */
 class SystemInfo extends Model
 {

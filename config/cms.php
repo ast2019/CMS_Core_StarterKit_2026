@@ -240,6 +240,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Release
+    |--------------------------------------------------------------------------
+    |
+    | RULE #1 — where cms:release writes the human-readable changelog.
+    |
+    | Configurable so the test suite can point it at a temporary file. Without that
+    | the release tests append to the repository's own CHANGELOG.md on every run,
+    | which pollutes a tracked file with fake entries and duplicate versions — and
+    | the pollution is easy to commit by accident.
+    |
+    */
+
+    'changelog_path' => env('CMS_CHANGELOG_PATH') ?: base_path('CHANGELOG.md'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Branding
     |--------------------------------------------------------------------------
     |
