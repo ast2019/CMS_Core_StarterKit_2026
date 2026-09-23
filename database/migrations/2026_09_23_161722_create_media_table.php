@@ -29,4 +29,14 @@ return new class extends Migration
             $table->nullableTimestamps();
         });
     }
+
+    /**
+     * Added to the published stub, which shipped without it. See the note in
+     * create_activity_log_table: without this, rollback silently leaves the table
+     * behind and the next migrate fails.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('media');
+    }
 };

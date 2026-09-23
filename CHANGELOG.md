@@ -9,6 +9,16 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.3.1] - 2026-09-23
+
+### Added
+
+- tests/Architecture/MigrationsAreReversibleTest — fails when any migration inherits the empty Migration::down(), including future published package stubs.
+
+### Fixed
+
+- Two migrations published from package stubs (activity_log, media) had no down(), so migrate:rollback silently left their tables behind and the next migrate failed with "table already exists". Both now drop what they create.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added
