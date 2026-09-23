@@ -32,15 +32,28 @@ use Laravel\Sanctum\HasApiTokens;
  * reach any other panel page.
  *
  * Requirements 9.1, 9.3, 9.4.
+ *
+ * Property annotations are load-bearing, not decoration: `role` is cast to a
+ * UserRole enum in casts(), which static analysis cannot infer, so without the
+ * annotation every `$user->role->hasAbility(...)` in every Policy reads as a
+ * method call on a string.
+ *
+ * @property UserRole $role
+ * @property bool $is_active
+ * @property string $name
+ * @property string $email
+ * @property string|null $app_authentication_secret
+ * @property array<int, string>|null $app_authentication_recovery_codes
  */
 #[Fillable(['name', 'email', 'password', 'role', 'is_active'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
-    /** @use HasFactory<UserFactory> */
     use HasApiTokens;
 
+    /** @use HasFactory<UserFactory> */
     use HasFactory;
+
     use InteractsWithAppAuthentication;
     use InteractsWithAppAuthenticationRecovery;
     use Notifiable;

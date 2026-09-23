@@ -39,6 +39,8 @@ enum ContentStatus: string
     /**
      * Which statuses this one may legally transition to. Enforced by the
      * publish workflow so content cannot jump from draft straight to archived.
+     *
+     * @return list<self>
      */
     public function allowedTransitions(): array
     {

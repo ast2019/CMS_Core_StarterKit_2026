@@ -55,8 +55,10 @@ it('resolves no forbidden disk driver at runtime', function (): void {
     );
 
     foreach (CmsServiceProvider::FORBIDDEN_DISK_DRIVERS as $forbidden) {
-        expect($drivers)->not->toContain(
-            $forbidden,
+        // in_array + toBeFalse rather than not->toContain: toContain() is variadic
+        // and takes no message, so a message passed there becomes a second needle
+        // and the assertion silently weakens to "contains neither".
+        expect(in_array($forbidden, $drivers, true))->toBeFalse(
             "RULE #9 violated: disk driver [{$forbidden}] is resolvable.",
         );
     }

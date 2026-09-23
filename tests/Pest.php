@@ -10,17 +10,21 @@ use Tests\TestCase;
 | Test Case Binding
 |--------------------------------------------------------------------------
 |
-| Architecture tests deliberately do NOT get RefreshDatabase — they inspect
-| source files and configuration, so booting a database would only slow them
-| down and could mask a config problem behind a migration failure.
+| Every suite gets RefreshDatabase, including Architecture.
+|
+| An earlier version withheld it there, on the reasoning that rule checks only
+| inspect source files and config. That turned out to be wrong about what the
+| rules need: RULE #7 ("exactly one featured image") and RULE #8 ("no opt-out
+| auditing") are statements about behaviour, and the checks that matter most are
+| that attaching a second featured image replaces the first, and that saving a
+| model actually writes an activity row. Asserting only that a trait is present
+| would let both rules pass while being broken.
 |
 */
 
-pest()->extend(TestCase::class)->in('Architecture');
-
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
-    ->in('Feature', 'Unit');
+    ->in('Architecture', 'Feature', 'Unit');
 
 /*
 |--------------------------------------------------------------------------
@@ -65,7 +69,6 @@ function collectFiles(string $directory, array $extensions): array
 
     return $found;
 }
-
 
 /**
  * Strip comments from source so the architecture tests analyse CODE, not prose.

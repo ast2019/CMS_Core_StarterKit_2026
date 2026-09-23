@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Enums\UserRole;
+use App\Models;
 use App\Models\User;
+use App\Policies;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,9 +25,40 @@ class CmsServiceProvider extends ServiceProvider
         $this->pruneForbiddenDisks();
     }
 
+    /**
+     * Model => Policy. Registered explicitly rather than relying on Laravel's
+     * naming convention, so a renamed model cannot silently lose its policy and
+     * fall through to "no policy found" — which, for a Gate-driven panel, reads
+     * as a permissions bug rather than a missing file.
+     *
+     * @var array<class-string, class-string>
+     */
+    public const POLICIES = [
+        Models\Content::class => Policies\ContentPolicy::class,
+        Models\Category::class => Policies\CategoryPolicy::class,
+        Models\Tag::class => Policies\TagPolicy::class,
+        Models\Gallery::class => Policies\GalleryPolicy::class,
+        Models\Page::class => Policies\PagePolicy::class,
+        Models\Slide::class => Policies\SlidePolicy::class,
+        Models\MediaAsset::class => Policies\MediaAssetPolicy::class,
+        Models\MenuItem::class => Policies\MenuItemPolicy::class,
+        Models\Redirect::class => Policies\RedirectPolicy::class,
+        Models\Setting::class => Policies\SettingPolicy::class,
+        Models\ContactSubmission::class => Policies\ContactSubmissionPolicy::class,
+        User::class => Policies\UserPolicy::class,
+    ];
+
     public function boot(): void
     {
         $this->registerAbilityGates();
+        $this->registerPolicies();
+    }
+
+    protected function registerPolicies(): void
+    {
+        foreach (self::POLICIES as $model => $policy) {
+            Gate::policy($model, $policy);
+        }
     }
 
     /**
