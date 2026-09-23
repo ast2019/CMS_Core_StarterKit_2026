@@ -53,10 +53,15 @@ class MediaAssetForm
 
                     /*
                      * Decision D-6. Google's video sitemap spec requires a
-                     * thumbnail; duration is only recommended. ffprobe fills both
-                     * automatically when installed, but the sandbox/production host
-                     * may not have it, so the field stays editable and the
-                     * publishing rule demands a thumbnail for locally hosted video.
+                     * thumbnail; duration is only recommended.
+                     *
+                     * When ffprobe is installed, App\Listeners\ExtractVideoMetadata
+                     * fills the duration and dimensions from the uploaded file shortly
+                     * after the save, on the queue. It never overwrites a value typed
+                     * here, so a correction survives. Where ffprobe is absent these
+                     * fields stay manual, and the publishing rule still demands a
+                     * thumbnail for locally hosted video either way — a thumbnail
+                     * cannot be derived without ffmpeg at all.
                      */
                     SpatieMediaLibraryFileUpload::make('video_thumbnail')
                         ->label(__('cms.field.video_thumbnail'))

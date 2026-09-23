@@ -23,6 +23,11 @@
 /public/storage
 /storage/*.key
 /storage/pail
+
+# Media Library's scratch directory. Not covered by the per-directory .gitignore files
+# Laravel ships, because Spatie creates this path at runtime — which is how six PNG
+# fixtures from a test run ended up committed in 8f12b0e.
+/storage/media-library
 /vendor
 _ide_helper.php
 Homestead.json

@@ -3,69 +3,127 @@
 This Core ships a Docker stack in `docker-compose.yaml`, built by `Dockerfile`. Coolify
 reads both from the repository.
 
-`docs/deployment.md` covers the host-agnostic operational decisions (queues, video,
-search, the per-client handover checklist) and still applies. This file is only about
-getting the containers up.
+The images are built on [serversideup/php](https://serversideup.net/open-source/docker-php/),
+which supplies nginx + PHP-FPM supervised by S6 Overlay, production defaults, and
+configuration through environment variables. `docs/deployment.md` covers the
+host-agnostic operational decisions and still applies.
 
-## Read this part first
+## Three things that will bite you if skipped
 
-**The `cms-media` volume is the whole ballgame.** Media lives on local disk by design
+**1. The port is 8080, not 80.** The web image runs unprivileged, so it cannot bind 80.
+In Coolify the domain must be entered **with the port**:
+
+```
+https://cms.example.com:8080
+```
+
+The port tells Coolify's proxy where to forward inside the container; the public URL
+still uses 443. A domain entered without it shows "No Available Server".
+
+**2. The media volume is the whole ballgame.** Media lives on local disk by design
 (RULE #9 — there is no S3 to fall back on, and the architecture tests fail the build if
-a cloud adapter appears). If that volume is missing or gets recreated, every image,
-video and document the client ever uploaded is gone.
+a cloud adapter appears). Without a persistent volume, every image, video and document
+the client ever uploaded is destroyed on the next redeploy.
 
-It fails in the worst possible way: nothing errors. The panel still loads, uploads still
-work, and the media library is simply empty — so the loss is typically noticed days
-later, by the client, on the public site.
+It fails in the worst way available: nothing errors. The panel loads, uploads work, and
+the library is simply empty — so the loss is usually noticed days later, by the client,
+on the public site. See "Where the uploads actually live" below.
 
-The Compose file declares the volume, and Coolify shows it under **Persistent Storage**.
-Verify it is there after the first deploy, and back it up together with the database. A
-database-only backup restores rows that point at files which no longer exist.
+**3. `APP_KEY` is irreversible.** Copy it into the client's password manager after the
+first deploy. It encrypts every administrator's two-factor secret; change or lose it and
+everyone is locked out of the panel with no route back but a database edit.
+
+## Where the uploads actually live
+
+Inside every PHP container, uploads are at:
+
+```
+/var/www/html/storage/app/public
+```
+
+That is the path to mount. `public/storage` is a symlink into it, which is how the files
+become reachable over HTTP.
+
+You have two ways to persist it.
+
+### Option A — named volume (default, recommended)
+
+Leave `CMS_MEDIA_STORAGE` unset. Compose declares a named volume `cms-media`, Coolify
+shows it under **Persistent Storage**, and Docker keeps it at:
+
+```
+/var/lib/docker/volumes/<project>_cms-media/_data
+```
+
+Recommended because of **ownership**: the containers run as `www-data` (uid/gid **33**)
+and cannot change permissions themselves. A freshly created named volume inherits the
+ownership of the image directory it covers — which the Dockerfile sets to `www-data` — so
+it is writable with no privileged startup step. Verified: a file written in one container
+is still readable from a brand-new one, and the volume shows `www-data:www-data` inside.
+
+### Option B — a fixed host path you choose
+
+Set `CMS_MEDIA_STORAGE` to an absolute path, e.g. `/data/cms-core/media`. Compose then
+bind-mounts it instead. Easier to back up with ordinary host tools, and the location is
+predictable.
+
+**You must create and chown it first.** A bind mount keeps the host's ownership, and a
+new directory belongs to root, so the unprivileged container cannot write to it:
+
+```bash
+mkdir -p /data/cms-core/media
+chown -R 33:33 /data/cms-core/media   # 33 = www-data inside the image
+```
+
+Skip the `chown` and uploads fail with a permission error that reads like an application
+bug. This is not theoretical — it was reproduced both ways while building this:
+root-owned, the container could not write at all; after `chown 33:33`, it could.
+
+Either way: **back the media up together with the database.** A database-only backup
+restores rows pointing at files that no longer exist.
 
 ## First deploy
 
 1. **New Resource → Application → Git repository**, pointing at this repo.
 
-2. Set **Build Pack** to **Docker Compose**. Coolify defaults to Nixpacks, which will
-   not work here — the build has ordering requirements that only the Dockerfile
-   expresses (see "Why the build is arranged this way" below).
+2. Set **Build Pack** to **Docker Compose**. Coolify defaults to Nixpacks, which will not
+   work here — the build has ordering requirements only the Dockerfile expresses.
 
 3. Leave the Compose file location at `docker-compose.yaml`.
 
-4. Assign your domain to the **`app`** service. It listens on port 80, so the domain
-   alone is enough for Coolify's proxy to route to it; no port needs appending. Do not
-   assign a domain to any other service.
+4. Assign your domain to the **`app`** service, **with `:8080`** as above. Do not assign a
+   domain to any other service.
 
-5. Open **Environment Variables**. Coolify will have created an entry for every
-   `${...}` in the Compose file, with generated values already filled in for the
-   passwords. Set these by hand:
+5. Open **Environment Variables**. Coolify will have created an entry for every `${...}`
+   in the Compose file, with generated values already filled in for passwords. Set these
+   by hand:
 
    | Variable | Notes |
    |---|---|
    | `APP_NAME` | Shown in the panel and in emails. |
-   | `APP_URL` | Defaults to the generated domain. Set it explicitly if you assigned your own — canonical URLs, hreflang, sitemap entries and signed preview links are all built from it. |
-   | `CMS_FRONTEND_URL` | The public site's base URL, when it is a separate deployment — the normal case for this headless Core. Leave empty to fall back to `APP_URL`. |
+   | `APP_URL` | Defaults to the generated domain. Set explicitly if you assigned your own — canonical URLs, hreflang, sitemap entries and signed preview links are all built from it. |
+   | `CMS_FRONTEND_URL` | The public site's base URL when it is a separate deployment — the normal case for this headless Core. Empty falls back to `APP_URL`. |
    | `CMS_BRAND_PRIMARY` | Panel accent colour. |
    | `MAIL_*` | Defaults to the `log` driver, which writes mail to the container log instead of sending it. |
+   | `CMS_MEDIA_STORAGE` | Only if you want Option B above. |
 
 6. Deploy. The stack starts in order: MySQL and Redis become healthy, `migrate` applies
    the schema and exits, then `app`, `worker` and `scheduler` start.
 
-7. **Seed the first-run data**, once only, from Coolify's terminal on the `app` service:
+7. **Seed the first-run data**, once only, from Coolify's terminal on `app`:
 
    ```bash
    php artisan db:seed --force
    ```
 
-   This creates the branded 404 page and the settings records. It is deliberately not
+   This creates the branded 404 page and the settings records. Deliberately not
    automatic: running it on every deploy is how seeders start fighting real content.
 
-8. Create your administrator, then sign in at `/admin` and complete MFA enrolment.
-   **This is not optional** — RULE #5 makes multi-factor mandatory and the panel
-   challenges before authentication completes. Store the recovery codes where the
-   client can reach them; without them, a lost authenticator needs a database edit.
+8. Create your administrator, sign in at `/admin`, and complete MFA enrolment. **Not
+   optional** — RULE #5 makes multi-factor mandatory and the panel challenges before
+   authentication completes. Store the recovery codes where the client can reach them.
 
-9. If you kept Meilisearch, build the indexes:
+9. Build the search indexes:
 
    ```bash
    php artisan scout:import "App\Models\Content"
@@ -77,117 +135,134 @@ database-only backup restores rows that point at files which no longer exist.
     php artisan cms:audit-rules
     ```
 
-    All nine rules should report PASS. This is the check that inspects the *running*
-    application rather than the source, so it is the one that catches a deployment
-    problem the test suite cannot see.
+    All nine rules should report PASS. This inspects the *running* application rather
+    than the source, so it catches deployment problems the test suite cannot see.
 
-## APP_KEY — the one irreversible setting
+## Search: implemented, and on by default
 
-`APP_KEY` is generated once by Coolify (via `SERVICE_REALBASE64_32_APP`) and then
-persists across deployments.
+Search is fully built — Scout with one Meilisearch index per locale (`contents_fa`,
+`contents_en`, `contents_ar`), a Delivery endpoint at `/api/v1/search`, and queued
+index synchronisation. The `meilisearch` service in the stack is its production backend
+and `SCOUT_DRIVER` defaults to `meilisearch`, so it works out of the box once you run
+`scout:import`.
 
-**Copy it into the client's password manager after the first deploy.**
+It is listed as "optional" only in the sense that a client who does not want search can
+drop it. The three levels, in case that is ever useful:
 
-It encrypts, among other things, the multi-factor secret of every administrator. Change
-it or lose it and every admin is locked out of the panel, with no route back except a
-database edit. There is no recovery path that does not involve one.
-
-The container refuses to start if `APP_KEY` is missing, not `base64:`-prefixed, or does
-not decode to 32 bytes. That last check exists for a specific failure: if the Compose
-interpolation does not expand, the value arrives as the literal string
-`base64:${SERVICE_REALBASE64_32_APP}`, and Laravel's own error for that
-("Unsupported cipher or incorrect key length") points nowhere near the cause. The
-entrypoint names the problem and the command that fixes it instead.
+| Configuration | Result |
+|---|---|
+| `SCOUT_DRIVER=meilisearch` + the container (**default**) | Full search: typo tolerance, relevance ranking, per-locale indexes |
+| `SCOUT_DRIVER=collection`, container removed | Works, but degrades to database matching — no typo tolerance, no ranking, and it slows down as content grows |
+| Meilisearch configured but unreachable | `/api/v1/search` returns a structured 503; nothing else degrades |
 
 ## What runs, and why each one is needed
 
-| Service | Role | Required? |
-|---|---|---|
-| `app` | nginx + php-fpm | Yes — assign the domain here |
-| `migrate` | Applies migrations, then exits | Yes |
-| `worker` | Queue worker | **Yes** |
-| `scheduler` | `schedule:work` | Yes |
-| `mysql` | MySQL 8 | **Yes** — not interchangeable with SQLite |
-| `redis` | Cache and queue backend | Yes |
-| `meilisearch` | Search | Optional |
+| Service | Image target | Role | Required? |
+|---|---|---|---|
+| `app` | `web` | nginx + PHP-FPM — **assign the domain here, port 8080** | Yes |
+| `migrate` | `cli` | Applies migrations, then exits | Yes |
+| `worker` | `cli` | Queue worker | **Yes** |
+| `scheduler` | `cli` | `schedule:work` | Yes |
+| `mysql` | — | MySQL 8 | **Yes** — not interchangeable with SQLite |
+| `redis` | — | Cache and queue | Yes |
+| `meilisearch` | — | Search backend | Default on |
 
-**The worker is not optional.** Image conversions, search indexing and sitemap
-regeneration are all queued. Without it, uploads succeed and thumbnails never appear —
-again, with no error anywhere.
+**The worker is not optional.** Image conversions, search indexing, sitemap regeneration
+and video metadata extraction are all queued. Without it, uploads succeed and thumbnails
+never appear — with no error anywhere.
 
 **MySQL is not interchangeable with SQLite.** Per-locale slug uniqueness (Decision D-1)
-is enforced by stored generated columns with unique indexes, which SQLite cannot
-express. On SQLite the guarantee silently degrades to the application-level check alone.
+is enforced by stored generated columns with unique indexes, which SQLite cannot express.
 
-**Meilisearch is genuinely optional.** Its absence returns a structured 503 from
-`/api/v1/search` and degrades nothing else. To drop it: delete the service and its
-volume, and set `SCOUT_DRIVER=collection`, which falls back to database matching.
+**`migrate` is a separate one-shot service** so exactly one process touches the schema.
+Left to startup, three containers race and the loser reports a confusing partial failure.
+The image's own `AUTORUN_LARAVEL_MIGRATION` is therefore set to `false` everywhere else.
 
-`migrate` is a separate one-shot service rather than something the app does at startup,
-so exactly one process touches the schema. With three containers starting together,
-startup migrations become a race — and the loser reports a confusing partial failure.
+## Two images, from one source tree
 
-## Why the build is arranged this way
+- **`web`** — nginx + PHP-FPM, port 8080.
+- **`cli`** — no web server; runs the worker, scheduler and migrations.
 
-Two ordering constraints are easy to get wrong, and both were found by the build
-failing:
+Two rather than one because they are supervised differently. S6 starts nginx and FPM in
+the web image, so using it for a queue worker would run a web server alongside the worker
+and let the health check pass on a container whose worker had died.
 
-**Assets need `vendor/`.** The Filament custom theme imports Filament's own stylesheet
-out of `vendor/`, and Tailwind scans `app/Filament` for class names. A Node-only asset
-stage cannot resolve the import — the first version of this Dockerfile failed exactly
-there. So Composer runs first and the asset stage copies `vendor/` from it.
+The `web` image is assembled by copying `/var/www/html` wholesale out of `cli`, so the two
+cannot contain different code — the usual cause of "the job worked yesterday" after a
+partial deploy.
 
-**The asset build is not optional.** `public/build` is gitignored, and Filament's own
-published CSS/JS are generated by `filament:upgrade` during the Composer script phase.
-An image missing either boots successfully and then serves an unstyled admin panel.
+**`ffmpeg` is installed only in `cli`** (~250 MB), because the listener that calls
+`ffprobe` is queued, so the process that shells out to it is always a worker. That keeps
+the image serving requests noticeably smaller.
 
-**Caches are written at startup, not at build time.** They bake in configuration, and
-configuration is not known until runtime — a config cache built into the image would
-carry build-machine settings into every environment. The entrypoint writes them before
-php-fpm starts, which matters because `opcache.validate_timestamps=0` means PHP will
-never notice a file written afterwards.
+## Build ordering that is easy to get wrong
+
+Both of these were found by the build failing, not by planning:
+
+- **Assets need `vendor/`.** The Filament custom theme imports Filament's own stylesheet
+  out of `vendor/`, and Tailwind scans `app/Filament` for class names. A Node-only asset
+  stage cannot resolve the import.
+- **Extensions must come before Composer.** `composer install` validates the platform
+  requirements of every package in the lockfile, and this set needs `ext-intl` and
+  `ext-exif`, which the base image does not ship. Installing them afterwards fails the
+  install with a message recommending `--ignore-platform-req`, which is the wrong fix.
+
+Also worth knowing: **the asset stage is not optional.** `public/build` is gitignored and
+Filament's published CSS/JS come from the Composer script phase, so an image missing
+either boots successfully and then serves an unstyled admin panel.
+
+## Customising nginx
+
+The base image already provides the storage `.php` deny (the classic media-directory
+RCE), immutable asset caching, gzip, security headers and dotfile denial. Only genuine
+additions live in `docker/nginx-cms.conf`.
+
+One sharp edge: **nginx treats a repeated directive as a fatal duplicate, not an
+override.** Adding a second `real_ip_header` or `gzip_types` in the same context fails the
+configuration and the container serves nothing at all. So:
+
+- changing one means *replacing* the base file — see `docker/nginx-remoteip.conf`, which
+  swaps the image's Cloudflare-oriented real-IP config for one reading `X-Forwarded-For`;
+- adding a compressible content type means choosing one the base image already lists,
+  which is why `SitemapController` serves `text/xml`.
 
 ## Scaling and tuning
 
-`PHP_FPM_MAX_CHILDREN` (default 12) is the main dial; budget roughly 64 MB per child
-under this extension set. Add it as an environment variable in Coolify to change it.
+Everything is an environment variable; no image rebuild required.
 
-To run more than one queue worker, raise the replica count on `worker`. Do **not**
-replicate `scheduler` — two schedulers run every scheduled task twice.
+| Variable | Default here | Notes |
+|---|---|---|
+| `PHP_FPM_PM_MAX_CHILDREN` | 12 | Budget roughly 64 MB per child under this extension set |
+| `PHP_MEMORY_LIMIT` | 512M | Raised from 256M: Media Library decodes uploads into bitmaps |
+| `PHP_UPLOAD_MAX_FILE_SIZE` | 64M | The panel's own media form also caps uploads at 10 MB |
+| `NGINX_CLIENT_MAX_BODY_SIZE` | 68M | Must be ≥ `PHP_POST_MAX_SIZE`, or nginx rejects the body before PHP sees it |
+| `PHP_OPCACHE_MAX_ACCELERATED_FILES` | 20000 | Filament exceeds the stock 10000, after which nothing more is cached |
 
-## Image size
-
-The image is large by PHP standards, mostly because it includes `ffmpeg` for `ffprobe`
-(Decision D-6). With it, video duration and dimensions are read on upload; without it
-the panel requires a hand-made thumbnail for every locally hosted video, because
-Google's video sitemap format requires a thumbnail.
-
-Remove `ffmpeg` from the `apt-get install` line in the Dockerfile to save roughly
-250 MB. The code path for its absence is deliberate and tested — this is a supported
-configuration, not a degraded one.
+To run more queue workers, raise the replica count on `worker`. Do **not** replicate
+`scheduler` — two schedulers run every scheduled task twice.
 
 ## Troubleshooting
 
-**Domain shows "No Available Server".** Check that the domain is on the `app` service
-and that `app` is healthy. Its health check is `GET /up`; if that fails, read the `app`
-logs — the entrypoint prints exactly which step it reached.
+**Domain shows "No Available Server".** Almost always the missing `:8080` on the domain.
+Otherwise check that `app` is healthy; its health check is `GET /up`.
 
-**Panel loads unstyled.** `public/build` is missing, which means the asset stage did not
-run or its output was not copied. Rebuild without cache.
+**Panel loads unstyled.** `public/build` is missing — the asset stage did not run or its
+output was not copied. Rebuild without cache.
 
-**Media 404s.** Check that the `cms-media` volume is mounted at
-`/var/www/html/storage/app/public` and that `public/storage` is a symlink to it. The
-entrypoint repairs a missing symlink and logs when it does.
+**Media 404s.** Check the volume is mounted at `/var/www/html/storage/app/public` and that
+`public/storage` symlinks to it. The image recreates the symlink at start
+(`AUTORUN_LARAVEL_STORAGE_LINK`).
 
-**Uploads fail with a permission error.** The entrypoint takes ownership of the media
-volume on first start. If it was skipped, the volume is owned by root while php-fpm runs
-as `www-data`.
+**Uploads fail with a permission error.** Bind-mount ownership — `chown -R 33:33` on the
+host path. Named volumes do not have this problem.
 
-**A setting in Coolify seems to be ignored.** Redeploy rather than restart. Config is
-cached at container start, so a changed environment variable needs a new container.
+**Login appears to succeed but returns to the form.** `PHP_SESSION_COOKIE_SECURE` is `1`
+and the site is being served over plain HTTP, so the browser discards the session cookie.
+Use HTTPS, or set it to `0` deliberately.
 
-**Everything works on the command line but web requests report no database password.**
-This is the classic php-fpm trap and is already handled: `clear_env = no` in
-`docker/php-fpm-pool.conf`. If that line is ever removed, php-fpm wipes the environment
-of its workers, so `php artisan` and the queue worker (both CLI) keep working while only
-web requests fail.
+**A changed environment variable seems ignored.** Redeploy rather than restart: config is
+cached at container start.
+
+**The container refuses to start, complaining about `APP_KEY`.** It is doing its job.
+If the value looks like the literal `base64:${SERVICE_REALBASE64_32_APP}`, Coolify did not
+substitute it — set `APP_KEY` explicitly with `php artisan key:generate --show`.

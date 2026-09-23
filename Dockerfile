@@ -1,83 +1,55 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
-# CMS Core Starter Kit — production image
+# CMS Core Starter Kit — production images
 #
-# One image serves three roles (web, queue worker, scheduler); docker-compose.yaml
-# runs it three times with different commands. Building one image rather than three
-# means the worker can never be running different code from the web process, which is
-# the usual cause of "the job worked yesterday" after a partial deploy.
+# Built on serversideup/php, which supplies nginx + PHP-FPM supervised by S6 Overlay,
+# sensible production defaults, and configuration through environment variables. That
+# replaces a hand-rolled nginx.conf, php.ini, FPM pool and supervisord.conf — roughly
+# 300 lines of infrastructure this project no longer owns, maintains, or gets wrong.
 #
-# The image contains NO configuration and NO secrets. Everything comes from the
-# environment at runtime, so the same image can be promoted between environments.
+# It also runs UNPRIVILEGED (www-data, uid/gid 33) rather than root, which matters for
+# the media volume; see docs/coolify.md.
+#
+# TWO images, from one source tree:
+#
+#   web  — nginx + PHP-FPM. Serves the panel and both APIs. Listens on 8080.
+#   cli  — no web server. Runs the queue worker, the scheduler and migrations.
+#
+# Two rather than one because these images are supervised differently: S6 starts nginx
+# and FPM in the web image, so using it for a queue worker would run a web server
+# alongside the worker and let the health check pass on a container whose worker had
+# died. The cli variant has no supervisor and runs the given command directly.
 # =============================================================================
 
+ARG PHP_VERSION=8.4
+# Pinned so a rebuild months from now produces the same base. Tag order is
+# {php}-{variation}-{version}; `serversideup/php:8.4-cli` (unpinned) also works.
+ARG SSU_VERSION=v4.5.1
+
 # -----------------------------------------------------------------------------
-# Stage 1 — base: PHP with every extension this application needs.
+# Stage 1 — PHP with the extensions this application needs.
 #
-# Shared by the dependency and runtime stages so the extension build happens once.
+# Shared by the dependency stage and the cli image so the extension build happens once.
+#
+# It has to come before Composer, not after: `composer install` validates the platform
+# requirements of every package in the lockfile, and this dependency set needs ext-intl
+# and ext-exif. Installing them afterwards fails the install with a message about
+# --ignore-platform-req, which is the wrong fix.
+#
+# The base image already ships pdo_mysql, redis, pcntl, zip, mbstring and OPcache. These
+# four it does not:
+#
+#   gd + exif — Media Library conversions. Without gd every image upload fails at
+#               conversion time, so it is not optional in practice.
+#   intl      — locale-aware formatting for fa/en/ar.
+#   bcmath    — required by the dependency set.
 # -----------------------------------------------------------------------------
-FROM php:8.4-fpm-bookworm AS base
+FROM serversideup/php:${PHP_VERSION}-cli-${SSU_VERSION} AS php-base
 
-# PHP 8.4 is a hard floor, not a preference: spatie/laravel-activitylog 5.x,
-# laravel-sitemap 8.x and schema-org 5.x all require ^8.4.
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    COMPOSER_ALLOW_SUPERUSER=1 \
-    COMPOSER_NO_INTERACTION=1
-
-# docker/php-fpm-pool.conf interpolates these from the environment. They need defaults
-# HERE, not there: php-fpm refuses to start when a referenced variable is empty, so an
-# unset value would fail the container rather than fall back. Raise them for a busier
-# site — each child is roughly 64 MB of PHP under this extension set.
-ENV PHP_FPM_MAX_CHILDREN=12 \
-    PHP_FPM_START_SERVERS=3 \
-    PHP_FPM_MIN_SPARE_SERVERS=2 \
-    PHP_FPM_MAX_SPARE_SERVERS=5
-
-# ffmpeg supplies ffprobe, which is a SOFT dependency (Decision D-6): with it, video
-# duration and dimensions are read on upload; without it the panel demands a manual
-# thumbnail for every locally hosted video, because Google's video sitemap requires a
-# thumbnail. It is included because "upload a thumbnail by hand, every time" is a
-# support burden. Drop it to save roughly 250 MB — the code path is designed for its
-# absence and is tested.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        nginx \
-        supervisor \
-        curl \
-        ffmpeg \
-        # procps for ps/pgrep. Deliberate: when a queue worker is wedged or php-fpm is
-        # saturated, the first thing anyone needs is a process list, and discovering
-        # that `ps` is missing while diagnosing a live incident is a poor time to learn it.
-        procps \
-    && rm -rf /var/lib/apt/lists/*
-
-# install-php-extensions resolves the system libraries each extension needs. Doing
-# this by hand is the usual source of a gd without WebP support, which would silently
-# break Media Library's conversions.
-COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
-
-# gd + exif: Media Library conversions. Without gd every image upload fails at
-#            conversion time, so it is not optional in practice.
-# intl:      locale-aware formatting for fa/en/ar.
-# pdo_mysql: MySQL is required in production for Decision D-1.
-# redis:     REDIS_CLIENT=phpredis.
-# pcntl:     queue:work needs it to shut down gracefully on SIGTERM instead of
-#            being killed mid-job on every redeploy.
-# opcache:   see docker/php.ini.
-RUN install-php-extensions \
-        bcmath \
-        exif \
-        gd \
-        intl \
-        opcache \
-        pcntl \
-        pdo_mysql \
-        redis \
-        zip
-
-COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+USER root
+RUN install-php-extensions gd intl bcmath exif
+USER www-data
 
 WORKDIR /var/www/html
 
@@ -87,13 +59,11 @@ WORKDIR /var/www/html
 # Only the manifests are copied, so editing a controller does not re-resolve Composer.
 #
 # --no-scripts --no-autoloader because the scripts (package:discover, filament:upgrade)
-# need the application source, which is not here yet. Built on `base` rather than the
-# composer image because the lockfile's transitive platform requirements (ext-gd,
-# ext-intl, PHP 8.4) must actually be satisfied for the install to resolve.
+# need the application source, which is not here yet.
 # -----------------------------------------------------------------------------
-FROM base AS vendor
+FROM php-base AS vendor
 
-COPY composer.json composer.lock ./
+COPY --chown=www-data:www-data composer.json composer.lock ./
 
 RUN composer install \
         --no-dev \
@@ -103,9 +73,9 @@ RUN composer install \
         --no-progress
 
 # -----------------------------------------------------------------------------
-# Stage 3 — front-end assets.
+# Stage 2 — front-end assets.
 #
-# Built in a separate stage so Node never reaches the runtime image.
+# Node never reaches a runtime image.
 #
 # This stage is NOT optional. tests/Architecture/NoExternalCdnTest scans the built CSS
 # for external font and CDN hosts (RULE #4), public/build is gitignored, and the panel
@@ -114,7 +84,7 @@ RUN composer install \
 #
 # It needs vendor/ — which is not obvious. The Filament custom theme (RULE #4) imports
 # Filament's own stylesheet out of vendor/, and Tailwind scans vendor/laravel/framework
-# for pagination views, so a Node-only stage fails to resolve the import.
+# for pagination views, so a Node-only stage cannot resolve the import.
 # -----------------------------------------------------------------------------
 FROM node:22-bookworm-slim AS assets
 
@@ -126,8 +96,8 @@ RUN npm ci --no-audit --no-fund
 COPY vite.config.js ./
 COPY resources ./resources
 
-# Tailwind's @source globs in the theme reach into app/Filament, so the class names
-# used by the panel's PHP are discovered rather than purged from the built CSS.
+# Tailwind's @source globs reach into app/Filament, so class names used by the panel's
+# PHP are discovered rather than purged from the built CSS.
 COPY app ./app
 
 COPY --from=vendor /var/www/html/vendor ./vendor
@@ -137,59 +107,109 @@ COPY --from=vendor /var/www/html/vendor ./vendor
 RUN mkdir -p storage/framework/views
 
 # Vazirmatn is referenced as an absolute URL (/fonts/vazirmatn/…), so the woff2 files
-# are not inputs to this build — they ship as static files in public/fonts and are
-# served directly. That is what makes the build work with no network access (RULE #4).
+# are not inputs to this build — they ship as static files in public/fonts and are served
+# directly. That is what makes the build work with no network access (RULE #4).
 RUN npm run build
 
 # -----------------------------------------------------------------------------
-# Stage 4 — runtime.
+# Stage 3 — cli: the assembled application, and the image that runs every
+# non-web process.
 # -----------------------------------------------------------------------------
-FROM base AS runtime
+FROM php-base AS cli
 
-COPY --from=vendor /var/www/html/vendor ./vendor
+USER root
+
+# ffprobe (Decision D-6), for reading a video's duration and dimensions.
+#
+# Installed ONLY in this image, not in web, because App\Listeners\ExtractVideoMetadata
+# is queued — so the process that shells out to ffprobe is always a worker. That keeps
+# roughly 250 MB out of the image that serves requests.
+#
+# ffmpeg is a soft dependency: without it the panel asks an editor for the duration, and
+# that path is deliberate and tested. Remove this layer to shrink the image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+USER www-data
+
+WORKDIR /var/www/html
+
+COPY --from=vendor --chown=www-data:www-data /var/www/html/vendor ./vendor
 
 # .dockerignore excludes vendor/ and public/build, so neither overwrites what the
 # earlier stages produced.
-COPY . .
+COPY --chown=www-data:www-data . .
 
-COPY --from=assets /app/public/build ./public/build
+COPY --from=assets --chown=www-data:www-data /app/public/build ./public/build
 
 # Generates the optimised autoloader and runs the deferred Composer scripts.
 # filament:upgrade runs filament:assets, which publishes Filament's own CSS/JS into
 # public/ — gitignored, so it exists only because this step runs.
 RUN composer dump-autoload --no-dev --optimize
 
-COPY docker/php.ini /usr/local/etc/php/conf.d/zz-app.ini
-COPY docker/php-fpm-pool.conf /usr/local/etc/php-fpm.d/zz-app.conf
-COPY docker/nginx.conf /etc/nginx/nginx.conf
-COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Refuse to start on a missing or malformed APP_KEY. Runs before the image's own Laravel
+# automations (50-*), so a bad key is reported as itself rather than as a confusing
+# failure inside `php artisan config:cache`.
+COPY --chown=www-data:www-data docker/entrypoint.d/15-validate-app-key.sh /etc/entrypoint.d/15-validate-app-key.sh
 
-# RULE #9 — media is served from local disk, so public/storage must point into
-# storage/app/public. The link is created here, at build time, rather than at startup:
-# the path is fixed inside the image, and creating it now means the runtime user never
-# needs write access to public/. docker-compose.yaml mounts a named volume over the
-# target, and this symlink resolves into that volume.
-RUN php artisan storage:link \
-    && mkdir -p \
+USER root
+RUN chmod +x /etc/entrypoint.d/15-validate-app-key.sh
+USER www-data
+
+# Directories Laravel writes to at runtime. Ownership matters more than it looks: the
+# container is unprivileged, so it cannot fix this later — and a fresh Docker named
+# volume INHERITS the ownership of the image directory it covers, which is what makes
+# the media volume writable without any privileged startup step.
+RUN mkdir -p \
         storage/app/public \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/views \
         storage/logs \
-        bootstrap/cache \
-    && chown -R www-data:www-data storage bootstrap/cache
+        bootstrap/cache
 
 # No VOLUME instruction for storage/app/public: it would create an anonymous volume on
-# any `docker run` that forgets to mount one, which looks like it works and then
-# discards every uploaded file when the container is replaced. Requiring the mount to
-# be explicit makes losing media a visible mistake rather than a silent default.
+# any `docker run` that forgets to mount one, which looks like it works and then discards
+# every uploaded file when the container is replaced. Requiring the mount to be explicit
+# makes losing media a visible mistake rather than a silent default.
 
-EXPOSE 80
+# -----------------------------------------------------------------------------
+# Stage 4 — web: nginx + PHP-FPM.
+# -----------------------------------------------------------------------------
+FROM serversideup/php:${PHP_VERSION}-fpm-nginx-${SSU_VERSION} AS web
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
-    CMD curl -fsS http://127.0.0.1/up || exit 1
+USER root
+RUN install-php-extensions gd intl bcmath exif
+USER www-data
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]
+WORKDIR /var/www/html
+
+# The application is taken wholesale from the cli stage, so the two images cannot
+# contain different code — the usual cause of "the job worked yesterday" after a
+# partial deploy.
+COPY --from=cli --chown=www-data:www-data /var/www/html /var/www/html
+
+# Additions to the image's own nginx server configuration. Named zz- so it is included
+# last from server-opts.d/.
+COPY docker/nginx-cms.conf /etc/nginx/server-opts.d/zz-cms.conf
+
+# REPLACES the image's Cloudflare-oriented real-IP config with one that reads
+# X-Forwarded-For, which is what this deployment's proxy sends. Replaced rather than
+# added because nginx treats a duplicate real_ip_header as a fatal error, not an
+# override — discovered by the container refusing to serve anything at all.
+COPY docker/nginx-remoteip.conf /etc/nginx/server-opts.d/remoteip.conf
+
+# Laravel's health endpoint, rather than the image's static /healthcheck: a static file
+# proves nginx is alive, while /up proves the framework booted and can reach its
+# dependencies. That is the difference between "the container is up" and "the site works".
+ENV HEALTHCHECK_PATH=/up
+
+# OPcache is off by default in these images (a kindness to developers, wrong for
+# production). Sized for Filament, which generates a lot of small classes — the stock
+# 10000-file limit is quietly exceeded by this dependency set, after which nothing more
+# is cached.
+ENV PHP_OPCACHE_ENABLE=1 \
+    PHP_OPCACHE_MAX_ACCELERATED_FILES=20000 \
+    PHP_OPCACHE_MEMORY_CONSUMPTION=192 \
+    PHP_OPCACHE_INTERNED_STRINGS_BUFFER=16

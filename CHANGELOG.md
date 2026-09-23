@@ -9,6 +9,18 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.5.0] - 2026-09-23
+
+### Added
+
+- Decision D-6 is now wired: App\\Listeners\\ExtractVideoMetadata fills a video's duration and dimensions from ffprobe on upload, queued, without overwriting values entered by hand. The extractor existed but nothing ever called it.
+- CMS_MEDIA_STORAGE selects between the managed media volume and a fixed host path.
+
+### Changed
+
+- Container images are now built on serversideup/php (nginx + PHP-FPM under S6, unprivileged www-data), replacing a hand-written nginx.conf, php.ini, FPM pool and supervisord.conf. The web image listens on 8080 and is ~350 MB smaller.
+- Sitemaps are served as text/xml rather than application/xml, so they are gzipped by the default compression config of any standard web server.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
