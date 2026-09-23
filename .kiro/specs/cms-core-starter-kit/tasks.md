@@ -254,6 +254,21 @@ CI workflow's duplicate byte-exact `diff` step was removed for the same reason. 
 freshness is therefore checked by `cms:audit-rules` against a real database — the only
 place that can know the answer.
 
+### Verified against a real MySQL-compatible server
+
+Decision D-1's database layer was, at first, never actually executed anywhere: SQLite
+skips it and GitHub Actions could not run. It has since been run against MariaDB 10.11.
+
+Result: **168 passed, 0 skipped** — the three D-1 tests do run there, the `slug_{locale}`
+columns are `STORED GENERATED`, and the unique indexes reject a duplicate inserted with
+raw SQL that bypasses the application check. D-1 is verified, not merely designed.
+
+That run also exposed a defect no amount of test-passing would have shown: two migrations
+published from package stubs had no `down()`, so `migrate:rollback` reported success while
+leaving their tables behind, and the *next* `migrate` failed. Fixed, with an architecture
+test covering future published stubs. The lesson is the shape of the bug — the broken
+command never fails; a later, different command does.
+
 ### Division of labour between the two rule gates
 
 Worth stating because it is the one thing about this codebase that is easy to get wrong
