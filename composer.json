@@ -72,10 +72,11 @@
         "lint": "pint",
         "lint:check": "pint --test",
         "stan": "phpstan analyse --memory-limit=1G",
-        "openapi": "@php artisan cms:openapi-export",
+        "openapi": "@php artisan scramble:export",
         "gates": [
             "@lint:check",
             "@stan",
+            "@openapi",
             "@test"
         ],
         "post-autoload-dump": [
