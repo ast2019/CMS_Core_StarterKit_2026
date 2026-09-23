@@ -169,12 +169,19 @@ risks a quality penalty across the whole locale. Configurable via
 - Nginx serves `/storage/*` directly with long-lived cache headers. No CDN required.
 - Video: local upload or external embed URL field.
 
-`[DECISION D-6] Video metadata dependency.` The Video Sitemap requires duration and a thumbnail
-for each video (Google's schema treats both as effectively mandatory). Extracting these from a
-locally-uploaded file needs **ffmpeg/ffprobe on the host** — an infrastructure dependency absent
-from blueprint §13. **Resolution:** `VideoMetadataExtractor` uses ffprobe when available;
-when absent, the admin panel requires duration and thumbnail to be entered manually before the
-video can be published. Deployment docs list ffmpeg as a soft requirement.
+`[DECISION D-6] Video metadata dependency.` Blueprint §6 requires a Video Sitemap and §10 allows
+direct local video upload. Google's video sitemap spec requires `thumbnail_loc`, title,
+description, and one of `content_loc`/`player_loc`; `duration` is recommended, not required.
+The binding constraint is therefore the **thumbnail**: it cannot be derived from a
+locally-uploaded video file without **ffmpeg/ffprobe on the host** — an infrastructure
+dependency absent from blueprint §13.
+
+**Resolution:** `VideoMetadataExtractor` uses ffprobe when available to derive thumbnail and
+duration. When ffprobe is absent, the panel requires a thumbnail to be uploaded manually before
+a locally-hosted video can be published, and leaves duration empty (omitting an optional tag is
+valid; omitting the thumbnail would produce an invalid sitemap entry). Externally embedded
+videos supply their own thumbnail URL and need no extraction. Deployment docs list ffmpeg as a
+soft requirement, required only for local video upload.
 
 ---
 
