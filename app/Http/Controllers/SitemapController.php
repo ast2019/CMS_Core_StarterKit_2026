@@ -61,7 +61,18 @@ class SitemapController extends Controller
     private function xml(string $body): Response
     {
         return response($body, 200, [
-            'Content-Type' => 'application/xml; charset=UTF-8',
+            /*
+             * text/xml rather than application/xml. Both are valid for a sitemap and
+             * crawlers accept either, but text/xml is the type that appears in the
+             * default gzip_types of essentially every web server — including the
+             * deployment image's. Sitemaps are the largest text responses this
+             * application produces, and nobody notices them being served uncompressed
+             * because only crawlers fetch them.
+             *
+             * Chosen over overriding the web server's compression config because that
+             * would fix it for one deployment and leave every other one slow.
+             */
+            'Content-Type' => 'text/xml; charset=UTF-8',
             /*
              * A short shared-cache window. Long enough that a crawler hitting several
              * sitemaps in sequence does not regenerate each from scratch, short enough

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Enums\UserRole;
+use App\Listeners\ExtractVideoMetadata;
 use App\Models;
 use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
@@ -13,8 +14,10 @@ use App\Policies;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Spatie\MediaLibrary\MediaCollections\Events\MediaHasBeenAddedEvent;
 use Throwable;
 
 class CmsServiceProvider extends ServiceProvider
@@ -70,6 +73,20 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerDeliveryCacheInvalidation();
         $this->registerSearchIndexing();
         $this->registerSpecVersion();
+        $this->registerVideoMetadataExtraction();
+    }
+
+    /**
+     * Decision D-6 — derive video duration and dimensions on upload.
+     *
+     * Registered explicitly rather than relying on Laravel's listener auto-discovery,
+     * to match how the observers above are wired: one place to read to find out what
+     * reacts to what. Auto-discovery also stops working the moment someone caches
+     * events without it having been noticed.
+     */
+    protected function registerVideoMetadataExtraction(): void
+    {
+        Event::listen(MediaHasBeenAddedEvent::class, ExtractVideoMetadata::class);
     }
 
     /**
