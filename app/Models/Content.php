@@ -11,6 +11,7 @@ use App\Concerns\HasSeoMeta;
 use App\Concerns\HasSlug;
 use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
+use App\Concerns\IsSearchable;
 use App\Contracts\HasFeaturedMedia;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
@@ -57,6 +58,7 @@ class Content extends Model implements HasFeaturedMedia, Publishable, TracksTran
     use HasTranslations;
     use HasTranslationStatus;
     use IsAuditable;
+    use IsSearchable;
     use SoftDeletes;
 
     /**

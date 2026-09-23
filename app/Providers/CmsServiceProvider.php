@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models;
 use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
+use App\Observers\SearchIndexObserver;
 use App\Policies;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -35,6 +36,15 @@ class CmsServiceProvider extends ServiceProvider
      *
      * @var array<class-string, class-string>
      */
+    /**
+     * Models indexed for full-text search.
+     *
+     * @var list<class-string>
+     */
+    public const SEARCHABLE_MODELS = [
+        Models\Content::class,
+    ];
+
     public const POLICIES = [
         Models\Content::class => Policies\ContentPolicy::class,
         Models\Category::class => Policies\CategoryPolicy::class,
@@ -55,6 +65,7 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerAbilityGates();
         $this->registerPolicies();
         $this->registerDeliveryCacheInvalidation();
+        $this->registerSearchIndexing();
     }
 
     protected function registerPolicies(): void
@@ -199,6 +210,25 @@ class CmsServiceProvider extends ServiceProvider
     {
         foreach (array_keys(DeliveryCacheObserver::MODEL_TAGS) as $model) {
             $model::observe(DeliveryCacheObserver::class);
+        }
+    }
+
+    /**
+     * Per-locale search indexing (Requirements 6.2, 6.4).
+     *
+     * Scout's own model observer is DISABLED for these models. It writes a single
+     * index — whatever searchableAs() returns at that instant — which for
+     * locale-dependent index names means it would index only the current request's
+     * locale and silently leave the other two stale.
+     *
+     * SearchIndexObserver replaces it and dispatches a queued job that writes or
+     * removes the record across every configured locale.
+     */
+    protected function registerSearchIndexing(): void
+    {
+        foreach (self::SEARCHABLE_MODELS as $model) {
+            $model::disableSearchSyncing();
+            $model::observe(SearchIndexObserver::class);
         }
     }
 }

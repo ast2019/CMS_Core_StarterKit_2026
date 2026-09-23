@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\Delivery\ContactController;
 use App\Http\Controllers\Api\V1\Delivery\ContentController;
+use App\Http\Controllers\Api\V1\Delivery\SearchController;
 use App\Http\Controllers\Api\V1\Delivery\SeoController;
 use App\Http\Controllers\Api\V1\Delivery\SiteController;
 use App\Http\Controllers\Api\V1\Management\ManagementContentController;
@@ -54,6 +55,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('news/{slug}/seo', [SeoController::class, 'forArticle'])
             ->where('slug', '[^/]+')
             ->name('api.v1.news.seo');
+
+        Route::get('search', SearchController::class)->name('api.v1.search');
 
         Route::get('slides', [SiteController::class, 'slides'])->name('api.v1.slides');
         Route::get('menus/{key}', [SiteController::class, 'menu'])
