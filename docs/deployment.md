@@ -3,6 +3,12 @@
 Per-site deployment for a copy of the CMS Core Starter Kit. The Core itself is
 deliberately host-agnostic; everything here is a per-client operational decision.
 
+> **Deploying with Docker or Coolify?** Read **[docs/coolify.md](coolify.md)** instead
+> for the container path — `Dockerfile` and `docker-compose.yaml` cover the service
+> topology, and the media volume needs particular care. This file still applies for the
+> decisions that are not about hosting: queues, video, search, and the per-client
+> checklist at the end.
+
 ## Required services
 
 | Service | Required? | Notes |

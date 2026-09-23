@@ -52,6 +52,34 @@ return Application::configure(basePath: dirname(__DIR__))
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
         ]);
+
+        /*
+         * Trust the reverse proxy's X-Forwarded-* headers.
+         *
+         * Required for any deployment behind a proxy, which includes the Docker/Coolify
+         * stack in docker-compose.yaml. Two things break without it, both quietly:
+         *
+         *  - Every request appears to originate from the proxy, so the IP-keyed rate
+         *    limiters (CMS_DELIVERY_RATE_LIMIT) put ALL visitors in one bucket: a single
+         *    busy client can throttle the entire public API. The audit log records the
+         *    proxy's address too, which undermines RULE #8 — an audit trail that names
+         *    the same IP for every administrator answers no question worth asking.
+         *
+         *  - The request looks like HTTP even when the browser used HTTPS, because TLS
+         *    terminates at the proxy. Generated URLs then come out http://, which means
+         *    mixed-content warnings and preview links that look untrustworthy.
+         *
+         * Default '*' trusts any proxy. That is correct when the application is only
+         * reachable THROUGH the proxy — docker-compose.yaml publishes no host port for
+         * `app`, so nothing else can connect. If you expose the container directly,
+         * set TRUSTED_PROXIES to the proxy's address, because a client that can reach
+         * the app itself could otherwise spoof its own IP and evade rate limits.
+         */
+        $proxies = trim((string) env('TRUSTED_PROXIES', '*'));
+
+        $middleware->trustProxies(
+            at: $proxies === '*' || $proxies === '' ? '*' : array_map('trim', explode(',', $proxies)),
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

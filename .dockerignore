@@ -1,0 +1,65 @@
+# Build context exclusions.
+#
+# Two jobs here: keep the context small, and keep host state out of the image. The
+# second matters more — a stray .env or dev database baked into an image is a secret
+# leak that survives every redeploy.
+
+.git
+.github
+.gitignore
+.gitattributes
+
+# Rebuilt inside the image for the target platform. Copying the host's vendor/ would
+# ship dev dependencies and possibly extensions compiled for a different PHP build.
+vendor
+node_modules
+
+# Built in the assets stage. Copying a stale host build would produce an image whose
+# CSS does not match its source.
+public/build
+public/css/filament
+public/js/filament
+public/fonts/filament
+public/hot
+public/storage
+public/fonts-manifest.dev.json
+
+# Secrets and host-local state. Configuration reaches the container through the
+# environment; see docker-compose.yaml.
+.env
+.env.*
+!.env.example
+
+# The local development database. It holds real rows — system_info, changelogs, seeded
+# demo accounts — and baking it in would both leak them and mask a missing DB_* config
+# behind a working-looking SQLite file.
+database/*.sqlite
+database/*.sqlite-journal
+
+storage/app/public/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+storage/pail
+bootstrap/cache/*
+
+# Not needed at runtime: composer --no-dev installs no test framework.
+tests
+phpunit.xml
+pint.json
+phpstan.neon
+.kiro
+
+# Local tooling noise.
+.idea
+.vscode
+.fleet
+.phpunit.cache
+.phpstan.cache
+*.log
+.DS_Store
+Homestead.yaml
+Homestead.json
+auth.json
+docker-compose.override.yaml
