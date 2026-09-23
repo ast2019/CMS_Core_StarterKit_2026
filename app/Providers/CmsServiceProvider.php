@@ -10,9 +10,12 @@ use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
 use App\Observers\SearchIndexObserver;
 use App\Policies;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 class CmsServiceProvider extends ServiceProvider
 {
@@ -66,6 +69,42 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerPolicies();
         $this->registerDeliveryCacheInvalidation();
         $this->registerSearchIndexing();
+        $this->registerSpecVersion();
+    }
+
+    /**
+     * RULES #2 and #3 — stamp the published spec with the version from `system_info`.
+     *
+     * The spec's version is a FOURTH place a release number can live, alongside
+     * `system_info`, the `changelogs` table and CHANGELOG.md. `cms:release` bumps the
+     * first three; left alone, config/scramble.php's static string would quietly stay
+     * behind and tell API consumers they were reading an older release than they were.
+     * The audit command caught exactly that drift: spec 0.1.0 against system 0.2.0.
+     *
+     * Done as a document transformer rather than in config/scramble.php because the
+     * version lives in the database. A config file cannot query it: config is resolved
+     * before the database is guaranteed available, and `config:cache` would freeze
+     * whatever value happened to be current when the cache was built — reintroducing
+     * the same drift in a harder-to-see form. A transformer runs only while the
+     * document is being generated, when the connection is up.
+     */
+    protected function registerSpecVersion(): void
+    {
+        Scramble::configure()->withDocumentTransformers(
+            function (OpenApi $document): void {
+                /*
+                 * A missing/unmigrated database must not break `scramble:export` — it
+                 * runs in CI before migrations and in the OpenAPI sync test. Falling
+                 * back to the configured string keeps the command usable; the audit
+                 * command is what reports a genuine mismatch.
+                 */
+                try {
+                    $document->info->version = Models\SystemInfo::version();
+                } catch (Throwable) {
+                    // Keep config/scramble.php's value.
+                }
+            },
+        );
     }
 
     protected function registerPolicies(): void

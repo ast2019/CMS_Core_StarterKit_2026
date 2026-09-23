@@ -9,6 +9,18 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.3.0] - 2026-09-23
+
+### Added
+
+- GitHub Actions CI with a MySQL job that exercises the per-locale slug uniqueness indexes (Decision D-1), which SQLite cannot express.
+- php artisan cms:audit-rules — audits the nine hard rules against the running application and exits non-zero on any violation.
+- docs/deployment.md covering Nginx media serving, queues, the optional ffprobe dependency, Meilisearch and the per-client handover checklist.
+
+### Fixed
+
+- The published OpenAPI spec advertised a stale version. info.version is now stamped from system_info at generation time, so a release always reaches the API documentation (RULES #2, #3).
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

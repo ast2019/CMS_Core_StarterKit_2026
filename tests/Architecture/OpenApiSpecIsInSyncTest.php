@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\SystemInfo;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -69,6 +70,21 @@ it('keeps the committed OpenAPI document in sync with the code', function (): vo
      * that fires on formatting noise teaches people to regenerate blindly — which
      * defeats the point of asking them to look at the diff.
      */
+    /*
+     * info.version is excluded from the comparison on purpose.
+     *
+     * It is stamped from the `system_info` table at generation time (RULE #2), and the
+     * test database is always a FRESH install — so it reports INITIAL_VERSION no matter
+     * which release is actually being tested. Comparing it here would fail on every
+     * release forever, for a difference that says nothing about whether the documented
+     * SHAPE of the API matches the code, which is what this rule is about.
+     *
+     * Version freshness is therefore not asserted here but by `cms:audit-rules`, which
+     * runs against the real database and so is the only place that knows the true
+     * version. That command already caught one real drift.
+     */
+    unset($committed['info']['version'], $generated['info']['version']);
+
     $committedPaths = array_keys($committed['paths'] ?? []);
     $generatedPaths = array_keys($generated['paths'] ?? []);
 
@@ -129,10 +145,27 @@ it('documents both API surfaces', function (): void {
         ->and($management)->not->toBeEmpty('No Management API routes are documented.');
 });
 
-it('reports the current system version in the spec', function (): void {
+it('stamps the spec with a semantic version', function (): void {
     // RULE #2 — a consumer reading the spec must be able to tell which release it
-    // describes, and that string must not drift from the panel's.
+    // describes. Whether that version is the CURRENT one is checked by
+    // `cms:audit-rules` against the live database; see the note above.
     $spec = json_decode((string) file_get_contents(projectPath('docs/openapi.json')), true);
 
     expect($spec['info']['version'] ?? null)->toMatch('/^\d+\.\d+\.\d+/');
+});
+
+it('stamps the spec from system_info rather than a static config value', function (): void {
+    /*
+     * Guards the mechanism itself. Without this, someone could "simplify"
+     * registerSpecVersion() away and the spec would silently freeze at the config
+     * fallback again — the exact regression this test file's sibling fix addressed.
+     */
+    $systemInfo = SystemInfo::current();
+    $systemInfo->update(['version' => '9.9.9']);
+
+    expect(generateOpenApiSpec()['info']['version'])->toBe(
+        '9.9.9',
+        'The generated spec ignored the version in system_info, so a release would not '
+        .'reach the published API documentation (RULES #2, #3).',
+    );
 });

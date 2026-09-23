@@ -51,13 +51,15 @@ return [
 
     'info' => [
         /*
-         * API version.
+         * Fallback API version, used only when the database is unreachable (for
+         * example `scramble:export` in CI before migrations run).
+         *
+         * The real value comes from the `system_info` table at generation time, via
+         * CmsServiceProvider::registerSpecVersion(). It is resolved there rather than
+         * here because this file is evaluated before the database is guaranteed
+         * available, and `config:cache` would freeze a stale number into the build —
+         * which is how the spec came to advertise 0.1.0 after the 0.2.0 release.
          */
-        /*
-     * Tracks the CMS's own Semantic Version (RULE #2), so the published spec and
-     * the version shown in the admin panel cannot disagree about which release a
-     * consumer is reading.
-     */
         'version' => env('API_VERSION', '0.1.0'),
 
         /*
