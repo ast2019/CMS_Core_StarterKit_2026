@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Pages\Pages;
 
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
+use App\Filament\Concerns\ManagesContentVersions;
 use App\Filament\Concerns\ManagesFeaturedImage;
 use App\Filament\Resources\Pages\PageResource;
 use Filament\Actions\DeleteAction;
@@ -15,6 +16,7 @@ use Filament\Resources\Pages\EditRecord;
 class EditPage extends EditRecord
 {
     use InteractsWithTranslatableRecord;
+    use ManagesContentVersions;
     use ManagesFeaturedImage;
 
     protected static string $resource = PageResource::class;
@@ -22,6 +24,9 @@ class EditPage extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->versionHistoryAction(),
+            $this->restoreVersionAction(),
+
             DeleteAction::make(),
             ForceDeleteAction::make(),
             RestoreAction::make(),

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Contents\Pages;
 
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
+use App\Filament\Concerns\ManagesContentVersions;
 use App\Filament\Concerns\ManagesFeaturedImage;
 use App\Filament\Resources\Contents\ContentResource;
 use App\Models\Content;
@@ -20,6 +21,7 @@ use Filament\Resources\Pages\EditRecord;
 class EditContent extends EditRecord
 {
     use InteractsWithTranslatableRecord;
+    use ManagesContentVersions;
     use ManagesFeaturedImage;
 
     protected static string $resource = ContentResource::class;
@@ -41,6 +43,9 @@ class EditContent extends EditRecord
                     ->urlFor($record, app()->getLocale()))
                 ->openUrlInNewTab()
                 ->authorize(fn (Content $record): bool => auth()->user()?->can('preview', $record) ?? false),
+
+            $this->versionHistoryAction(),
+            $this->restoreVersionAction(),
 
             DeleteAction::make(),
             ForceDeleteAction::make(),

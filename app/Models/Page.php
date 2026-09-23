@@ -14,6 +14,7 @@ use App\Concerns\IsAuditable;
 use App\Contracts\HasFeaturedMedia;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
+use App\Contracts\Versionable;
 use App\Enums\ContentStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -29,7 +30,7 @@ use Spatie\Translatable\HasTranslations;
  * @property int $position
  * @property string|null $system_key
  */
-class Page extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus
+class Page extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus, Versionable
 {
     use HasContentVersions;
     use HasFactory;

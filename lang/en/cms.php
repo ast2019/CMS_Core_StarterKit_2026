@@ -234,4 +234,32 @@ return [
         'no_changelog' => 'No releases recorded yet.',
     ],
 
+    'audit' => [
+        'title' => 'Audit log',
+        'intro' => 'Every write action in the panel is recorded automatically, with no opt-out. This log is read-only.',
+        'when' => 'When',
+        'who' => 'User',
+        'system' => 'System',
+        'event' => 'Event',
+        'subject' => 'Subject',
+        'description' => 'Description',
+        'view_changes' => 'View changes',
+        'changes_heading' => 'Recorded changes',
+        'attribute' => 'Attribute',
+        'before' => 'Before',
+        'after' => 'After',
+        'no_changes' => 'No changes recorded.',
+        'denials' => 'Denied attempts',
+    ],
+
+    'version' => [
+        'history' => 'Version history',
+        'select' => 'Choose a version',
+        'empty' => 'No versions recorded yet.',
+        'restore_warning' => 'The current content will be replaced by the selected version. The current state is itself saved as a new version, so this is reversible.',
+        'restored' => 'Restored version :number.',
+        'not_found' => 'The selected version could not be found.',
+        'keep_notice' => 'Only the most recent :count versions are kept.',
+    ],
+
 ];

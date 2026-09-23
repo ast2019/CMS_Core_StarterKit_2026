@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models;
 use App\Models\User;
 use App\Policies;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -129,5 +130,62 @@ class CmsServiceProvider extends ServiceProvider
 
             return $user->role->isAdmin() ? true : null;
         });
+
+        $this->logAuthorisationDenials();
+    }
+
+    /**
+     * Requirement 9.2 — record authorisation denials.
+     *
+     * A denial is a security signal, not a user error: one is noise, a burst
+     * against one account is an attempt. Logging them puts that pattern in the
+     * same trail as the writes themselves.
+     *
+     * Two things this deliberately does NOT do. It does not log allowed checks —
+     * Gate::allows() runs many times per page render and the audit table would
+     * become unreadable. And it does not log the view abilities, because a panel
+     * renders a navigation item by asking whether each resource is viewable, so
+     * every page load by a limited-role user would emit a handful of denials that
+     * represent nothing more than a correctly hidden menu entry.
+     */
+    protected function logAuthorisationDenials(): void
+    {
+        Gate::after(function (User $user, string $ability, ?bool $result, array $arguments): void {
+            if ($result !== false) {
+                return;
+            }
+
+            if ($this->isNoisyAbility($ability)) {
+                return;
+            }
+
+            $subject = $arguments[0] ?? null;
+
+            $logger = activity('cms')
+                ->causedBy($user)
+                ->withProperties([
+                    'ability' => $ability,
+                    'subject_type' => is_object($subject) ? $subject::class : null,
+                    'ip' => request()->ip(),
+                ])
+                ->event('denied');
+
+            if ($subject instanceof Model && $subject->exists) {
+                $logger->performedOn($subject);
+            }
+
+            $logger->log("denied:{$ability}");
+        });
+    }
+
+    /**
+     * Abilities checked as part of rendering rather than as part of acting.
+     */
+    protected function isNoisyAbility(string $ability): bool
+    {
+        return str_starts_with($ability, 'viewAny')
+            || str_starts_with($ability, 'view')
+            || str_ends_with($ability, '.view')
+            || $ability === 'panel.access';
     }
 }

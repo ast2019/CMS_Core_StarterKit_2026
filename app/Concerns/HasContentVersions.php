@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Concerns;
 
 use App\Models\ContentVersion;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Collection;
+use Spatie\Translatable\HasTranslations;
 
 /**
  * Restorable editorial snapshots. Requirement 3.7.
@@ -68,6 +71,26 @@ trait HasContentVersions
     }
 
     /**
+     * Most recent snapshots, newest first, with their authors eager-loaded.
+     *
+     * The Versionable contract exposes this rather than the relation, so callers
+     * holding only a Model-typed record can read the history without the relation
+     * generics problem (see the contract for why).
+     *
+     * @return Collection<int, ContentVersion>
+     */
+    public function latestVersions(int $limit = 20): Collection
+    {
+        return $this->versions()->with('author')->limit($limit)->get();
+    }
+
+    public function findVersion(int|string $versionId): ?ContentVersion
+    {
+        /** @var ContentVersion|null */
+        return $this->versions()->whereKey($versionId)->first();
+    }
+
+    /**
      * Restore a previous snapshot.
      *
      * The restore is itself an update, so it produces a new version capturing
@@ -102,10 +125,57 @@ trait HasContentVersions
      */
     protected function versionablePayload(array $attributes): array
     {
-        return array_intersect_key(
+        $payload = array_intersect_key(
             $attributes,
             array_flip($this->versionedAttributes()),
         );
+
+        return $this->normaliseTranslatableValues($payload);
+    }
+
+    /**
+     * Guarantee translatable values are stored as locale maps, not JSON strings.
+     *
+     * getOriginal() can hand back either shape depending on whether the attribute
+     * had been read through spatie's accessor before the save. An inconsistent
+     * payload means every consumer — the restore path, the history view, a test —
+     * has to handle both, and the one that forgets fails on a subset of records
+     * for reasons that look random.
+     *
+     * Normalising once here makes the snapshot shape a guarantee.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function normaliseTranslatableValues(array $payload): array
+    {
+        /*
+         * Both models using this trait are translatable today, so a
+         * method_exists() probe here is always true and static analysis says so.
+         * The capability is still worth stating explicitly for a future
+         * non-translatable versioned model, so it is expressed as a trait check.
+         */
+        $translatable = in_array(
+            HasTranslations::class,
+            class_uses_recursive(static::class),
+            true,
+        )
+            ? $this->getTranslatableAttributes()
+            : [];
+
+        foreach ($translatable as $attribute) {
+            if (! array_key_exists($attribute, $payload) || ! is_string($payload[$attribute])) {
+                continue;
+            }
+
+            $decoded = json_decode($payload[$attribute], true);
+
+            if (is_array($decoded)) {
+                $payload[$attribute] = $decoded;
+            }
+        }
+
+        return $payload;
     }
 
     protected function nextVersionNumber(): int

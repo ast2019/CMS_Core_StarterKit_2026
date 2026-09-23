@@ -14,6 +14,7 @@ use App\Concerns\IsAuditable;
 use App\Contracts\HasFeaturedMedia;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
+use App\Contracts\Versionable;
 use App\Enums\ContentStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -45,7 +46,7 @@ use Spatie\Translatable\HasTranslations;
  * @property-read Collection<int, Category> $categories
  * @property-read Collection<int, Tag> $tags
  */
-class Content extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus
+class Content extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus, Versionable
 {
     use HasContentVersions;
     use HasFactory;
