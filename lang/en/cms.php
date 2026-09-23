@@ -265,4 +265,20 @@ return [
     'contact' => [
         'received' => 'Your message has been received. Thank you for getting in touch.',
     ],
+
+    'translation_review' => [
+        'title' => 'Translation review',
+        'intro' => 'Each row is one locale of one record that needs work. The source locale is excluded, because it is the reference rather than a translation.',
+        'locale' => 'Locale',
+        'source_text' => 'Source text',
+        'last_reviewed_by' => 'Last reviewed by',
+        'open' => 'Edit record',
+        'confirm' => 'Approving marks this translation reviewed and makes it eligible for that locale\'s sitemap. If the source text changes later it is flagged as outdated automatically.',
+        'reviewed' => 'Marked the :locale translation as reviewed.',
+        'nothing_to_review' => 'Nothing to review',
+        'nothing_to_review_hint' => 'This locale has no text yet. Enter the translation first.',
+        'orphaned' => 'The record this translation belongs to could not be found.',
+        'empty' => 'Every translation is reviewed',
+        'empty_hint' => 'No locale is waiting for translation or an update.',
+    ],
 ];

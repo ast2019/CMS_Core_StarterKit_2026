@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Contracts;
 
 use App\Enums\TranslationStatus;
+use App\Models\TranslationState;
 
 /**
  * A model whose per-locale translations have a reviewable lifecycle.
@@ -26,4 +27,21 @@ interface TracksTranslationStatus
     public function isSitemapEligibleFor(string $locale): bool;
 
     public function sourceContentHash(): string;
+
+    /**
+     * Whether a locale holds any translated text at all.
+     *
+     * Part of the contract because the review UI must refuse to sign off on an
+     * empty locale: marking it reviewed would make it sitemap-eligible and publish
+     * a blank page. A caller holding only a Model needs to ask this before acting.
+     */
+    public function hasAnyTranslationFor(string $locale): bool;
+
+    /**
+     * Mark a locale reviewed, pinning the source hash it was verified against
+     * (Requirement 5.4).
+     */
+    public function markTranslationReviewed(string $locale, ?int $userId = null): TranslationState;
+
+    public function sourceLocale(): string;
 }
