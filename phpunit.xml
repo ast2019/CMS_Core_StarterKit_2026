@@ -26,6 +26,19 @@
         </include>
     </source>
     <php>
+        <!--
+            PHP's 128M CLI default is not enough for this suite. Several tests attach
+            real image files and Media Library generates six conversions per asset
+            inline (QUEUE_CONNECTION=sync in tests), so memory accumulates across a
+            full run and the suite dies mid-way with a fatal in the MIME guesser —
+            which looks like a bug in media handling rather than a limit.
+
+            Set here rather than on the command line because `php artisan test` spawns
+            Pest as a subprocess, so `php -d memory_limit=...` does not reach it. An
+            <ini> entry applies however the suite is launched, including in CI.
+        -->
+        <ini name="memory_limit" value="512M"/>
+
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="APP_LOCALE" value="fa"/>

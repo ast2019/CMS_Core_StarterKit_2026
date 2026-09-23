@@ -39,6 +39,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL of the PUBLIC site, which is a separate deployment: this Core is
+    | headless (blueprint §1), so canonical URLs, hreflang annotations and sitemap
+    | entries must point at the frontend rather than at this API host.
+    |
+    | Left empty it falls back to APP_URL, which is correct for a single-host setup.
+    | Getting this wrong is quietly expensive — a sitemap full of API URLs would be
+    | submitted to Search Console and index the wrong hostname.
+    |
+    */
+
+    'frontend_url' => env('CMS_FRONTEND_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Locales
     |--------------------------------------------------------------------------
     |

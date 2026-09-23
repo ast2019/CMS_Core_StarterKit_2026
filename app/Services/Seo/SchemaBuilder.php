@@ -1,0 +1,457 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Seo;
+
+use App\Models\Category;
+use App\Models\ContactSetting;
+use App\Models\Content;
+use App\Models\MediaAsset;
+use App\Models\Setting;
+use App\Support\TipTap;
+use Spatie\SchemaOrg\Schema;
+
+/**
+ * JSON-LD builders for every type the blueprint requires.
+ *
+ * Requirement 7.3: Article/NewsArticle, Organization, LocalBusiness,
+ * BreadcrumbList, ImageObject, VideoObject, FAQPage — each per locale.
+ *
+ * Two rules run through all of them:
+ *
+ *  - Omit rather than guess. An incomplete schema is worse than none: Google reports
+ *    it as an error and may distrust the rest of the page's markup. So every builder
+ *    returns null when its required properties cannot be satisfied, instead of
+ *    emitting a half-filled object.
+ *
+ *  - Never emit unreviewed content as fact. A machine-translated headline inside
+ *    NewsArticle markup is a claim about the publisher's content, which is a
+ *    different thing from displaying fallback text with a flag on it.
+ */
+class SchemaBuilder
+{
+    public function __construct(private readonly UrlBuilder $urls) {}
+
+    /**
+     * NewsArticle for an article, or null when it is not publicly indexable.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function article(Content $content, string $locale): ?array
+    {
+        if (! $content->isLive()) {
+            // Structured data for a draft would be a public claim about content that
+            // is not public.
+            return null;
+        }
+
+        $url = $this->urls->canonicalFor($content, $locale);
+
+        if ($url === null) {
+            return null;
+        }
+
+        $headline = (string) $content->getTranslation('title', $locale, useFallbackLocale: true);
+
+        if ($headline === '') {
+            return null;
+        }
+
+        $article = Schema::newsArticle()
+            ->headline($headline)
+            ->url($url)
+            ->inLanguage($locale)
+            ->datePublished($content->publish_date)
+            ->dateModified($content->updated_at);
+
+        $description = $content->metaDescriptionFor($locale);
+
+        if ($description !== '') {
+            $article->description($description);
+        }
+
+        $body = $content->getTranslation('body', $locale, useFallbackLocale: true);
+        $plain = TipTap::toPlainText($body);
+
+        if ($plain !== '') {
+            $article->articleBody($plain);
+        }
+
+        if ($content->author !== null) {
+            $article->author(Schema::person()->name($content->author->name));
+        }
+
+        $publisher = $this->organization($locale);
+
+        if ($publisher !== null) {
+            $article->publisher(Schema::organization()->name($publisher['name']));
+        }
+
+        $featured = $content->featuredImage();
+
+        if ($featured !== null) {
+            $image = $this->imageObject($featured, $locale);
+
+            if ($image !== null) {
+                $article->image($image['url']);
+            }
+        }
+
+        $section = $content->primaryCategory;
+
+        if ($section !== null) {
+            $article->articleSection(
+                (string) $section->getTranslation('name', $locale, useFallbackLocale: true),
+            );
+        }
+
+        return $article->toArray();
+    }
+
+    /**
+     * Organization, from the Settings singleton.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function organization(string $locale): ?array
+    {
+        $siteName = Setting::get(Setting::SITE_NAME);
+
+        $name = is_array($siteName)
+            ? ($siteName[$locale] ?? $siteName[config('cms.locales.source')] ?? null)
+            : $siteName;
+
+        if (blank($name)) {
+            // `name` is required; without it the object is invalid.
+            return null;
+        }
+
+        $organization = Schema::organization()
+            ->name((string) $name)
+            ->url($this->urls->localeHome($locale));
+
+        /*
+         * Not annotated as array<int, string>: the value comes from a JSON settings
+         * column an editor filled in, so an entry could be anything. Filtering on
+         * is_string() first is what makes the rest of this safe, and asserting the type
+         * instead would just move the failure somewhere less obvious.
+         *
+         * @var array<array-key, mixed> $social
+         */
+        $social = (array) Setting::get(Setting::SOCIAL_LINKS, []);
+
+        $urls = array_values(array_filter(
+            $social,
+            fn (mixed $url): bool => is_string($url) && str_starts_with($url, 'http'),
+        ));
+
+        if ($urls !== []) {
+            // sameAs is how a search engine links a site to its social profiles.
+            $organization->sameAs($urls);
+        }
+
+        return $organization->toArray();
+    }
+
+    /**
+     * LocalBusiness, from the Contact settings.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function localBusiness(string $locale): ?array
+    {
+        $contact = ContactSetting::current();
+        $organization = $this->organization($locale);
+
+        if ($organization === null) {
+            return null;
+        }
+
+        /*
+         * LocalBusiness without an address or coordinates is indistinguishable from
+         * Organization and adds nothing, so it is omitted rather than emitted empty.
+         */
+        $address = $contact->getTranslation('address', $locale, useFallbackLocale: true);
+
+        if (blank($address) && ! $contact->hasGeoCoordinates()) {
+            return null;
+        }
+
+        $business = Schema::localBusiness()
+            ->name($organization['name'])
+            ->url($this->urls->localeHome($locale));
+
+        if (filled($address)) {
+            $business->address(
+                Schema::postalAddress()->streetAddress((string) $address),
+            );
+        }
+
+        if ($contact->hasGeoCoordinates()) {
+            $business->geo(
+                Schema::geoCoordinates()
+                    ->latitude($contact->map_latitude)
+                    ->longitude($contact->map_longitude),
+            );
+        }
+
+        if (filled($contact->phone)) {
+            $business->telephone($contact->phone);
+        }
+
+        if (filled($contact->email)) {
+            $business->email($contact->email);
+        }
+
+        return $business->toArray();
+    }
+
+    /**
+     * BreadcrumbList from a record's category ancestry.
+     *
+     * Decision D-2 is what makes this possible: an article has one PRIMARY category,
+     * so there is a single canonical path. With only a many-to-many relation there
+     * would be no non-arbitrary answer to "which trail?".
+     *
+     * @return array<string, mixed>|null
+     */
+    public function breadcrumbs(Content $content, string $locale): ?array
+    {
+        $url = $this->urls->canonicalFor($content, $locale);
+
+        if ($url === null) {
+            return null;
+        }
+
+        $items = [
+            ['name' => $this->homeName($locale), 'url' => $this->urls->localeHome($locale)],
+        ];
+
+        $category = $content->primaryCategory;
+
+        if ($category !== null) {
+            // Ancestors are nearest-first, so reverse for a root-to-leaf trail.
+            /** @var list<Category> $chain */
+            $chain = [...array_reverse($category->ancestors()), $category];
+
+            foreach ($chain as $node) {
+                $nodeUrl = $this->urls->canonicalFor($node, $locale);
+
+                if ($nodeUrl === null) {
+                    continue;
+                }
+
+                $items[] = [
+                    'name' => (string) $node->getTranslation('name', $locale, useFallbackLocale: true),
+                    'url' => $nodeUrl,
+                ];
+            }
+        }
+
+        $items[] = [
+            'name' => (string) $content->getTranslation('title', $locale, useFallbackLocale: true),
+            'url' => $url,
+        ];
+
+        $listItems = [];
+
+        foreach ($items as $position => $item) {
+            /*
+             * `item` is typed to accept schema.org Thing contracts, but a plain URL
+             * string is valid JSON-LD for a breadcrumb entry and is what Google's own
+             * examples use. setProperty() sets it without the contract constraint.
+             */
+            $listItems[] = Schema::listItem()
+                ->position($position + 1)
+                ->name($item['name'])
+                ->setProperty('item', $item['url']);
+        }
+
+        return Schema::breadcrumbList()->itemListElement($listItems)->toArray();
+    }
+
+    /**
+     * ImageObject for a media asset.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function imageObject(MediaAsset $asset, string $locale): ?array
+    {
+        if (! $asset->isImage()) {
+            return null;
+        }
+
+        $media = $asset->getFirstMedia('file');
+
+        if ($media === null) {
+            return null;
+        }
+
+        $image = Schema::imageObject()
+            ->url($media->getFullUrl())
+            ->contentUrl($media->getFullUrl());
+
+        $alt = $asset->altTextFor($locale);
+
+        if ($alt !== '') {
+            // Requirement 2.7 makes alt text mandatory, so this is normally present —
+            // and it doubles as the schema's caption.
+            $image->caption($alt);
+        }
+
+        /*
+         * width/height are typed to Distance/QuantitativeValue contracts, but
+         * schema.org accepts a bare number for an ImageObject and that is what
+         * consumers expect. setProperty() bypasses the contract without changing the
+         * emitted JSON.
+         */
+        if ($asset->width !== null) {
+            $image->setProperty('width', $asset->width);
+        }
+
+        if ($asset->height !== null) {
+            $image->setProperty('height', $asset->height);
+        }
+
+        return $image->toArray();
+    }
+
+    /**
+     * VideoObject for a media asset.
+     *
+     * Decision D-6: a thumbnail is REQUIRED by Google, duration is only recommended.
+     * So a video without a thumbnail returns null rather than emitting an invalid
+     * object, while a missing duration merely omits that property.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function videoObject(MediaAsset $asset, string $locale): ?array
+    {
+        if (! $asset->isVideo()) {
+            return null;
+        }
+
+        $thumbnailUrl = $asset->getFirstMedia('video_thumbnail')?->getFullUrl();
+        $contentUrl = $asset->getFirstMedia('file')?->getFullUrl();
+        $embedUrl = $asset->external_embed_url;
+
+        if ($thumbnailUrl === null || ($contentUrl === null && blank($embedUrl))) {
+            return null;
+        }
+
+        $name = $asset->altTextFor($locale);
+
+        if ($name === '') {
+            // `name` is required, and alt_text is the only human description an asset
+            // carries.
+            return null;
+        }
+
+        $video = Schema::videoObject()
+            ->name($name)
+            ->thumbnailUrl($thumbnailUrl)
+            ->uploadDate($asset->created_at);
+
+        $caption = $asset->getTranslation('caption', $locale, useFallbackLocale: true);
+
+        $video->description(filled($caption) ? (string) $caption : $name);
+
+        if ($contentUrl !== null) {
+            $video->contentUrl($contentUrl);
+        }
+
+        if (filled($embedUrl)) {
+            $video->embedUrl((string) $embedUrl);
+        }
+
+        if ($asset->duration_seconds !== null) {
+            // ISO 8601 duration — schema.org requires that format, not seconds.
+            $video->setProperty('duration', $this->isoDuration($asset->duration_seconds));
+        }
+
+        return $video->toArray();
+    }
+
+    /**
+     * FAQPage built from question-style headings in the body.
+     *
+     * Blueprint §6's GEO strategy asks for question-based headings; this turns them
+     * into markup. Returns null below two pairs, because a one-entry FAQPage is not
+     * an FAQ and Google is liable to treat it as markup spam.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function faqPage(Content $content, string $locale): ?array
+    {
+        $body = $content->getTranslation('body', $locale, useFallbackLocale: true);
+        $headings = TipTap::headings($body);
+
+        $questions = array_values(array_filter($headings, fn (string $h): bool => $this->looksLikeQuestion($h)));
+
+        if (count($questions) < 2) {
+            return null;
+        }
+
+        $answer = $content->getTranslation('answer_paragraph', $locale, useFallbackLocale: true);
+        $fallbackAnswer = filled($answer)
+            ? (string) $answer
+            : TipTap::toPlainText($body);
+
+        if ($fallbackAnswer === '') {
+            return null;
+        }
+
+        $entities = [];
+
+        foreach ($questions as $question) {
+            $entities[] = Schema::question()
+                ->name($question)
+                ->acceptedAnswer(Schema::answer()->text($fallbackAnswer));
+        }
+
+        return Schema::fAQPage()->mainEntity($entities)->toArray();
+    }
+
+    /**
+     * Every applicable schema for an article, ready to emit as a @graph.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forArticle(Content $content, string $locale): array
+    {
+        return array_values(array_filter([
+            $this->article($content, $locale),
+            $this->breadcrumbs($content, $locale),
+            $this->organization($locale),
+            $this->faqPage($content, $locale),
+        ]));
+    }
+
+    private function looksLikeQuestion(string $heading): bool
+    {
+        // Latin '?' and Arabic/Persian '؟' both appear in Persian copy depending on
+        // the editor's keyboard, so both must count.
+        return str_ends_with(trim($heading), '?') || str_ends_with(trim($heading), '؟');
+    }
+
+    private function isoDuration(int $seconds): string
+    {
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+        $remaining = $seconds % 60;
+
+        return sprintf('PT%dH%dM%dS', $hours, $minutes, $remaining);
+    }
+
+    private function homeName(string $locale): string
+    {
+        $siteName = Setting::get(Setting::SITE_NAME);
+
+        if (is_array($siteName)) {
+            return (string) ($siteName[$locale] ?? $siteName[config('cms.locales.source')] ?? 'Home');
+        }
+
+        return (string) ($siteName ?? 'Home');
+    }
+}

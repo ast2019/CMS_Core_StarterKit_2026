@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\HandleRedirects;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -32,6 +33,21 @@ return Application::configure(basePath: dirname(__DIR__))
          *
          * Requirements 8.5, 8.6.
          */
+        /*
+         * Redirect engine (Requirement 7.5).
+         *
+         * GLOBAL, not prependToGroup('web'). A group's middleware only runs once a
+         * route in that group matches — but a moved URL has no route by definition, so
+         * a group-scoped redirect engine 404s on exactly the paths it exists to handle.
+         * That was the first implementation and every redirect test failed with a 404.
+         *
+         * Being global means it also sees API and panel requests, which it must not
+         * touch: redirecting an API consumer would turn a JSON response into an HTML
+         * redirect body. HandleRedirects excludes those prefixes itself, so the
+         * exclusion lives with the logic rather than in this registration.
+         */
+        $middleware->prepend(HandleRedirects::class);
+
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,

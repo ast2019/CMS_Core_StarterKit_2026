@@ -8,6 +8,7 @@ use App\Models\MediaAsset;
 use App\Models\User;
 use Database\Factories\Concerns\GeneratesPersianText;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<MediaAsset>
@@ -37,6 +38,70 @@ class MediaAssetFactory extends Factory
     public function withoutAltText(): static
     {
         return $this->state(fn (): array => ['alt_text' => null]);
+    }
+
+    /**
+     * Attach a real file to the `file` collection.
+     *
+     * Needed by anything that reads a URL: image sitemaps, og:image, ImageObject
+     * schema and the API's `variants` map all go through getFirstMedia('file'), and a
+     * bare MediaAsset row has none — so without this those features look broken in
+     * tests for a reason that has nothing to do with them.
+     *
+     * Uses addMediaFromString rather than a fixture file so the factory carries no
+     * binary asset and works on a faked disk. RULE #9: it lands on the local disk
+     * configured in config/cms.php, like every other upload.
+     */
+    public function withFile(string $collection = 'file'): static
+    {
+        return $this->afterCreating(function (MediaAsset $asset) use ($collection): void {
+            $asset
+                ->addMediaFromString($this->samplePng())
+                ->usingFileName(Str::random(12).'.png')
+                ->preservingOriginal()
+                ->toMediaCollection($collection);
+        });
+    }
+
+    /**
+     * A locally hosted video WITH a thumbnail, so it forms a valid video sitemap
+     * entry (Decision D-6).
+     */
+    public function videoWithThumbnail(): static
+    {
+        return $this->video()
+            ->withFile()
+            ->withFile('video_thumbnail');
+    }
+
+    /**
+     * A small, genuinely valid PNG.
+     *
+     * Generated with GD rather than pasted as a base64 literal. The literal route was
+     * tried first and produced a truncated file that Media Library accepted and then
+     * failed to convert — "gd-png: fatal libpng error: Read Error: truncated data" —
+     * which is a confusing failure to hit while testing sitemaps.
+     *
+     * 16x16 rather than 1x1 so the conversion pipeline (which resizes) has something
+     * real to work on.
+     */
+    private function samplePng(): string
+    {
+        $image = imagecreatetruecolor(16, 16);
+
+        if ($image === false) {
+            throw new \RuntimeException('GD is required to generate media fixtures.');
+        }
+
+        imagefill($image, 0, 0, imagecolorallocate($image, 200, 200, 200));
+
+        ob_start();
+        imagepng($image);
+        $bytes = (string) ob_get_clean();
+
+        imagedestroy($image);
+
+        return $bytes;
     }
 
     /**

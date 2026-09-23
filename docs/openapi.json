@@ -899,6 +899,56 @@
                 }
             }
         },
+        "/v1/news/{slug}/seo": {
+            "get": {
+                "operationId": "v1.news.seo",
+                "tags": [
+                    "Seo"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/slides": {
             "get": {
                 "operationId": "v1.slides",
