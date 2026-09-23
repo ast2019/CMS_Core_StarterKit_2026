@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Concerns;
 
 use App\Enums\ContentStatus;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 
@@ -113,9 +114,22 @@ trait HasPublishStatus
          * `updated` row among every other column change.
          */
         if (in_array($target, [ContentStatus::Published, ContentStatus::Archived], strict: true)) {
+            /*
+             * Resolve the causer to a MODEL, never pass a bare id.
+             *
+             * activitylog's CauserResolver turns an int into a model through the
+             * default auth provider, which is null when the request came in on the
+             * Sanctum guard — so publishing via the Management API died with
+             * "Call to a member function retrieveById() on null" while the same code
+             * worked from the panel.
+             */
+            $causer = $userId !== null
+                ? User::query()->find($userId)
+                : auth()->user();
+
             activity('cms')
                 ->performedOn($this)
-                ->causedBy($userId ?? auth()->id())
+                ->causedBy($causer)
                 ->withProperties([
                     'from' => $current->value,
                     'to' => $target->value,

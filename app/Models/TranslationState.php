@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Per-locale translation status for any translatable record.
@@ -21,6 +22,9 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property TranslationStatus $status
  * @property string $locale
  * @property string|null $source_hash
+ * @property Carbon|null $reviewed_at
+ * @property int|null $reviewed_by
+ * @property Model|null $translatable
  */
 class TranslationState extends Model
 {

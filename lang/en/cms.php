@@ -262,4 +262,7 @@ return [
         'keep_notice' => 'Only the most recent :count versions are kept.',
     ],
 
+    'contact' => [
+        'received' => 'Your message has been received. Thank you for getting in touch.',
+    ],
 ];

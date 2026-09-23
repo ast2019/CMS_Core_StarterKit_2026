@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Enums\UserRole;
 use App\Models;
 use App\Models\User;
+use App\Observers\DeliveryCacheObserver;
 use App\Policies;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -53,6 +54,7 @@ class CmsServiceProvider extends ServiceProvider
     {
         $this->registerAbilityGates();
         $this->registerPolicies();
+        $this->registerDeliveryCacheInvalidation();
     }
 
     protected function registerPolicies(): void
@@ -187,5 +189,16 @@ class CmsServiceProvider extends ServiceProvider
             || str_starts_with($ability, 'view')
             || str_ends_with($ability, '.view')
             || $ability === 'panel.access';
+    }
+
+    /**
+     * Requirement 8.4 — invalidate cached Delivery responses by tag when the
+     * underlying content changes.
+     */
+    protected function registerDeliveryCacheInvalidation(): void
+    {
+        foreach (array_keys(DeliveryCacheObserver::MODEL_TAGS) as $model) {
+            $model::observe(DeliveryCacheObserver::class);
+        }
     }
 }

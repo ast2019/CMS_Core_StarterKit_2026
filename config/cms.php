@@ -54,6 +54,29 @@ return [
         'supported' => ['fa', 'en', 'ar'],
         'source' => env('CMS_SOURCE_LOCALE', 'fa'),
         'rtl' => ['fa', 'ar'],
+
+        /*
+         * Whether the Delivery API may infer the locale from Accept-Language when
+         * the caller did not ask for one.
+         *
+         * Default OFF, which is the opposite of what feels natural. Three reasons:
+         *
+         *  1. This kit launches Persian-only with en/ar structural. With
+         *     negotiation on, every English-speaking browser is served locale=en,
+         *     which has no reviewed translation, so it receives fallback Persian
+         *     flagged is_fallback — a worse default than simply serving the site's
+         *     actual language.
+         *  2. The frontend owns the URL structure (/fa/, /en/, /ar/) and passes the
+         *     locale explicitly. Header inference only applies to callers that
+         *     forgot, and silently guessing for them hides the omission.
+         *  3. Responses are cached (Requirement 8.4). Varying on Accept-Language
+         *     multiplies cache entries by the number of distinct header values a
+         *     shared cache sees, which is effectively unbounded.
+         *
+         * Turn it on for a site whose frontend genuinely relies on content
+         * negotiation.
+         */
+        'negotiate_from_header' => env('CMS_NEGOTIATE_LOCALE', false),
     ],
 
     /*
