@@ -1,0 +1,72 @@
+/*
+ * RULE #4 — ADMIN FONT: Vazirmatn, bundled locally, @font-face, no external CDN.
+ *
+ * Every src below is a same-origin relative path. There is deliberately no
+ * @import from fonts.googleapis.com, no https:// host, and no CDN reference
+ * anywhere in this file. tests/Architecture/NoExternalCdnTest.php scans the
+ * served CSS for external hosts and fails the build if one appears.
+ *
+ * Vazirmatn by Saber Rastikerdar, SIL Open Font License 1.1.
+ * Upstream: https://github.com/rastikerdar/vazirmatn (v33.003)
+ * License text shipped alongside at /fonts/vazirmatn/OFL.txt
+ *
+ * The variable font carries weights 100-900 in a single 111KB file, so the
+ * whole panel needs one font request instead of five. The static faces below
+ * it are a fallback for engines without variable-font support; browsers pick
+ * whichever @font-face block they can use and ignore the rest.
+ *
+ * Requirements 4.2, 4.3.
+ */
+
+/* Variable font — preferred. Covers the full 100-900 range. */
+@font-face {
+    font-family: 'Vazirmatn';
+    src: url('../fonts/vazirmatn/Vazirmatn-Variable.woff2') format('woff2-variations'),
+         url('../fonts/vazirmatn/Vazirmatn-Variable.woff2') format('woff2') tech(variations);
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Static fallbacks for engines without variable-font support. */
+@font-face {
+    font-family: 'Vazirmatn Static';
+    src: url('../fonts/vazirmatn/Vazirmatn-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn Static';
+    src: url('../fonts/vazirmatn/Vazirmatn-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn Static';
+    src: url('../fonts/vazirmatn/Vazirmatn-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazirmatn Static';
+    src: url('../fonts/vazirmatn/Vazirmatn-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/*
+ * Filament reads its font family from this CSS custom property, which the
+ * panel's font() call sets. Declaring it here too means the panel renders in
+ * Vazirmatn even before the Vite-built theme stylesheet loads, avoiding a
+ * flash of Latin fallback text on a Persian RTL interface.
+ */
+:root {
+    --font-family: 'Vazirmatn', 'Vazirmatn Static', system-ui, sans-serif;
+}

@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # SQLite job — the fast feedback loop that mirrors local development.
+  # ---------------------------------------------------------------------------
+  tests-sqlite:
+    name: Tests (SQLite)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # PHP 8.4 is the floor, not a preference: spatie/laravel-activitylog 5.x,
+          # laravel-sitemap 8.x and schema-org 5.x all require ^8.4.
+          php-version: '8.4'
+          # gd is needed by Media Library conversions, which several tests exercise.
+          extensions: mbstring, intl, gd, exif, pdo_sqlite, sqlite3, zip, bcmath
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+
+      - run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan storage:link
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # MUST run before the tests. tests/Architecture/NoExternalCdnTest scans the BUILT
+      # assets for external font and CDN hosts (RULE #4), and public/build is gitignored
+      # — so without a build that test fails on a clean checkout, and the rule it guards
+      # would look broken rather than unverified.
+      - name: Build assets
+        run: npm run build
+
+      - name: Code style
+        run: ./vendor/bin/pint --test
+
+      - name: Static analysis
+        run: ./vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+      - name: Tests
+        run: php artisan test
+
+      # RULE #3 is gated by tests/Architecture/OpenApiSpecIsInSyncTest, inside the step
+      # above — deliberately NOT repeated as a `diff` step here.
+      #
+      # A byte-exact diff in CI would fail on every release: the spec's info.version is
+      # stamped from the `system_info` table, and a CI checkout has no released database,
+      # so it reports the initial version while the committed file carries the real one.
+      # The test compares the documented SHAPE and ignores that field for this reason.
+      # Version freshness is an operational check (`php artisan cms:audit-rules`), run
+      # against a real database at release/deploy time — see docs/deployment.md.
+
+  # ---------------------------------------------------------------------------
+  # MySQL job — the only place Decision D-1 is actually verifiable.
+  #
+  # Per-locale slug uniqueness relies on stored generated columns with unique indexes,
+  # which SQLite cannot express. Those tests skip locally, so without this job the
+  # database-level guarantee would never be exercised anywhere.
+  # ---------------------------------------------------------------------------
+  tests-mysql:
+    name: Tests (MySQL, Decision D-1)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: cms_core_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, exif, pdo_mysql, zip, bcmath
+          coverage: none
+
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+
+      - run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php artisan storage:link
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Tests against MySQL
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: cms_core_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php artisan test
+
+      # Proves the migration set applies cleanly to a real MySQL instance, including the
+      # generated-column migration that no-ops on SQLite and would otherwise never run.
+      - name: Migrations apply and roll back on MySQL
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: cms_core_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: |
+          php artisan migrate:fresh --force
+          php artisan migrate:rollback --force --step=100
+          php artisan migrate --force
+          php artisan db:seed --force

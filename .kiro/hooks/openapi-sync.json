@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "OpenAPI spec auto-sync",
+      "trigger": "PostFileSave",
+      "description": "Regenerates the committed OpenAPI spec whenever an API controller, resource, form request or route file is written, so RULE #3 (documentation auto-sync) cannot silently drift.",
+      "matcher": "(app/Http/Controllers/Api/|app/Http/Resources/|app/Http/Requests/|routes/api\\.php)",
+      "action": {
+        "type": "command",
+        "command": "cd \"$(dirname \"$0\")\" 2>/dev/null; REPO=/projects/sandbox/CMS_Core_StarterKit_2026; cd \"$REPO\" || exit 0; php artisan scramble:export >/dev/null 2>&1 && echo \"RULE #3: regenerated docs/openapi.json — review and commit the diff alongside your API change.\" || echo \"RULE #3: scramble:export failed; run it manually to refresh docs/openapi.json.\"",
+        "timeout": 120
+      }
+    }
+  ]
+}

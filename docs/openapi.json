@@ -1,0 +1,2521 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "CMS Core",
+        "version": "0.3.0",
+        "description": "Delivery API (public, read-only, cached) and Management API (Sanctum, admin-scoped). All routes are versioned under /api/v1/."
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8000/api"
+        }
+    ],
+    "paths": {
+        "/v1/contact": {
+            "post": {
+                "operationId": "v1.contact.store",
+                "tags": [
+                    "Contact"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreContactSubmissionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "\u067e\u06cc\u0627\u0645 \u0634\u0645\u0627 \u062f\u0631\u06cc\u0627\u0641\u062a \u0634\u062f. \u0633\u067e\u0627\u0633 \u0627\u0632 \u062a\u0645\u0627\u0633 \u0634\u0645\u0627."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            },
+            "get": {
+                "operationId": "v1.contact",
+                "summary": "Contact details and form labels",
+                "tags": [
+                    "Site"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/news": {
+            "get": {
+                "operationId": "v1.news.index",
+                "description": "Supports `locale`, `category`, `tag`, `per_page` and `page`.",
+                "summary": "List published news articles",
+                "tags": [
+                    "Content"
+                ],
+                "parameters": [
+                    {
+                        "name": "category",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "tag",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of items",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/news/{slug}": {
+            "get": {
+                "operationId": "v1.news.show",
+                "summary": "Fetch one published article by its per-locale slug",
+                "tags": [
+                    "Content"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/ContentResource"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "primary_category",
+                                                        "categories",
+                                                        "tags",
+                                                        "featured_image"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFoundHttpException"
+                    }
+                }
+            }
+        },
+        "/v1/manage/news": {
+            "get": {
+                "operationId": "v1.manage.news.index",
+                "description": "Unlike the Delivery API this is NOT restricted to live records \u2014 seeing\ndrafts is the point of a management endpoint.",
+                "summary": "List articles in every status",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 25
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated set of `ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "allOf": [
+                                                    {
+                                                        "$ref": "#/components/schemas/ContentResource"
+                                                    },
+                                                    {
+                                                        "type": "object",
+                                                        "required": [
+                                                            "primary_category",
+                                                            "categories",
+                                                            "tags",
+                                                            "featured_image"
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "links": {
+                                            "type": "object",
+                                            "properties": {
+                                                "first": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "last": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "prev": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "next": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "first",
+                                                "last",
+                                                "prev",
+                                                "next"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "current_page": {
+                                                    "type": "integer",
+                                                    "minimum": 1
+                                                },
+                                                "from": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "minimum": 1
+                                                },
+                                                "last_page": {
+                                                    "type": "integer",
+                                                    "minimum": 1
+                                                },
+                                                "links": {
+                                                    "type": "array",
+                                                    "description": "Generated paginator links.",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "url": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "label": {
+                                                                "type": "string"
+                                                            },
+                                                            "active": {
+                                                                "type": "boolean"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "url",
+                                                            "label",
+                                                            "active"
+                                                        ]
+                                                    }
+                                                },
+                                                "path": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "description": "Base path for paginator generated URLs."
+                                                },
+                                                "per_page": {
+                                                    "type": "integer",
+                                                    "description": "Number of items shown per page.",
+                                                    "minimum": 0
+                                                },
+                                                "to": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "description": "Number of the last item in the slice.",
+                                                    "minimum": 1
+                                                },
+                                                "total": {
+                                                    "type": "integer",
+                                                    "description": "Total number of items being paginated.",
+                                                    "minimum": 0
+                                                }
+                                            },
+                                            "required": [
+                                                "current_page",
+                                                "from",
+                                                "last_page",
+                                                "links",
+                                                "path",
+                                                "per_page",
+                                                "to",
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "links",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "v1.manage.news.store",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreContentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "slug": {
+                                            "type": "string"
+                                        },
+                                        "excerpt": {
+                                            "type": "string"
+                                        },
+                                        "body": {
+                                            "type": "string",
+                                            "description": "RULE #6 \u2014 the body is the structured TipTap document, not HTML. The\nfrontend renders nodes, which is what lets one article render as a\nweb page, an AMP page and a feed item without re-authoring."
+                                        },
+                                        "answer": {
+                                            "type": "string",
+                                            "description": "GEO (blueprint \u00a76). `answer` is the editor's self-contained\nparagraph; `headings` are extracted from the body so a consumer can\nbuild an FAQ or a jump list without parsing TipTap itself."
+                                        },
+                                        "headings": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "minItems": 0,
+                                            "maxItems": 0
+                                        },
+                                        "publish_date": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "author": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "null"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "name"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object"
+                                                }
+                                            ]
+                                        },
+                                        "primary_category": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "null"
+                                                },
+                                                {
+                                                    "$ref": "#/components/schemas/CategoryResource"
+                                                },
+                                                {
+                                                    "type": "object"
+                                                }
+                                            ]
+                                        },
+                                        "categories": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CategoryResource"
+                                            }
+                                        },
+                                        "tags": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/TagResource"
+                                            }
+                                        },
+                                        "featured_image": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "null"
+                                                },
+                                                {
+                                                    "$ref": "#/components/schemas/MediaAssetResource"
+                                                },
+                                                {
+                                                    "type": "object"
+                                                }
+                                            ]
+                                        },
+                                        "seo": {
+                                            "type": "object",
+                                            "properties": {
+                                                "meta_title": {
+                                                    "type": "string"
+                                                },
+                                                "meta_description": {
+                                                    "type": "string"
+                                                },
+                                                "robots": {
+                                                    "type": "string",
+                                                    "description": "Drafts and unreviewed translations are noindex automatically, so\na frontend that renders this verbatim cannot leak them to search."
+                                                }
+                                            },
+                                            "required": [
+                                                "meta_title",
+                                                "meta_description",
+                                                "robots"
+                                            ]
+                                        },
+                                        "related": {
+                                            "description": "Requirement 4.8 \u2014 auto-suggested related articles. Present only when\nexplicitly requested via ?include=related: computing it costs a scored\nquery per article, which must not run for every row of a listing.",
+                                            "type": [
+                                                "string",
+                                                "object"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                },
+                                                "is_fallback": {
+                                                    "type": "boolean"
+                                                },
+                                                "fallback_locale": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "translation_status": {
+                                                    "type": "null"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale",
+                                                "is_fallback",
+                                                "fallback_locale",
+                                                "translation_status"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "title",
+                                        "slug",
+                                        "excerpt",
+                                        "body",
+                                        "answer",
+                                        "headings",
+                                        "publish_date",
+                                        "status",
+                                        "author",
+                                        "primary_category",
+                                        "categories",
+                                        "tags",
+                                        "featured_image",
+                                        "seo",
+                                        "related",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/v1/manage/news/{content}": {
+            "get": {
+                "operationId": "v1.manage.news.show",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/ContentResource"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "primary_category",
+                                                        "categories",
+                                                        "tags",
+                                                        "featured_image"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "put": {
+                "operationId": "v1.manage.news.update",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateContentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/ContentResource"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "primary_category",
+                                                        "categories",
+                                                        "tags",
+                                                        "featured_image"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "v1.manage.news.destroy",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {}
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/manage/news/{content}/publish": {
+            "post": {
+                "operationId": "v1.manage.news.publish",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/ContentResource"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "primary_category",
+                                                        "categories",
+                                                        "tags",
+                                                        "featured_image"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/manage/news/{content}/archive": {
+            "post": {
+                "operationId": "v1.manage.news.archive",
+                "tags": [
+                    "ManagementContent"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ContentResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/ContentResource"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "primary_category",
+                                                        "categories",
+                                                        "tags",
+                                                        "featured_image"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/search": {
+            "get": {
+                "operationId": "v1.search",
+                "tags": [
+                    "Search"
+                ],
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 15
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                },
+                                                "query": {
+                                                    "type": "string"
+                                                },
+                                                "total": {
+                                                    "type": "integer"
+                                                },
+                                                "per_page": {
+                                                    "type": "integer"
+                                                },
+                                                "current_page": {
+                                                    "type": "integer"
+                                                },
+                                                "last_page": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale",
+                                                "query",
+                                                "total",
+                                                "per_page",
+                                                "current_page",
+                                                "last_page"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Search is temporarily unavailable."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "The search term is too short."
+                                        },
+                                        "errors": {
+                                            "type": "object",
+                                            "properties": {
+                                                "q": {
+                                                    "type": "array",
+                                                    "prefixItems": [
+                                                        {
+                                                            "type": "string",
+                                                            "const": "Provide at least 2 characters."
+                                                        }
+                                                    ],
+                                                    "minItems": 1,
+                                                    "maxItems": 1
+                                                }
+                                            },
+                                            "required": [
+                                                "q"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Search is not enabled."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/news/{slug}/seo": {
+            "get": {
+                "operationId": "v1.news.seo",
+                "tags": [
+                    "Seo"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/slides": {
+            "get": {
+                "operationId": "v1.slides",
+                "summary": "Active homepage slides, ordered, capped at the configured maximum",
+                "tags": [
+                    "Site"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of items",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/menus/{key}": {
+            "get": {
+                "operationId": "v1.menu",
+                "summary": "A named navigation menu, resolved for the locale as a nested tree",
+                "tags": [
+                    "Site"
+                ],
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "default": "header"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                },
+                                                "menu": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale",
+                                                "menu"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/settings": {
+            "get": {
+                "operationId": "v1.settings",
+                "summary": "Public site settings",
+                "tags": [
+                    "Site"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/not-found-page": {
+            "get": {
+                "operationId": "v1.not-found",
+                "summary": "The brandable 404 page (Requirement 3.8)",
+                "tags": [
+                    "Site"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "title": {
+                                                    "type": "string"
+                                                },
+                                                "slug": {
+                                                    "type": "string"
+                                                },
+                                                "blocks": {
+                                                    "type": "string",
+                                                    "description": "Named `blocks` to match the blueprint's \u00a73 vocabulary, though it holds\nthe same TipTap document shape as an article body."
+                                                },
+                                                "system_key": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "position": {
+                                                    "type": "integer"
+                                                },
+                                                "featured_image": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "null"
+                                                        },
+                                                        {
+                                                            "$ref": "#/components/schemas/MediaAssetResource"
+                                                        },
+                                                        {
+                                                            "type": "object"
+                                                        }
+                                                    ]
+                                                },
+                                                "seo": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "meta_title": {
+                                                            "type": "string"
+                                                        },
+                                                        "meta_description": {
+                                                            "type": "string"
+                                                        },
+                                                        "robots": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "meta_title",
+                                                        "meta_description",
+                                                        "robots"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "locale": {
+                                                            "type": "string"
+                                                        },
+                                                        "is_fallback": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "fallback_locale": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "translation_status": {
+                                                            "type": "null"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "locale",
+                                                        "is_fallback",
+                                                        "fallback_locale",
+                                                        "translation_status"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "title",
+                                                "slug",
+                                                "blocks",
+                                                "system_key",
+                                                "position",
+                                                "featured_image",
+                                                "seo",
+                                                "meta"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "No 404 page is configured."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/manage/translations/pending": {
+            "get": {
+                "operationId": "v1.manage.translations.pending",
+                "summary": "Records with translations needing attention, grouped by locale",
+                "tags": [
+                    "TranslationReview"
+                ],
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "locale": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "content": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "source_title": {
+                                                                "type": "string",
+                                                                "description": "Shown in the SOURCE locale: a reviewer needs the original text,\nsince the target field is by definition empty or stale."
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "source_title"
+                                                        ]
+                                                    },
+                                                    "reviewed_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "locale",
+                                                    "status",
+                                                    "content",
+                                                    "reviewed_at"
+                                                ]
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "integer"
+                                                },
+                                                "per_page": {
+                                                    "type": "integer"
+                                                },
+                                                "current_page": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total",
+                                                "per_page",
+                                                "current_page"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/manage/translations/{content}/{locale}/review": {
+            "post": {
+                "operationId": "v1.manage.translations.review",
+                "description": "Requirement 5.4 \u2014 this pins the source hash the translation was verified\nagainst, which is what later lets the engine flip it to `outdated` when the\nsource text moves on.",
+                "summary": "Mark a locale's translation as reviewed",
+                "tags": [
+                    "TranslationReview"
+                ],
+                "parameters": [
+                    {
+                        "name": "content",
+                        "in": "path",
+                        "required": true,
+                        "description": "The content ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "locale",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "reviewed_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "sitemap_eligible": {
+                                                    "type": "boolean",
+                                                    "description": "Now sitemap-eligible per Decision D-5, which is the operational\nconsequence a caller cares about."
+                                                }
+                                            },
+                                            "required": [
+                                                "locale",
+                                                "status",
+                                                "reviewed_at",
+                                                "sitemap_eligible"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "CategoryResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "parent_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "children": {
+                        "type": "array",
+                        "description": "Only when eager-loaded, so a listing does not trigger one query per\nrow (whenLoaded is the guard against that, not an optimisation).",
+                        "items": {
+                            "$ref": "#/components/schemas/CategoryResource"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "locale": {
+                                "type": "string"
+                            },
+                            "is_fallback": {
+                                "type": "boolean"
+                            },
+                            "fallback_locale": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "translation_status": {
+                                "type": "null"
+                            }
+                        },
+                        "required": [
+                            "locale",
+                            "is_fallback",
+                            "fallback_locale",
+                            "translation_status"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "description",
+                    "parent_id",
+                    "position",
+                    "meta"
+                ],
+                "title": "CategoryResource"
+            },
+            "ContentResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "excerpt": {
+                        "type": "string"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "RULE #6 \u2014 the body is the structured TipTap document, not HTML. The\nfrontend renders nodes, which is what lets one article render as a\nweb page, an AMP page and a feed item without re-authoring."
+                    },
+                    "answer": {
+                        "type": "string",
+                        "description": "GEO (blueprint \u00a76). `answer` is the editor's self-contained\nparagraph; `headings` are extracted from the body so a consumer can\nbuild an FAQ or a jump list without parsing TipTap itself."
+                    },
+                    "headings": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "minItems": 0,
+                        "maxItems": 0
+                    },
+                    "publish_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "author": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "primary_category": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/CategoryResource"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CategoryResource"
+                        }
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TagResource"
+                        }
+                    },
+                    "featured_image": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/MediaAssetResource"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "seo": {
+                        "type": "object",
+                        "properties": {
+                            "meta_title": {
+                                "type": "string"
+                            },
+                            "meta_description": {
+                                "type": "string"
+                            },
+                            "robots": {
+                                "type": "string",
+                                "description": "Drafts and unreviewed translations are noindex automatically, so\na frontend that renders this verbatim cannot leak them to search."
+                            }
+                        },
+                        "required": [
+                            "meta_title",
+                            "meta_description",
+                            "robots"
+                        ]
+                    },
+                    "related": {
+                        "type": "string",
+                        "description": "Requirement 4.8 \u2014 auto-suggested related articles. Present only when\nexplicitly requested via ?include=related: computing it costs a scored\nquery per article, which must not run for every row of a listing."
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "locale": {
+                                "type": "string"
+                            },
+                            "is_fallback": {
+                                "type": "boolean"
+                            },
+                            "fallback_locale": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "translation_status": {
+                                "type": "null"
+                            }
+                        },
+                        "required": [
+                            "locale",
+                            "is_fallback",
+                            "fallback_locale",
+                            "translation_status"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "slug",
+                    "excerpt",
+                    "body",
+                    "answer",
+                    "headings",
+                    "publish_date",
+                    "status",
+                    "seo",
+                    "meta"
+                ],
+                "title": "ContentResource"
+            },
+            "ContentStatus": {
+                "type": "string",
+                "description": "Editorial workflow: draft -> review -> published -> archived, with scheduling. Requirement 3.6.\n",
+                "enum": [
+                    "draft",
+                    "review",
+                    "published",
+                    "archived"
+                ],
+                "title": "ContentStatus"
+            },
+            "MediaAssetResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "alt_text": {
+                        "type": "string"
+                    },
+                    "caption": {
+                        "type": "string"
+                    },
+                    "width": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Requirement 7.6 \u2014 intrinsic dimensions are part of the payload so the\nfrontend can set width/height and reserve space. Without them the\nbrowser cannot avoid layout shift, and no amount of CSS on the client\nrecovers it."
+                    },
+                    "height": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "mime_type": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "size": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "variants": {
+                        "type": "object",
+                        "description": "Conversions are exposed as a map so the frontend can build a srcset\nwithout hardcoding this project's conversion names. RULE #9: every\nURL here is same-origin, served from the local public disk.",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "video": {
+                        "type": "object",
+                        "properties": {
+                            "duration_seconds": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "embed_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "thumbnail_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "sitemap_ready": {
+                                "type": "boolean",
+                                "description": "Decision D-6 \u2014 tells a consumer whether this video can legally\nappear in the video sitemap yet."
+                            }
+                        },
+                        "required": [
+                            "duration_seconds",
+                            "embed_url",
+                            "thumbnail_url",
+                            "sitemap_ready"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "type",
+                    "alt_text",
+                    "caption",
+                    "width",
+                    "height",
+                    "url",
+                    "mime_type",
+                    "size",
+                    "variants"
+                ],
+                "title": "MediaAssetResource"
+            },
+            "StoreContactSubmissionRequest": {
+                "type": "object",
+                "description": "The only write the Delivery API accepts.\n\nRequirements 3.1, 9.7 (every write validated through a Form Request).\n\nNote this does NOT violate Requirement 8.3's \"read-only\" Delivery API in spirit:\na contact form submission creates no content and reads nothing back. It is\nscoped to its own route with a much tighter rate limit than the read endpoints,\nbecause it is the one public endpoint that writes a row.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 120
+                    },
+                    "email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "email",
+                        "description": "At least one contact channel is required, but neither individually:\ndemanding an email address excludes the many Iranian users who would\nrather be called back, and demanding a phone number excludes everyone\nelse.",
+                        "maxLength": 190
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 40
+                    },
+                    "subject": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 190
+                    },
+                    "message": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 5000
+                    }
+                },
+                "required": [
+                    "name",
+                    "message"
+                ],
+                "title": "StoreContactSubmissionRequest"
+            },
+            "StoreContentRequest": {
+                "type": "object",
+                "description": "Requirement 9.7 \u2014 every write validated through a Form Request.",
+                "properties": {
+                    "title": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": "string",
+                                "maxLength": 255
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "fa"
+                        ]
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/ContentStatus"
+                    },
+                    "publish_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "primary_category_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "slug": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "excerpt": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "answer_paragraph": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "meta_title": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "meta_description": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "robots_meta": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "body": {
+                        "type": "array",
+                        "items": {
+                            "type": [
+                                "array",
+                                "null"
+                            ],
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "required": [
+                    "title"
+                ],
+                "title": "StoreContentRequest"
+            },
+            "TagResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug"
+                ],
+                "title": "TagResource"
+            },
+            "UpdateContentRequest": {
+                "type": "object",
+                "description": "Requirement 9.7.\n\nExtends the store rules and relaxes the required title: a PATCH that only moves\npublish_date must not have to resend the whole translatable payload.",
+                "properties": {
+                    "title": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": "string",
+                                "maxLength": 255
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/ContentStatus"
+                    },
+                    "publish_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "primary_category_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "slug": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "excerpt": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "answer_paragraph": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "meta_title": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "meta_description": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "robots_meta": {
+                        "type": "object",
+                        "properties": {
+                            "fa": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "en": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "ar": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "body": {
+                        "type": "array",
+                        "items": {
+                            "type": [
+                                "array",
+                                "null"
+                            ],
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "title": "UpdateContentRequest"
+            }
+        },
+        "responses": {
+            "NotFoundHttpException": {
+                "description": "Not found",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "ValidationException": {
+                "description": "Validation error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Errors overview."
+                                },
+                                "errors": {
+                                    "type": "object",
+                                    "description": "A detailed description of each field that failed validation.",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "required": [
+                                "message",
+                                "errors"
+                            ]
+                        }
+                    }
+                }
+            },
+            "AuthorizationException": {
+                "description": "Authorization error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "AuthenticationException": {
+                "description": "Unauthenticated",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "ModelNotFoundException": {
+                "description": "Not found",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

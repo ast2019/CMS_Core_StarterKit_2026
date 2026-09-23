@@ -1,0 +1,31 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - database
+        - config
+
+    # Level 6 per steering/tech.md. Higher levels would demand generic
+    # annotations on every Eloquent relation in the project before any of this
+    # code could run, which is a refactor rather than a quality gate.
+    level: 6
+
+    ignoreErrors:
+        # Trait methods legitimately depend on the using model providing Eloquent
+        # and spatie/laravel-translatable behaviour. A trait cannot declare that
+        # constraint in PHP, and the architecture tests assert the traits are only
+        # applied to models that satisfy it.
+        -
+            identifier: missingType.generics
+        -
+            message: '#Call to an undefined method .*::(getTranslation|setTranslation|getTranslations|getTranslatableAttributes|whereJsonContainsLocale|activitiesAsSubject|mergeCasts|mergeHidden)\(\)#'
+
+        # config/media-library.php is vendor-published and references
+        # Media Library PRO's TemporaryUpload, which this project does not license.
+        # The reference is an inert class-string in a config array; the constant is
+        # never resolved unless the Pro package is installed.
+        -
+            message: '#Class Spatie\\MediaLibraryPro\\Models\\TemporaryUpload not found#'
+            path: config/media-library.php
