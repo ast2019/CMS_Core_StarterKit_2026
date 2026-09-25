@@ -8,6 +8,8 @@ use App\Contracts\TracksTranslationStatus;
 use App\Enums\TranslationStatus;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\TranslationState;
+use App\Services\Translation\AiTranslationException;
+use App\Services\Translation\AiTranslator;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -153,6 +155,22 @@ class TranslationReview extends Page implements HasTable
                     ->url(fn (TranslationState $record): ?string => $this->editUrlFor($record))
                     ->visible(fn (TranslationState $record): bool => $this->editUrlFor($record) !== null),
 
+                Action::make('translateAi')
+                    ->label(__('cms.action.translate_ai'))
+                    ->icon('heroicon-o-sparkles')
+                    ->color('info')
+                    ->requiresConfirmation()
+                    ->modalDescription(__('cms.ai_translation.confirm'))
+                    // Visible only when the feature is switched on. Reviewers and
+                    // above may run it, matching who can act on the backlog; the
+                    // result still needs a human to sign off, so this does not
+                    // let an Author self-approve.
+                    ->visible(fn (): bool => AiTranslator::isEnabled())
+                    ->authorize(fn (): bool => auth()->user()?->can('translation.review') ?? false)
+                    ->action(function (TranslationState $record): void {
+                        $this->translateWithAi($record);
+                    }),
+
                 Action::make('markReviewed')
                     ->label(__('cms.action.review_translation'))
                     ->icon('heroicon-o-check-badge')
@@ -214,6 +232,43 @@ class TranslationReview extends Page implements HasTable
         }
 
         return null;
+    }
+
+    protected function translateWithAi(TranslationState $state): void
+    {
+        $record = $state->translatable;
+
+        // translatable is a morphTo typed to Model; narrow to the contract before
+        // handing it to the translator, exactly as markReviewed() does.
+        if (! $record instanceof TracksTranslationStatus) {
+            Notification::make()
+                ->title(__('cms.translation_review.orphaned'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            $result = app(AiTranslator::class)->translate($record, $state->locale);
+        } catch (AiTranslationException $exception) {
+            // The exception carries a localisation key, never the API key or a
+            // raw OpenRouter response, so surfacing it here cannot leak a secret.
+            Notification::make()
+                ->title(__('cms.ai_translation.failed'))
+                ->body(__($exception->translationKey))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title(__('cms.ai_translation.success', [
+                'locale' => TranslatableTabs::localeLabel($result->locale),
+            ]))
+            ->success()
+            ->send();
     }
 
     protected function markReviewed(TranslationState $state): void

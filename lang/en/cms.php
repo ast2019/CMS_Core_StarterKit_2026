@@ -173,6 +173,7 @@ return [
         'mark_read' => 'Mark as read',
         'review_translation' => 'Approve translation',
         'restore_version' => 'Restore this version',
+        'translate_ai' => 'Translate with AI',
     ],
 
     'blocks' => [
@@ -315,5 +316,34 @@ return [
         'orphaned' => 'The record this translation belongs to could not be found.',
         'empty' => 'Every translation is reviewed',
         'empty_hint' => 'No locale is waiting for translation or an update.',
+    ],
+
+    'settings' => [
+        'title' => 'Settings',
+        'save' => 'Save settings',
+        'saved' => 'Settings saved.',
+        'ai' => [
+            'section' => 'AI translation',
+            'section_help' => 'Machine-translate text fields from the source locale (Persian) into other locales via OpenRouter. The result still needs a human review before it is published.',
+            'enabled' => 'Enable AI translation',
+            'enabled_help' => 'When off, the "Translate with AI" action is hidden from the translation workflow.',
+            'model' => 'Model',
+            'model_help' => 'Defaults to openai/gpt-4o-mini and you can change it. Any valid OpenRouter model id is accepted.',
+            'api_key' => 'OpenRouter API key',
+            'api_key_help' => 'Stored in the database, not in the env file. Required to enable AI translation.',
+            'api_key_help_set' => 'A key is stored. Enter a new one to replace it; leaving it blank keeps the current key.',
+        ],
+    ],
+
+    'ai_translation' => [
+        'confirm' => 'This record\'s text fields will be translated from Persian into this locale and saved as machine-translated. The rich body is not translated and must be entered by hand. The result needs review before publishing.',
+        'success' => 'Machine-translated into :locale and awaiting review.',
+        'failed' => 'AI translation failed',
+        'error' => [
+            'disabled' => 'AI translation is not enabled. Turn it on from the Settings page.',
+            'missing_key' => 'The OpenRouter API key is not configured. Enter it on the Settings page.',
+            'request_failed' => 'The translation service could not be reached. Please try again shortly.',
+            'empty_source' => 'There is no source text to translate. Complete the Persian content first.',
+        ],
     ],
 ];

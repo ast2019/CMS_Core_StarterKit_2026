@@ -112,6 +112,34 @@ trait HasTranslationStatus
     }
 
     /**
+     * Record that a locale now holds machine-translated text awaiting review.
+     *
+     * Used by the AI translator after it writes translations. syncTranslationStatuses()
+     * only assigns ai_translated to a brand-new locale row; an existing
+     * not_translated row is left untouched, so this makes the transition explicit.
+     * A locale a human already reviewed is left alone rather than downgraded —
+     * re-running the machine over signed-off work must not silently revert the
+     * sign-off; genuine staleness is handled by the source-hash outdated path.
+     */
+    public function markTranslationAiTranslated(string $locale): TranslationState
+    {
+        /** @var TranslationState $state */
+        $state = $this->translationStates()->firstWhere('locale', $locale)
+            ?? $this->translationStates()->make(['locale' => $locale]);
+
+        if (! $state->exists || ! $state->status->wasReviewed()) {
+            $state = $this->translationStates()->updateOrCreate(
+                ['locale' => $locale],
+                ['status' => TranslationStatus::AiTranslated],
+            );
+        }
+
+        $this->unsetRelation('translationStates');
+
+        return $state;
+    }
+
+    /**
      * Mark a locale reviewed, pinning the source hash it was reviewed against.
      */
     public function markTranslationReviewed(string $locale, ?int $userId = null): TranslationState

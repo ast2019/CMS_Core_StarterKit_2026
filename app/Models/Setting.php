@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Concerns\IsAuditable;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 
 /**
  * Global settings — the singleton in behaviour, key/value in storage.
@@ -41,6 +43,17 @@ class Setting extends Model
     public const MAINTENANCE_MODE = 'maintenance_mode';
 
     public const ORGANISATION_SCHEMA = 'organisation_schema';
+
+    /**
+     * AI translation configuration (Requirement 5.3). These are edited on the
+     * Settings page and stored here rather than in .env, so a client can be
+     * configured from the panel without a redeploy.
+     */
+    public const AI_TRANSLATION_ENABLED = 'ai_translation_enabled';
+
+    public const AI_TRANSLATION_MODEL = 'ai_translation_model';
+
+    public const OPENROUTER_API_KEY = 'openrouter_api_key';
 
     protected $fillable = ['key', 'value', 'is_translatable'];
 
@@ -106,5 +119,45 @@ class Setting extends Model
     public static function isMaintenanceMode(): bool
     {
         return (bool) static::get(self::MAINTENANCE_MODE, false);
+    }
+
+    /**
+     * Store a secret setting, encrypted at rest.
+     *
+     * RULE #8 — the audit trail (IsAuditable) logs the `value` column, and it is
+     * append-only and never pruned. Storing the OpenRouter key as ciphertext is
+     * what keeps the plaintext key out of that trail: what Spatie captures is the
+     * encrypted blob, not the credential. Encryption also protects the key at
+     * rest in the database. An empty string clears the secret rather than
+     * encrypting nothing meaningful.
+     */
+    public static function putSecret(string $key, ?string $value): self
+    {
+        $value = $value === null ? '' : trim($value);
+
+        return static::put($key, $value === '' ? '' : Crypt::encryptString($value));
+    }
+
+    /**
+     * Read and decrypt a secret setting written with putSecret().
+     *
+     * Returns null when unset or empty. Decryption failure (a key rotation, a
+     * value that predates encryption) is swallowed to null rather than thrown, so
+     * a bad stored value surfaces as "not configured" instead of a 500 — the
+     * service layer already handles the missing-key case with a Persian notice.
+     */
+    public static function getSecret(string $key): ?string
+    {
+        $stored = static::get($key);
+
+        if (! is_string($stored) || $stored === '') {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($stored);
+        } catch (DecryptException) {
+            return null;
+        }
     }
 }
