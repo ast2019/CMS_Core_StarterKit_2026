@@ -182,16 +182,18 @@ it('serves no slides when the slide module is switched off', function (): void {
 
 it('costs no extra query per slide to resolve its target', function (): void {
     /*
-     * Asserted as a COMPARISON rather than an absolute ceiling, and deliberately so.
-     * The payload already spends one query per slide on `should_preload`
-     * (Slide::isFirstActive() re-queries for the first active slide), which predates the
-     * morph and is not what this test is about — an absolute bound would fold the two
-     * together and the number would mean nothing.
+     * This was written as a COMPARISON rather than an absolute ceiling because the
+     * payload still spent per-slide queries on things unrelated to the morph:
+     * `should_preload` re-ran `active()->first()` for every slide, and
+     * `featuredImage()` re-queried the pivot for every slide. An absolute bound would
+     * have folded all three together and the number would have meant nothing.
      *
-     * What matters here is that pointing five slides at five records costs the same as
-     * five raw-URL slides. Without the `linkable` eager load in SiteController it would
-     * cost five more, on a public cached endpoint fetched for the homepage of every
-     * visit.
+     * Both are now answered from data the endpoint has already loaded — the preload
+     * target is decided once for the set (Slide::markPreloadTarget) and the featured
+     * image is filtered out of the eager-loaded mediaAssets collection — so the
+     * comparison is tightened into the bound it was standing in for. It is asserted
+     * BOTH ways: the same cost for records as for raw URLs, and a flat total that does
+     * not grow with the slide count at all.
      */
     $count = Slide::maxSlides();
 
@@ -230,4 +232,39 @@ it('costs no extra query per slide to resolve its target', function (): void {
      * worth pinning — a regression here would show up as +2 per slide, not +2 in total.
      */
     expect($measure())->toBeLessThanOrEqual($rawLinkQueries + 2);
+
+    /*
+     * And the absolute bound the comparison above used to stand in for. Five slides,
+     * each with a featured image and a linked record, on a five-query budget: the
+     * slides, their media attachments, the assets' own media rows, the morph targets
+     * and those targets' translation states. Every one is a flat eager load, so the
+     * ceiling does not move with the slide count — which is exactly what an N+1 here
+     * would break. Written as a ceiling rather than an equality so a future eager load
+     * that REPLACES a per-row query is not reported as a regression.
+     */
+    expect($rawLinkQueries)->toBeLessThanOrEqual(4)
+        ->and($measure())->toBeLessThanOrEqual(6);
+});
+
+it('answers should_preload from the set rather than re-querying per slide', function (): void {
+    /*
+     * The other half of the same fix, asserted on the OUTPUT as well as the cost:
+     * removing the per-row query must not change which slide is flagged. Exactly one
+     * slide is the preload target, it is the lowest-positioned ACTIVE one, and an
+     * inactive slide in a lower position does not steal the flag.
+     */
+    $inactive = Slide::factory()->create(['position' => 0, 'is_active' => false]);
+    $first = Slide::factory()->create(['position' => 1]);
+    $second = Slide::factory()->create(['position' => 2]);
+
+    $data = getJson('/api/v1/slides')->assertOk()->json('data');
+
+    $flags = collect($data)->mapWithKeys(
+        fn (array $slide): array => [$slide['id'] => $slide['should_preload']],
+    );
+
+    expect($flags)->toHaveCount(2)
+        ->and($flags[$first->getKey()])->toBeTrue()
+        ->and($flags[$second->getKey()])->toBeFalse()
+        ->and($flags->has($inactive->getKey()))->toBeFalse();
 });

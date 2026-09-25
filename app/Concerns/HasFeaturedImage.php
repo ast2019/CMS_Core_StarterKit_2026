@@ -6,7 +6,9 @@ namespace App\Concerns;
 
 use App\Enums\MediaRole;
 use App\Models\MediaAsset;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Support\Collection;
 
 /**
  * RULE #7 — FEATURED IMAGE: "shared trait on every content-bearing model."
@@ -58,13 +60,12 @@ trait HasFeaturedImage
 
     public function featuredImage(): ?MediaAsset
     {
-        /** @var MediaAsset|null */
-        return $this->mediaAssetsInRole(MediaRole::Featured)->first();
+        return $this->assetInRole(MediaRole::Featured);
     }
 
     public function hasFeaturedImage(): bool
     {
-        return $this->mediaAssetsInRole(MediaRole::Featured)->exists();
+        return $this->assetInRole(MediaRole::Featured) !== null;
     }
 
     /**
@@ -74,10 +75,65 @@ trait HasFeaturedImage
      */
     public function socialShareImage(): ?MediaAsset
     {
-        /** @var MediaAsset|null $override */
-        $override = $this->mediaAssetsInRole(MediaRole::OgImage)->first();
+        return $this->assetInRole(MediaRole::OgImage) ?? $this->featuredImage();
+    }
 
-        return $override ?? $this->featuredImage();
+    /**
+     * The first attachment in a role, answered from the eager-loaded collection
+     * when there is one.
+     *
+     * This is the N+1 these accessors used to be. Every caller of featuredImage()
+     * spent a query on it, and the resources were the worst case because they call
+     * it more than once: ContentResource and PageResource each ask twice (null check,
+     * then value) and SlideResource asks on every slide — on endpoints that ALREADY
+     * eager-load `mediaAssets` precisely so the media is free. Reading a filtered
+     * relation the caller has already paid for removes the query without changing a
+     * single byte of payload.
+     *
+     * Falling back to the query is what makes this safe rather than merely faster.
+     * The relation is unloaded on every write path (attachMediaAsset() and
+     * detachMediaAsset() both call unsetRelation), so a freshly attached asset is
+     * never served from a stale collection — and a model nobody eager-loaded behaves
+     * exactly as it did before.
+     */
+    private function assetInRole(MediaRole $role): ?MediaAsset
+    {
+        if ($this->relationLoaded('mediaAssets')) {
+            return $this->loadedAssetsInRole($role)->first();
+        }
+
+        /** @var MediaAsset|null */
+        return $this->mediaAssetsInRole($role)->first();
+    }
+
+    /**
+     * Attachments in one role, filtered out of the already-loaded collection.
+     *
+     * Ordering comes from the eager load (mediaAssets orders by the pivot position),
+     * so the editor's chosen item order survives — filtering a loaded collection
+     * preserves order, unlike a fresh query without the same ordering clause.
+     *
+     * Public because GalleryResource needs exactly this for its uncapped `items`
+     * list, and two implementations of "which attachments are in this role" is how a
+     * gallery's cover and its item list end up disagreeing about the same pivot row.
+     *
+     * @return Collection<int, MediaAsset>
+     */
+    public function loadedAssetsInRole(MediaRole $role): Collection
+    {
+        /** @var Collection<int, MediaAsset> $assets */
+        $assets = $this->mediaAssets;
+
+        return $assets
+            ->filter(function (MediaAsset $asset) use ($role): bool {
+                // The pivot arrives as a relation on each hydrated asset, so it is
+                // read as one: `$asset->pivot` is a dynamic property that static
+                // analysis cannot see on the MediaAsset model.
+                $pivot = $asset->relationLoaded('pivot') ? $asset->getRelation('pivot') : null;
+
+                return $pivot instanceof Model && $pivot->getAttribute('role') === $role->value;
+            })
+            ->values();
     }
 
     /**

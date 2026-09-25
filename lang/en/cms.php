@@ -483,6 +483,7 @@ return [
             'request_failed' => 'The translation service could not be reached. Please try again shortly.',
             'empty_source' => 'There is no source text to translate. Complete the Persian content first.',
             'already_reviewed' => 'This locale has already been reviewed; automatic translation was skipped to avoid overwriting human work.',
+            'source_too_long' => 'This record is too long to machine-translate in one run. Split it into shorter records, or raise the per-record request limit in the configuration.',
         ],
     ],
 ];

@@ -108,11 +108,18 @@ get their thumbnails, search results never update, and a translator who clicks
 "Translate with AI" is told the work was queued but never receives the outcome
 notification.
 
-AI translation is the longest job in the system: up to six sequential OpenRouter calls
-at `cms.ai.translation.timeout` seconds each (30 by default). The job derives its own
-timeout from that config value, so a worker started with a shorter `--timeout` than the
-job asks for would kill translations mid-run — leave the worker's timeout at the default
-or above the job's.
+AI translation is the longest job in the system. Every field and every prose leaf is
+batched, so a typical record costs **two** sequential OpenRouter calls at
+`cms.ai.translation.timeout` seconds each (30 by default): one for the plain fields, one
+for the body. A long body is split into bounded chunks, at most
+`cms.ai.translation.max_requests_per_record` (12) of them, and a record needing more is
+refused up front with an actionable message rather than translated half way.
+
+The job derives its timeout from those same values — including the retry budget
+(`max_attempts`, `max_retry_delay`) — so it is a generous **kill-switch sized to the
+worst case the configuration permits**, not an expected duration. A worker started with
+a shorter `--timeout` than the job asks for would kill translations mid-run, after their
+calls were paid for, so leave the worker's timeout at the default or above the job's.
 
 ```bash
 php artisan queue:work --tries=3 --max-time=3600
@@ -196,6 +203,67 @@ php artisan scout:import "App\Models\Content"
 
 Leaving `SCOUT_DRIVER=collection` is a valid choice for a small site: search falls back
 to database matching with no extra service to run.
+
+## One-time backfills after upgrading
+
+Some fixes correct how new data is written and cannot retroactively fix old rows. Run
+these **once** on any deployment that predates them. Both are safe to re-run.
+
+### Media file metadata (Requirement 7.6)
+
+```bash
+php artisan cms:backfill-media-metadata --dry-run   # report first
+php artisan cms:backfill-media-metadata
+```
+
+`mime_type`, `size`, `width` and `height` are recorded on upload now, but assets
+uploaded before that are still null, and three things degrade silently as a result:
+
+- the Delivery API cannot tell a frontend what space to reserve, so the image lands as
+  a layout shift;
+- `SchemaBuilder::imageObject()` omits width/height, costing rich-result eligibility;
+- `SocialTagBuilder::cardType()` falls back to `summary` instead of
+  `summary_large_image`, so every share of an older article previews as a thumbnail.
+
+The command walks the library in batches (`--chunk`, default 200), skips assets that
+are already complete, and keeps going past an asset whose file has gone missing from
+disk — reporting its id instead of aborting. An asset with no file, or an image whose
+file is gone, is listed for manual attention; it is repaired as far as the media row
+allows and stays listed on a re-run.
+
+It writes quietly and does not touch `updated_at`: the files did not change, only our
+record of them, so this must not appear as an editorial change on every asset at once.
+The **run** is audited as a single `cms` activity row (`MediaAsset.metadata_backfilled`)
+carrying the counts and the ids touched — see the command's docblock for how that
+reading of RULE #8 was arrived at.
+
+### Translation staleness hashes — nothing to run
+
+Listed here because it is the deploy-day question this change would normally raise, and
+the answer is **no action required**.
+
+Translation staleness is detected by comparing a stored hash of the Persian source
+against a freshly computed one (Requirement 5.4). The hash is now normalised
+recursively, so an editor save that merely reorders a TipTap node's keys no longer
+changes it — previously that reordering flipped every reviewed locale to `outdated`,
+which is exactly the false alarm the hash exists to avoid.
+
+Changing how a stored hash is computed normally means every pinned value mismatches on
+the first save after deploy, flipping every reviewed locale in the database to
+`outdated` at once: a review backlog full of work nobody needs to do, which teaches
+translators to clear the flag without reading it. So the hash carries a **scheme tag**
+(`v2:…`), and a mismatch whose scheme is not the current one is silently re-pinned
+instead of raised.
+
+That is safe because the staleness check runs on every save: a row that is still
+`reviewed` is one whose hash matched at its last save, so recomputing it describes the
+same content the reviewer signed off on. There is no migration, nothing to run, and
+nothing to schedule — a record nobody saves keeps its old hash and is re-pinned the
+moment anyone touches it. A reviewed row with **no** hash at all is still flagged
+`outdated`, because it never had a verified baseline to re-pin.
+
+Bump `HasTranslationStatus::HASH_SCHEME` whenever the hash's inputs or encoding change,
+and this stays free next time.
 
 ## Releases
 

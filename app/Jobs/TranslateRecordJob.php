@@ -25,13 +25,16 @@ use Throwable;
  *
  * WHY QUEUED:
  *
- * AiTranslator::translate() makes up to six SEQUENTIAL OpenRouter calls (one per
- * plain field, plus one batched call for the TipTap body), each with a 30s timeout:
- * about three minutes in the worst case. Run inside the Livewire request, as it
- * used to be, PHP's max_execution_time or nginx's fastcgi_read_timeout kills it
- * first — so the work is lost AFTER the API calls have been paid for, the record
- * keeps whatever partial state the kill left behind, and a PHP-FPM worker was
- * occupied for minutes to achieve that. Queueing removes the deadline entirely.
+ * AiTranslator::translate() makes SEQUENTIAL OpenRouter calls: one batched request
+ * for every plain field, plus one per chunk of the TipTap body. Batching brought the
+ * floor down from six requests to two, but a long article is several body chunks,
+ * each with its own timeout and its own retry budget, so the worst case the
+ * configuration permits is still many minutes of wall clock. Run inside the Livewire
+ * request, as it used to be, PHP's max_execution_time or nginx's
+ * fastcgi_read_timeout kills it first — so the work is lost AFTER the API calls have
+ * been paid for, the record keeps whatever partial state the kill left behind, and a
+ * PHP-FPM worker was occupied for minutes to achieve that. Queueing removes the
+ * deadline entirely.
  *
  * WHY UNIQUE:
  *
@@ -80,10 +83,16 @@ class TranslateRecordJob implements ShouldBeUnique, ShouldQueue
     /**
      * Wall-clock budget for the whole run.
      *
-     * Six sequential calls at the configured per-request timeout, plus margin for
-     * the database work and JSON handling around them. Computed from config rather
-     * than hardcoded so raising cms.ai.translation.timeout cannot silently produce
-     * a job that the worker kills half way through.
+     * A KILL-SWITCH sized to the worst case the configuration permits, not an
+     * expectation: every permitted request using its full timeout, every attempt
+     * retried, every retry waiting the capped delay. A typical run finishes in
+     * seconds. Erring generous is deliberate — a timeout set to the expected duration
+     * kills runs that were merely slow, after their calls were paid for, which is
+     * strictly worse than a worker occupied by a genuinely stuck job until the cap.
+     *
+     * Derived from AiTranslator's accessors rather than from a second reading of
+     * config, so the translator's enforced request cap and this budget cannot
+     * disagree.
      */
     public int $timeout;
 
@@ -110,7 +119,21 @@ class TranslateRecordJob implements ShouldBeUnique, ShouldQueue
     ) {
         $perRequest = max(1, (int) config('cms.ai.translation.timeout', 30));
 
-        $this->timeout = ($perRequest * 6) + 60;
+        /*
+         * Every number comes from AiTranslator's own accessors rather than from a
+         * second reading of config. The translator ENFORCES the request cap, so a job
+         * that computed its budget independently could be killed by its own timeout
+         * part way through a run the translator considered perfectly legal — losing
+         * work that was already paid for, which is the exact harm this timeout exists
+         * to avoid.
+         *
+         * `+ 1` for the single batched request carrying the plain fields, on top of
+         * the body's chunks.
+         */
+        $requests = AiTranslator::maxRequestsPerRecord() + 1;
+        $attempts = AiTranslator::maxAttemptsPerRequest();
+
+        $this->timeout = (($perRequest + AiTranslator::maxRetryDelay()) * $attempts * $requests) + 60;
         $this->uniqueFor = $this->timeout + 300;
     }
 

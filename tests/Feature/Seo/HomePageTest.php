@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ContentStatus;
+use App\Models\Content;
 use App\Models\MenuItem;
 use App\Models\Page;
 use App\Models\Redirect;
@@ -225,6 +226,34 @@ it('keeps the locale root in the sitemap when no homepage record covers it', fun
     // English has no reviewed translation, so the record is not eligible there.
     expect(app(SitemapGenerator::class)->forLocale('en')->render())
         ->toContain('<loc>'.app(UrlBuilder::class)->localeHome('en').'</loc>');
+});
+
+it('gives the synthetic locale root a lastmod of its own', function (): void {
+    /*
+     * The fallback root entry had no lastmod at all, which made the one URL every
+     * crawler starts from the one with nothing to say about its freshness. It stands in
+     * for the whole locale rather than for a record, so the locale's own high-water mark
+     * is the honest answer — and it must still be there when the entry is synthetic.
+     */
+    Content::factory()->published()->create();
+
+    // No homepage record, so the synthetic entry is the one covering the root.
+    $xml = app(SitemapGenerator::class)->forLocale('fa')->render();
+
+    preg_match_all('#<url>(.*?)</url>#s', $xml, $blocks);
+
+    $rootBlock = null;
+
+    foreach ($blocks[1] as $block) {
+        if (str_contains($block, '<loc>'.app(UrlBuilder::class)->localeHome('fa').'</loc>')) {
+            $rootBlock = $block;
+
+            break;
+        }
+    }
+
+    expect($rootBlock)->not->toBeNull()
+        ->and($rootBlock)->toContain('<lastmod>');
 });
 
 it('never advertises the homepage under its slug', function (): void {

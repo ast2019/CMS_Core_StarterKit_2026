@@ -139,3 +139,181 @@ it('counts the backlog on the navigation badge', function (): void {
     // Two outstanding locales (en, ar) for one article.
     expect((int) TranslationReview::getNavigationBadge())->toBe(2);
 });
+
+it('does not change the hash when the editor reorders a node key', function (): void {
+    /*
+     * The defect the hash exists to prevent, delivered BY the hash.
+     *
+     * sourceContentHash() ksort()ed the top level and then json_encode()d `body` — a
+     * nested TipTap document — exactly as it arrived. A TipTap node is an object, so
+     * `{"type":"paragraph","content":[…]}` and `{"content":[…],"type":"paragraph"}` are
+     * the same paragraph; but they serialised differently, hashed differently, and
+     * marked every reviewed locale `outdated`. That is the false alarm the method's own
+     * docblock says hash-based detection exists to avoid.
+     */
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'paragraph',
+                'attrs' => ['textAlign' => 'right', 'class' => null],
+                'content' => [
+                    ['type' => 'text', 'text' => 'متن بند', 'marks' => [['type' => 'bold']]],
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    $before = $content->sourceContentHash();
+
+    // The SAME document with every map's keys written in a different order, at three
+    // levels of nesting: the node, its attrs, and the text leaf.
+    $content->setTranslation('body', 'fa', [
+        'content' => [
+            [
+                'content' => [
+                    ['marks' => [['type' => 'bold']], 'text' => 'متن بند', 'type' => 'text'],
+                ],
+                'attrs' => ['class' => null, 'textAlign' => 'right'],
+                'type' => 'paragraph',
+            ],
+        ],
+        'type' => 'doc',
+    ]);
+    $content->saveQuietly();
+
+    expect($content->sourceContentHash())->toBe($before);
+});
+
+it('does change the hash when the editor reorders two paragraphs', function (): void {
+    /*
+     * The other half, and the reason normalisation sorts MAP KEYS and never LIST
+     * ELEMENTS. A list's order is content: swapping two paragraphs changes what the
+     * document says, so it must invalidate the translation. Sorting list elements
+     * "for consistency" would make a genuine rewrite hash identically to the original
+     * and leave a stale translation advertised as reviewed — silent staleness, which is
+     * far more expensive than a spurious re-review.
+     */
+    $document = fn (string $first, string $second): array => [
+        'type' => 'doc',
+        'content' => [
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $first]]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => $second]]],
+        ],
+    ];
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    $content->setTranslation('body', 'fa', $document('بند یک', 'بند دو'));
+    $content->saveQuietly();
+    $before = $content->sourceContentHash();
+
+    $content->setTranslation('body', 'fa', $document('بند دو', 'بند یک'));
+    $content->saveQuietly();
+
+    expect($content->sourceContentHash())->not->toBe($before);
+});
+
+it('keeps a reviewed locale reviewed when a save only reorders node keys', function (): void {
+    // The end-to-end consequence: this is the save that used to dump the whole locale
+    // into the review backlog for nothing.
+    $content = Content::factory()->multilingual()->create();
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'paragraph',
+        'content' => [['type' => 'text', 'text' => 'بدنه']],
+    ]);
+    $content->save();
+    $content->markTranslationReviewed('en');
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::Reviewed);
+
+    $content = $content->fresh();
+    $content->setTranslation('body', 'fa', [
+        'content' => [['text' => 'بدنه', 'type' => 'text']],
+        'type' => 'paragraph',
+    ]);
+    $content->save();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::Reviewed);
+});
+
+it('re-pins a hash from an older scheme instead of flagging the locale outdated', function (): void {
+    /*
+     * The deploy-day question. A stored hash is compared for equality, so changing how
+     * it is COMPUTED makes every pinned value mismatch — and a mismatch reads as "the
+     * source moved on", which would flip every reviewed locale in the database to
+     * `outdated` at once. That is a review backlog full of work nobody needs to do,
+     * which teaches translators to clear the flag without reading it, and the flag is
+     * the only signal this feature has.
+     *
+     * The hash therefore carries a SCHEME tag, and a mismatch whose scheme is not the
+     * current one is re-pinned rather than raised. Safe because
+     * syncTranslationStatuses() runs on every save: a row that is still `reviewed` is
+     * one whose hash matched at its last save, so recomputing describes the same
+     * content the reviewer signed off on.
+     */
+    $content = Content::factory()->multilingual()->create();
+    $content->markTranslationReviewed('en');
+
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+
+    expect($state->source_hash)->toStartWith('v2:');
+
+    // A value pinned by the previous scheme: a bare xxh128 digest with no tag, which is
+    // exactly what is sitting in every existing deployment's table.
+    $legacy = hash('xxh128', 'whatever the old function produced');
+    $state->forceFill(['source_hash' => $legacy])->saveQuietly();
+
+    // A save that changes nothing about the source text.
+    $content = $content->fresh();
+    $content->touch();
+
+    $state = $content->fresh()->translationStates()->where('locale', 'en')->firstOrFail();
+
+    expect($state->status)->toBe(TranslationStatus::Reviewed)
+        // Silently brought up to date, so the NEXT genuine edit is detected normally.
+        ->and($state->source_hash)->toBe($content->fresh()->sourceContentHash())
+        ->and($state->source_hash)->not->toBe($legacy);
+});
+
+it('still flags a genuine change made after the scheme was brought up to date', function (): void {
+    // The re-pin must not become a permanent amnesty: once the row carries a
+    // current-scheme hash, staleness detection works exactly as before.
+    $content = Content::factory()->multilingual()->create();
+    $content->markTranslationReviewed('en');
+
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+    $state->forceFill(['source_hash' => hash('xxh128', 'legacy')])->saveQuietly();
+
+    $content->fresh()->touch();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::Reviewed);
+
+    $content = $content->fresh();
+    $content->setTranslation('title', 'fa', 'عنوان تازه');
+    $content->save();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::Outdated);
+});
+
+it('asks for a re-review when a reviewed row has no pinned hash at all', function (): void {
+    /*
+     * A null hash is NOT a scheme mismatch. A reviewed row with nothing pinned never
+     * had a verified baseline, so re-pinning it would assert a freshness nobody ever
+     * established; the conservative answer is to ask for the re-review. This is the
+     * pre-existing behaviour, pinned so the scheme check cannot quietly relax it.
+     */
+    $content = Content::factory()->multilingual()->create();
+    $content->markTranslationReviewed('en');
+
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+    $state->forceFill(['source_hash' => null])->saveQuietly();
+
+    $content->fresh()->touch();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::Outdated);
+});

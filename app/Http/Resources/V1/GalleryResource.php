@@ -8,7 +8,6 @@ use App\Enums\MediaRole;
 use App\Http\Resources\V1\Concerns\ResolvesLocale;
 use App\Models\Gallery;
 use App\Models\MediaAsset;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
@@ -82,27 +81,15 @@ class GalleryResource extends JsonResource
     /**
      * Attachments in one role, read from the loaded collection.
      *
-     * Ordering comes from the eager load (mediaAssets orders by the pivot position),
-     * so the editor's chosen item order survives into the payload — filtering a
-     * loaded collection preserves order, unlike a fresh query without the same
-     * ordering clause.
+     * The filtering itself now lives on HasFeaturedImage, which needs the identical
+     * answer for the featured/og_image roles. Two copies of "which attachments are in
+     * this role" is how a gallery's cover and its item list end up disagreeing about
+     * the same pivot row.
      *
      * @return Collection<int, MediaAsset>
      */
     private function assetsInRole(MediaRole $role): Collection
     {
-        /** @var Collection<int, MediaAsset> $assets */
-        $assets = $this->mediaAssets;
-
-        return $assets
-            ->filter(function (MediaAsset $asset) use ($role): bool {
-                // The pivot arrives as a relation on each hydrated asset, so it is
-                // read as one: `$asset->pivot` is a dynamic property that static
-                // analysis cannot see on the MediaAsset model.
-                $pivot = $asset->relationLoaded('pivot') ? $asset->getRelation('pivot') : null;
-
-                return $pivot instanceof Model && $pivot->getAttribute('role') === $role->value;
-            })
-            ->values();
+        return $this->resource->loadedAssetsInRole($role);
     }
 }

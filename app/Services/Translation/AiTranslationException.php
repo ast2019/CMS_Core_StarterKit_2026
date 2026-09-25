@@ -44,6 +44,21 @@ final class AiTranslationException extends RuntimeException
     }
 
     /**
+     * The body needs more batched requests than cms.ai.translation
+     * .max_requests_per_record allows.
+     *
+     * Its own reason rather than requestFailed(), because the two need opposite
+     * responses. "The service could not be reached — try again shortly" invites the
+     * editor to retry something that will fail identically every time; this one has
+     * an action attached (split the article, or raise the limit), and it is decided
+     * before a single request is issued, so nothing has been paid for.
+     */
+    public static function sourceTooLong(): self
+    {
+        return new self('cms.ai_translation.error.source_too_long');
+    }
+
+    /**
      * A human already signed off on this locale, so re-running the machine over
      * it is refused: overwriting reviewed text would silently revert the
      * sign-off and could re-translate/duplicate content the editor already

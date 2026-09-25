@@ -148,8 +148,79 @@ return [
             // client-specific value, so it is safe to keep in code.
             'endpoint' => 'https://openrouter.ai/api/v1/chat/completions',
 
-            // Seconds to wait on the outbound call before failing gracefully.
+            // Seconds to wait for the whole outbound call before failing
+            // gracefully.
             'timeout' => 30,
+
+            /*
+             * Seconds to wait for the CONNECTION alone, separate from the total
+             * budget above. Without it, an endpoint that accepts nothing at all
+             * (DNS gone, provider hard down) consumed the full timeout before
+             * reporting a failure it could have reported in a second — and a run
+             * makes several requests, so the difference is minutes of a worker's
+             * life spent proving the network is down.
+             */
+            'connect_timeout' => 10,
+
+            /*
+             * Attempts per request, counting the first. Retries exist for exactly
+             * two answers — a 429 (rate limited) and a 5xx (the provider is having a
+             * moment) — both of which say "ask again" rather than "you asked wrongly".
+             * A 4xx other than 429 is never retried: a bad key or an unknown model
+             * will be just as bad on the third attempt, and retrying only triples
+             * the latency before the editor sees the real problem.
+             */
+            'max_attempts' => 3,
+
+            /*
+             * Ceiling, in seconds, on how long a single retry will wait — including
+             * when the provider's own Retry-After header asks for longer. The header
+             * is honoured up to this point and refused beyond it: a queued job that
+             * sleeps for ten minutes on a third party's say-so is occupying a worker
+             * the rest of the queue needs, and the queue's own retry is a better
+             * place to wait that long.
+             */
+            'max_retry_delay' => 30,
+
+            /*
+             * Output ceiling per request. Present so a runaway response cannot bill
+             * for tokens nobody asked for, and sized against the chunk bounds below
+             * — see max_characters_per_request.
+             */
+            'max_tokens' => 4096,
+
+            /*
+             * Chunk bounds for one batched request.
+             *
+             * A body is translated as a batch of its prose leaves. Sent whole, a long
+             * article exceeds the model's OUTPUT token limit, the JSON is truncated
+             * mid-string, the decode fails and the editor is told only that the
+             * request failed. Both bounds are applied, because either alone is
+             * escapable: forty short captions and four enormous paragraphs are the
+             * same segment count and nothing like the same number of tokens.
+             *
+             * `max_characters_per_request` and `max_tokens` are two halves of one
+             * setting. Raising the character bound without raising the token ceiling
+             * reintroduces exactly the truncation the chunking exists to prevent.
+             *
+             * A single segment longer than the character bound is never split — a
+             * split segment would break the 1:1 contract that keeps the document's
+             * structure intact — so it forms a chunk of its own.
+             */
+            'max_segments_per_request' => 40,
+            'max_characters_per_request' => 4000,
+
+            /*
+             * Hard cap on requests for one record and locale, enforced BEFORE any
+             * HTTP work (segment collection is local, so this costs nothing). A
+             * document needing more than this is refused with an actionable message
+             * rather than quietly spending for twenty minutes.
+             *
+             * At the defaults this allows roughly 480 prose leaves or 48,000
+             * characters of body — a very long article — plus the single batched
+             * request that carries the plain fields.
+             */
+            'max_requests_per_record' => 12,
         ],
     ],
 
@@ -231,6 +302,28 @@ return [
 
     'slides' => [
         'max' => env('CMS_SLIDES_MAX', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sitemaps
+    |--------------------------------------------------------------------------
+    |
+    | Requirements 7.2, 7.4. Decision D-5.
+    |
+    | Rows loaded per batch while a sitemap is generated. The generator walks
+    | every indexable type with chunkById() rather than get(), because a sitemap
+    | is the one response whose cost grows with the WHOLE archive rather than
+    | with a page of it — at starter-kit scale it does not matter and at tens of
+    | thousands of records a single get() is what exhausts the request's memory
+    | limit. Larger batches mean fewer round trips and more resident rows; this
+    | default is sized so a batch of articles with their media and translation
+    | states stays comfortably small.
+    |
+    */
+
+    'sitemap' => [
+        'chunk' => env('CMS_SITEMAP_CHUNK', 500),
     ],
 
     /*

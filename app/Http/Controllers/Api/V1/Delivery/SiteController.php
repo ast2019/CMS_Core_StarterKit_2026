@@ -73,6 +73,18 @@ class SiteController extends Controller
                     ->limit(Slide::maxSlides())
                     ->get();
 
+                /*
+                 * Requirement 7.6 — decide the preload target ONCE for the set rather
+                 * than asking each slide to work it out. SlideResource used to call
+                 * Slide::isFirstActive() per row, and each call re-ran
+                 * `active()->first()`: the endpoint asked the database which slide is
+                 * first as many times as there are slides and got the same answer every
+                 * time. "Is this the first one" is not a question a row can answer about
+                 * itself without looking at its siblings, which is why the model had to
+                 * re-query — so the collection answers it here instead.
+                 */
+                Slide::markPreloadTarget($slides);
+
                 return SlideResource::collection($slides);
             },
         );

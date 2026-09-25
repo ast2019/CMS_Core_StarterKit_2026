@@ -45,6 +45,14 @@ class SlideResource extends JsonResource
     public function toArray(Request $request): array
     {
         $locale = $this->locale($request);
+
+        /*
+         * Read ONCE, and from the eager-loaded mediaAssets collection: featuredImage()
+         * now prefers the loaded relation (HasFeaturedImage::assetInRole), so this
+         * costs no query on an endpoint that already loads the media. It used to cost
+         * one per slide, which — with `should_preload` costing another — made the
+         * homepage's slideshow payload two queries per slide on top of the set itself.
+         */
         $asset = $this->featuredImage();
         $media = $asset?->getFirstMedia('file');
         $target = $this->resolvedTarget();
