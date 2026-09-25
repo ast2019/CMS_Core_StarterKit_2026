@@ -35,13 +35,24 @@ Pint clean.
   coverage win
 
 **SEO**
-- Per-locale meta and Open Graph, canonical URLs, reciprocal hreflang with `x-default`
+- Per-locale meta, Open Graph and Twitter cards, canonical URLs, reciprocal hreflang with
+  `x-default`. The OG title and description can be overridden per record, and fall back to
+  the meta values when blank
+- A Google-style search-result preview per locale, showing the title, URL and description
+  exactly as resolved for the API — including which words a result would truncate
+- A per-locale focus keyphrase with honest checks: is the phrase in the title, the
+  description, the slug, the opening, a heading; is its density sane; is there enough text
+  with enough structure. Deliberately no stemming, synonym matching or readability score —
+  see `App\Services\Seo\SeoAnalyser` for what is and is not measured, and why claiming more
+  for Persian would be a confident-looking wrong number
 - JSON-LD: Article, Organization, LocalBusiness, BreadcrumbList, ImageObject, VideoObject
-  and FAQPage
+  and FAQPage. The article's type is editor-selectable (`Article` / `NewsArticle` /
+  `BlogPosting`), so an evergreen guide is not published as news
 - A sitemap index per locale, plus image and video sitemaps
-- A redirect engine that auto-suggests a 301 when a published slug changes, collapses
-  chains and refuses to loop — exposed over the Delivery API, because the frontend is the
-  deployment that actually receives the stale traffic (`docs/redirects.md`)
+- A redirect engine that auto-suggests a 301 when a published slug changes — on articles,
+  pages, galleries and categories alike — collapses chains and refuses to loop; exposed over
+  the Delivery API, because the frontend is the deployment that actually receives the stale
+  traffic (`docs/redirects.md`)
 - A `robots.txt` generated for this host, with the configured panel path and an absolute
   sitemap URL
 

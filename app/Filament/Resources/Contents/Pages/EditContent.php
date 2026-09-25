@@ -7,15 +7,14 @@ namespace App\Filament\Resources\Contents\Pages;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesContentVersions;
 use App\Filament\Concerns\ManagesFeaturedImage;
+use App\Filament\Concerns\OffersRedirectsForChangedSlugs;
 use App\Filament\Resources\Contents\ContentResource;
 use App\Models\Content;
 use App\Services\Content\PreviewLinkService;
-use App\Services\Content\RedirectSuggestionService;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditContent extends EditRecord
@@ -24,14 +23,14 @@ class EditContent extends EditRecord
     use ManagesContentVersions;
     use ManagesFeaturedImage;
 
-    protected static string $resource = ContentResource::class;
-
     /**
-     * Slug values before this save, so a change can be offered as a 301.
-     *
-     * @var array<string, string|null>
+     * Requirement 7.5. Lifted out of this class into a concern so a Page, Gallery
+     * and Category get the same prompt — all four are routable and sitemapped, and
+     * until then only an article's slug change was ever offered a 301.
      */
-    protected array $slugsBeforeSave = [];
+    use OffersRedirectsForChangedSlugs;
+
+    protected static string $resource = ContentResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -62,7 +61,7 @@ class EditContent extends EditRecord
         // Capture before the write: RedirectSuggestionService::pendingFor() diffs
         // against the slugs as they were, and the save is about to move that
         // baseline.
-        $this->slugsBeforeSave = $this->getRecord()->getTranslations('slug');
+        $this->captureSlugsBeforeSave();
 
         return $this->normaliseTranslatablePayload($data);
     }
@@ -81,45 +80,5 @@ class EditContent extends EditRecord
         $record->syncPrimaryCategory();
 
         $this->offerRedirectsForChangedSlugs($record);
-    }
-
-    /**
-     * Requirement 7.5 — offer a 301 when a PUBLISHED record's slug changes.
-     *
-     * Offered, not created automatically. A slug corrected three times while
-     * drafting would otherwise leave two dead redirect hops behind, and redirect
-     * chains are worse for both crawlers and page speed than no redirect at all.
-     */
-    protected function offerRedirectsForChangedSlugs(Content $record): void
-    {
-        if (! $record->isLive()) {
-            return;
-        }
-
-        $changes = app(RedirectSuggestionService::class)->pendingFor($record, $this->slugsBeforeSave);
-
-        if ($changes === []) {
-            return;
-        }
-
-        Notification::make()
-            ->title(__('cms.redirect.slug_changed_title'))
-            ->body(__('cms.redirect.slug_changed_body', ['count' => count($changes)]))
-            ->warning()
-            ->persistent()
-            ->actions([
-                Action::make('create_redirects')
-                    ->label(__('cms.redirect.create_action'))
-                    ->button()
-                    ->action(function () use ($record, $changes): void {
-                        $created = app(RedirectSuggestionService::class)->create($record, $changes);
-
-                        Notification::make()
-                            ->title(__('cms.redirect.created', ['count' => $created]))
-                            ->success()
-                            ->send();
-                    }),
-            ])
-            ->send();
     }
 }

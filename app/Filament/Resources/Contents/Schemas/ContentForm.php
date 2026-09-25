@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Contents\Schemas;
 
+use App\Enums\ArticleSchemaType;
 use App\Enums\ContentStatus;
 use App\Enums\MediaRole;
 use App\Filament\Schemas\CmsRichEditor;
@@ -13,6 +14,7 @@ use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Category;
 use App\Models\Content;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -87,6 +89,35 @@ class ContentForm
                         ->helperText(fn (Get $get): ?string => $get('status') === ContentStatus::Published->value
                             ? __('cms.field.publish_date_help')
                             : null),
+
+                    /*
+                     * Requirement 7.3 — the schema.org type this article is published
+                     * AS. In the publishing section rather than in the SEO tabs
+                     * because it is not translatable: the same guide cannot be a
+                     * NewsArticle in Persian and a BlogPosting in English without
+                     * contradicting itself across the hreflang cluster.
+                     */
+                    /*
+                     * A Radio rather than a Select, because Filament only supports
+                     * per-option descriptions on a Radio — and the descriptions ARE
+                     * the feature. "NewsArticle" versus "Article" means nothing to an
+                     * editor without the sentence explaining that one promises recency;
+                     * a bare three-item dropdown would be picked at random, and a
+                     * randomly chosen schema type is worse than the hardcoded one it
+                     * replaced.
+                     */
+                    Radio::make('schema_type')
+                        ->label(__('cms.field.schema_type'))
+                        ->options(fn (): array => collect(ArticleSchemaType::cases())
+                            ->mapWithKeys(fn (ArticleSchemaType $t): array => [$t->value => $t->label()])
+                            ->all())
+                        ->descriptions(fn (): array => collect(ArticleSchemaType::cases())
+                            ->mapWithKeys(fn (ArticleSchemaType $t): array => [$t->value => $t->description()])
+                            ->all())
+                        ->default(ArticleSchemaType::default()->value)
+                        ->required()
+                        ->columnSpanFull()
+                        ->helperText(__('cms.field.schema_type_help')),
 
                     Select::make('primary_category_id')
                         ->label(__('cms.field.primary_category'))

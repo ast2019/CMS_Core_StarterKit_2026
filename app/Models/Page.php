@@ -76,6 +76,12 @@ class Page extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishabl
         'meta_title',
         'meta_description',
         'robots_meta',
+        /*
+         * A page carries prose (`blocks`), so the keyphrase analysis has something
+         * real to measure on it — unlike a Gallery or a Category. Translatable for the
+         * same reason as on Content: the English page targets an English phrase.
+         */
+        'focus_keyphrase',
     ];
 
     protected $fillable = [
@@ -85,6 +91,7 @@ class Page extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishabl
         'meta_title',
         'meta_description',
         'robots_meta',
+        'focus_keyphrase',
         'status',
         'publish_date',
         'position',

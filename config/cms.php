@@ -309,6 +309,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | SEO Authoring Analysis
+    |--------------------------------------------------------------------------
+    |
+    | Thresholds for the focus-keyphrase checks (App\Services\Seo\SeoAnalyser),
+    | Requirement 7.1. Configurable because they are editorial conventions rather
+    | than facts: a news desk publishing 200-word wires and a site publishing
+    | long-form guides should not be told the same number is "too short".
+    |
+    | The density band is wide on purpose. Substring matching undercounts inflected
+    | Persian forms and the word count treats ZWNJ-joined compounds as two words,
+    | so the computed density sits below the real one — a narrow band would nag
+    | editors whose copy is fine. See the SeoAnalyser docblock for what this
+    | analysis deliberately does NOT measure.
+    |
+    */
+
+    'seo' => [
+        'analysis' => [
+            'min_words' => env('CMS_SEO_MIN_WORDS', 300),
+            'opening_words' => 50,
+            'density_min' => 0.5,
+            'density_max' => 2.5,
+            'max_section_words' => 300,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Content Versions
     |--------------------------------------------------------------------------
     |

@@ -1299,7 +1299,119 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                            "type": "object",
+                                            "properties": {
+                                                "canonical": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "title": {
+                                                            "type": "string"
+                                                        },
+                                                        "description": {
+                                                            "type": "string"
+                                                        },
+                                                        "robots": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "title",
+                                                        "description",
+                                                        "robots"
+                                                    ]
+                                                },
+                                                "open_graph": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                },
+                                                "twitter": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                },
+                                                "hreflang": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "json_ld": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                },
+                                                "seo_warnings": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "seo_analysis": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "keyphrase": {
+                                                            "type": "string"
+                                                        },
+                                                        "score": {
+                                                            "type": [
+                                                                "integer",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "band": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "checks": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "status": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "value": {
+                                                                        "type": [
+                                                                            "string",
+                                                                            "null"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "status",
+                                                                    "value"
+                                                                ]
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "keyphrase",
+                                                        "score",
+                                                        "band",
+                                                        "checks"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "canonical",
+                                                "meta",
+                                                "open_graph",
+                                                "twitter",
+                                                "hreflang",
+                                                "json_ld",
+                                                "seo_warnings",
+                                                "seo_analysis"
+                                            ]
                                         },
                                         "meta": {
                                             "type": "object",

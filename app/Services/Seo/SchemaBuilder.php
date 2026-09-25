@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Seo;
 
+use App\Enums\ArticleSchemaType;
 use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
 use App\Models\MediaAsset;
 use App\Models\Setting;
 use App\Support\TipTap;
+use Spatie\SchemaOrg\BaseType;
+use Spatie\SchemaOrg\Contracts\ArticleContract;
 use Spatie\SchemaOrg\Schema;
 
 /**
@@ -49,7 +52,17 @@ class SchemaBuilder
     public function __construct(private readonly UrlBuilder $urls) {}
 
     /**
-     * NewsArticle for an article, or null when it is not publicly indexable.
+     * Article markup for an article, or null when it is not publicly indexable.
+     *
+     * The @type is the editor's choice (Content::schemaType(), Requirement 7.3). It
+     * used to be Schema::newsArticle() unconditionally, which was right for the news
+     * site this kit was first cut for and wrong for a reusable Core: NewsArticle is a
+     * claim about a page — recent, datelined, eligible for news surfaces — and an
+     * evergreen buying guide published under it misrepresents itself to every
+     * consumer. That is the same failure as the FAQPage bug below, one level up:
+     * markup that does not match the page.
+     *
+     * The default remains NewsArticle so no existing record changes meaning.
      *
      * @return array<string, mixed>|null
      */
@@ -73,7 +86,7 @@ class SchemaBuilder
             return null;
         }
 
-        $article = Schema::newsArticle()
+        $article = $this->articleOfType($content->schemaType())
             ->headline($headline)
             ->url($url)
             ->inLanguage($locale)
@@ -148,6 +161,33 @@ class SchemaBuilder
         }
 
         return $article->toArray();
+    }
+
+    /**
+     * An empty node of the requested article type.
+     *
+     * A match over spatie/schema-org's own factories rather than
+     * `Schema::article()->setProperty('@type', $type)`. The factories are what give
+     * each subtype its declared property set, so building the right one keeps the
+     * library able to reject a property the type does not have — overriding @type on a
+     * generic Article would silence exactly the check this class relies on to stay
+     * within "omit rather than guess".
+     *
+     * The match is exhaustive over the enum, so adding a case is a compile-time
+     * prompt to decide how it is built rather than a silent fallback to NewsArticle.
+     *
+     * Typed as the intersection rather than as Article: the three are siblings under
+     * BaseType implementing ArticleContract, not subclasses of Article, and the
+     * intersection is what says "carries the article setters AND setProperty()",
+     * which is exactly what article() then uses.
+     */
+    private function articleOfType(ArticleSchemaType $type): BaseType&ArticleContract
+    {
+        return match ($type) {
+            ArticleSchemaType::Article => Schema::article(),
+            ArticleSchemaType::NewsArticle => Schema::newsArticle(),
+            ArticleSchemaType::BlogPosting => Schema::blogPosting(),
+        };
     }
 
     /**

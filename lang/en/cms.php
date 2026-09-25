@@ -34,6 +34,20 @@ return [
         'created' => 'Created :count redirect(s).',
     ],
 
+    /*
+     * Structured-data type of an article (App\Enums\ArticleSchemaType). The type NAME
+     * is emitted verbatim in the JSON-LD, so it is not translated — only the
+     * explanation is.
+     */
+    'schema_type' => [
+        'Article' => 'General article (Article)',
+        'Article_help' => 'For content whose publication date is not decisive: guides, explainers, evergreen pieces.',
+        'NewsArticle' => 'News (NewsArticle)',
+        'NewsArticle_help' => 'For a news story. It claims recency, so it is the wrong choice for evergreen content.',
+        'BlogPosting' => 'Blog post (BlogPosting)',
+        'BlogPosting_help' => 'For a personal or blog-style piece written in an author\'s voice.',
+    ],
+
     'media_role' => [
         'featured' => 'Featured image',
         'inline' => 'Inline',
@@ -88,6 +102,8 @@ return [
         'appearance' => 'Appearance',
         'identity' => 'Site identity',
         'analytics' => 'Analytics and verification',
+        'social_card' => 'Social share card (optional)',
+        'social_card_help' => 'Left blank, the meta title and description are used for social networks.',
     ],
 
     'field' => [
@@ -107,6 +123,14 @@ return [
         'meta_description_help' => 'Falls back to the excerpt. Around 155 characters is recommended.',
         'robots_meta' => 'Robots directive',
         'robots_meta_help' => 'Drafts and unreviewed translations are set to noindex automatically.',
+        'focus_keyphrase' => 'Focus keyphrase',
+        'focus_keyphrase_help' => 'The phrase you want this record found by IN THIS LOCALE. Set per locale — it is not a translation of the Persian one.',
+        'og_title' => 'Social card title',
+        'og_title_help' => 'Left blank, the meta title is used.',
+        'og_description' => 'Social card description',
+        'og_description_help' => 'Left blank, the meta description is used.',
+        'schema_type' => 'Structured-data type',
+        'schema_type_help' => 'Announced verbatim in the page JSON-LD, and the same in every locale.',
         'status' => 'Status',
         'publish_date' => 'Publish date',
         'publish_date_help' => 'A future date means scheduled publication; the record stays hidden from the public until then.',
@@ -258,6 +282,60 @@ return [
         'warnings' => 'SEO check',
         'no_warnings' => 'No warnings.',
         'character_count' => ':count of :limit characters',
+
+        'preview' => [
+            'label' => 'Search-result preview',
+            'no_url' => 'No slug in this locale, so it will not appear in this locale\'s results.',
+            'empty_title' => '(nothing to show as a title)',
+            'empty_description' => '(nothing to show as a description)',
+            'cut_hint' => 'This part is not shown in search results.',
+            'noindex' => 'In this locale the directive «:robots» keeps this record out of the index. Being a draft, or having an unreviewed translation, has the same effect on its own.',
+        ],
+
+        'analysis' => [
+            'label' => 'Focus keyphrase check',
+            'no_keyphrase' => 'Set a focus keyphrase to run the keyphrase checks.',
+            'caveat' => 'These checks match the phrase LITERALLY: word stems, plural forms and synonyms in Persian and Arabic are not analysed, and no readability score is computed. Checks that read the text itself refresh after saving.',
+            'band' => [
+                'good' => 'Looking good',
+                'fair' => 'Could be better',
+                'poor' => 'Needs work',
+            ],
+            'check' => [
+                'keyphrase_in_title' => [
+                    'pass' => 'The keyphrase is in the meta title.',
+                    'warn' => 'The keyphrase is not in the meta title, which is the place it matters most.',
+                ],
+                'keyphrase_in_description' => [
+                    'pass' => 'The keyphrase is in the meta description.',
+                    'warn' => 'The keyphrase is not in the meta description. That does not affect ranking, but it is bolded in the snippet and lifts click-through.',
+                ],
+                'keyphrase_in_slug' => [
+                    'pass' => 'The keyphrase is in the slug.',
+                    'warn' => 'The keyphrase is not in the slug.',
+                ],
+                'keyphrase_in_opening' => [
+                    'pass' => 'The keyphrase appears in the opening of the text (first ~:opening_words words).',
+                    'warn' => 'The keyphrase does not appear in the opening of the text (first ~:opening_words words).',
+                ],
+                'keyphrase_in_heading' => [
+                    'pass' => 'The keyphrase appears in at least one heading.',
+                    'warn' => 'The keyphrase appears in no heading.',
+                ],
+                'keyphrase_density' => [
+                    'pass' => 'Keyphrase density is :value, inside the recommended :density_min%-:density_max% band.',
+                    'warn' => 'Keyphrase density is :value; the recommended band is :density_min% to :density_max%.',
+                ],
+                'content_length' => [
+                    'pass' => 'The text is :value words long.',
+                    'warn' => 'The text is :value words long, under the recommended :min_words.',
+                ],
+                'heading_distribution' => [
+                    'pass' => 'Headings break the text into readable sections.',
+                    'warn' => 'One run of :value words has no heading; a heading roughly every :section_words words is recommended.',
+                ],
+            ],
+        ],
         'warning' => [
             'missing_title' => 'The meta title is empty and no fallback was found for it.',
             'title_too_long' => 'The meta title is longer than the recommended :title_limit characters and Google will truncate it.',
