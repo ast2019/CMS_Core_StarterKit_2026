@@ -36,6 +36,25 @@ class UrlBuilder
     ];
 
     /**
+     * The module toggle that owns each routable type.
+     *
+     * Kept beside the segment map rather than in the navigation layer because the
+     * two answers belong to the same question: "does this record have a public URL
+     * on THIS site?" A site with the gallery module off answers 404 on
+     * /api/v1/galleries/{slug} (Requirement 1.1), so the gallery URL shape still
+     * exists while no gallery URL resolves — and a menu or a sitemap that keeps
+     * advertising it produces exactly the broken link this class exists to prevent.
+     *
+     * @var array<class-string, string>
+     */
+    private const MODULES = [
+        Content::class => 'content',
+        Gallery::class => 'gallery',
+        Category::class => 'category',
+        Page::class => 'page',
+    ];
+
+    /**
      * Absolute canonical URL for a record in a locale, or null when it has no slug
      * there.
      *
@@ -124,5 +143,25 @@ class UrlBuilder
     public function isRoutable(string $modelClass): bool
     {
         return array_key_exists($modelClass, self::SEGMENTS);
+    }
+
+    /**
+     * Whether a model type has a public URL *on this deployment*.
+     *
+     * Stricter than isRoutable(): the type must also belong to an enabled module.
+     * A link to a record whose module is switched off is a link to a 404, and
+     * Requirement 1.1 says a disabled module contributes nothing public at all.
+     *
+     * @param  class-string  $modelClass
+     */
+    public function isPubliclyRoutable(string $modelClass): bool
+    {
+        if (! $this->isRoutable($modelClass)) {
+            return false;
+        }
+
+        $module = self::MODULES[$modelClass] ?? null;
+
+        return $module === null || (bool) config("cms.modules.{$module}", true);
     }
 }

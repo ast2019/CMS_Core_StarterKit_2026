@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Content;
 
 use App\Enums\RedirectType;
-use App\Models\Category;
-use App\Models\Content;
-use App\Models\Gallery;
 use App\Models\Redirect;
+use App\Services\Seo\UrlBuilder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -24,6 +22,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class RedirectSuggestionService
 {
+    public function __construct(private readonly UrlBuilder $urls) {}
+
     /**
      * Slug changes worth offering a redirect for.
      *
@@ -99,20 +99,19 @@ class RedirectSuggestionService
     /**
      * The public path for a record in a locale.
      *
-     * Mirrors the Delivery API's URL shape (MenuItem::resolveUrl uses the same
-     * segments), so a generated redirect points at a path that actually resolves.
+     * Delegates to UrlBuilder, which owns the site's URL shape. This method used to
+     * carry its own copy of the segment map and a docblock saying it "mirrors" the
+     * navigation resolver — mirroring was the bug: a fifth linkable type, or a
+     * changed segment, had to be remembered in three files, and a 301 pointing
+     * somewhere the sitemap does not list is a silently broken link.
+     *
+     * pathForSlug() rather than pathFor(): the OLD slug is no longer on the record
+     * by the time a redirect is offered, so the path has to be built from a slug
+     * passed in. The result is root-relative, which is what `redirects.from_path`
+     * stores and what HandleRedirects matches on.
      */
     public function pathFor(Model $record, string $locale, string $slug): string
     {
-        $segment = match ($record::class) {
-            Content::class => 'news',
-            Gallery::class => 'gallery',
-            Category::class => 'category',
-            default => null,
-        };
-
-        return $segment === null
-            ? "/{$locale}/{$slug}"
-            : "/{$locale}/{$segment}/{$slug}";
+        return $this->urls->pathForSlug($record::class, $locale, $slug);
     }
 }

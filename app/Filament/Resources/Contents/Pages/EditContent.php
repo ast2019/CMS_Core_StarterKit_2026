@@ -59,8 +59,9 @@ class EditContent extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Capture before the write, because HasSlug::slugChanges() compares
-        // against what was loaded and the save is about to move that baseline.
+        // Capture before the write: RedirectSuggestionService::pendingFor() diffs
+        // against the slugs as they were, and the save is about to move that
+        // baseline.
         $this->slugsBeforeSave = $this->getRecord()->getTranslations('slug');
 
         return $this->normaliseTranslatablePayload($data);

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Delivery;
 
+use App\Http\Controllers\Api\V1\Delivery\Concerns\ResolvesDeliveryRequest;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\V1\MenuItemResource;
 use App\Http\Resources\V1\PageResource;
 use App\Http\Resources\V1\SlideResource;
 use App\Models\ContactSetting;
@@ -24,6 +26,12 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  */
 class SiteController extends Controller
 {
+    /*
+     * The trait replaces a private locale() copy that predated it, and brings the
+     * module gate the other Delivery controllers already use.
+     */
+    use ResolvesDeliveryRequest;
+
     public function __construct(private readonly DeliveryCache $cache) {}
 
     /**
@@ -57,29 +65,55 @@ class SiteController extends Controller
 
     /**
      * A named navigation menu, resolved for the locale as a nested tree.
+     *
+     * Each item carries `id`, `label`, `url`, `opens_in_new_tab`, `children` and a
+     * `meta` object with `is_fallback`, `fallback_locale` and `translation_status`
+     * — the same fallback reporting the content endpoints use, because an item's URL
+     * is built from its target's slug and may resolve through the source locale.
+     *
+     * `url` is root-relative, since the frontend renders navigation on its own host.
+     * An item whose target is missing, unpublished, or owned by a disabled module is
+     * omitted, unless it still has children, in which case it is a section heading
+     * with a null `url`. The tree is capped at three levels.
+     *
+     * Answers 404 when the menu module is disabled, and 200 with an empty list for a
+     * menu key that has no items.
      */
     public function menu(Request $request, string $key = 'header'): JsonResponse
     {
+        /*
+         * Requirement 1.1, and before the cache lookup so switching the module off
+         * takes the endpoint out of service immediately rather than at the end of the
+         * cache TTL. The check was missing entirely: the route is registered
+         * unconditionally, so a site with navigation switched off still served its
+         * menus — the toggle was a lie in the one place a consumer could see it.
+         */
+        $this->ensureModuleEnabled('menu');
+
+        /*
+         * An unknown key answers 200 with an empty list, which is left as it is on
+         * purpose: menu keys are not a validated set today (any string is a
+         * menu_key), so a 404 would have to be based on a hardcoded list. The menu
+         * LOCATION concept is separate work; until it exists MenuItem::menuKeys() is
+         * only what the panel offers.
+         */
         $locale = $this->locale($request);
 
         $tree = $this->cache->remember(
             $this->cache->key('site.menu', $locale, ['key' => $key]),
             [DeliveryCache::TAG_NAVIGATION, DeliveryCache::TAG_CONTENT],
-            function () use ($key, $locale): array {
+            function () use ($key, $request): array {
                 $items = MenuItem::query()
                     ->inMenu($key)
                     ->topLevel()
-                    ->with(['children.linkable', 'linkable'])
+                    // Bounded, and bounded by the same constant the renderer stops
+                    // at. The old two-level eager load with an unbounded recursion
+                    // meant a third-level item cost a query for its children and
+                    // another for its target, on a public cached endpoint.
+                    ->with(MenuItem::treeEagerLoads())
                     ->get();
 
-                return $items
-                    ->map(fn (MenuItem $item): array => $this->menuItem($item, $locale))
-                    // An item whose target is missing or unpublished resolves to
-                    // null; dropping it here means the frontend never renders a link
-                    // into a 404.
-                    ->filter(fn (array $item): bool => $item['url'] !== null || $item['children'] !== [])
-                    ->values()
-                    ->all();
+                return MenuItemResource::tree($items, $request);
             },
         );
 
@@ -185,30 +219,5 @@ class SiteController extends Controller
             'data' => PageResource::make($page->load('mediaAssets'))->toArray($request),
             'meta' => ['locale' => $this->locale($request)],
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function menuItem(MenuItem $item, string $locale): array
-    {
-        return [
-            'id' => $item->id,
-            'label' => $item->getTranslation('label', $locale, true),
-            'url' => $item->resolveUrl($locale),
-            'opens_in_new_tab' => $item->opens_in_new_tab,
-            'children' => $item->children
-                ->map(fn (MenuItem $child): array => $this->menuItem($child, $locale))
-                ->filter(fn (array $child): bool => $child['url'] !== null)
-                ->values()
-                ->all(),
-        ];
-    }
-
-    private function locale(Request $request): string
-    {
-        $locale = $request->attributes->get('cms_locale');
-
-        return is_string($locale) ? $locale : app()->getLocale();
     }
 }

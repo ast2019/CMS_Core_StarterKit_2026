@@ -28,26 +28,10 @@ trait HasSlug
 {
     use InteractsWithLocales;
 
-    /**
-     * Slug values as they were when the model was loaded, so a change can be
-     * detected after save and offered as a 301.
-     *
-     * @var array<string, string|null>
-     */
-    protected array $originalSlugs = [];
-
     public static function bootHasSlug(): void
     {
-        static::retrieved(function (self $model): void {
-            $model->captureOriginalSlugs();
-        });
-
         static::saving(function (self $model): void {
             $model->fillMissingSlugs();
-        });
-
-        static::created(function (self $model): void {
-            $model->captureOriginalSlugs();
         });
     }
 
@@ -130,38 +114,20 @@ trait HasSlug
         return $query->exists();
     }
 
-    public function captureOriginalSlugs(): void
-    {
-        $this->originalSlugs = $this->getTranslations('slug');
-    }
-
-    /**
-     * Locales whose slug changed in the last save.
+    /*
+     * There is deliberately no slugChanges() / captureOriginalSlugs() here any more.
      *
-     * Consumed by the redirect engine to offer a 301 (Requirement 7.5). It
-     * returns the data rather than creating redirects itself: a slug corrected
-     * three times while drafting would otherwise leave two dead redirect hops
-     * behind, so creating them stays an explicit, published-content-only action.
+     * The trait used to snapshot the loaded slugs on `retrieved` and diff them after
+     * save, which was a second implementation of the rule that now lives in
+     * RedirectSuggestionService::pendingFor(). That one is strictly better — it also
+     * skips a locale already covered by an existing redirect, so repeated saves stop
+     * raising the same suggestion — and nothing called the trait's version. Keeping
+     * both meant one rule in two places with only one of them maintained.
      *
-     * @return array<string, array{from: string, to: string}>
+     * The caller (EditContent::mutateFormDataBeforeSave) captures the pre-save slugs
+     * itself and hands them to the service, so the baseline is explicit at the call
+     * site rather than hidden in a model event.
      */
-    public function slugChanges(): array
-    {
-        $changes = [];
-        $current = $this->getTranslations('slug');
-
-        foreach ($current as $locale => $new) {
-            $old = $this->originalSlugs[$locale] ?? null;
-
-            if (blank($old) || blank($new) || $old === $new) {
-                continue;
-            }
-
-            $changes[$locale] = ['from' => (string) $old, 'to' => (string) $new];
-        }
-
-        return $changes;
-    }
 
     /**
      * Resolve a record by slug within a locale, for Delivery API route binding.

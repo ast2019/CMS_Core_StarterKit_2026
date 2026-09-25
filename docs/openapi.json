@@ -1234,6 +1234,7 @@
         "/v1/menus/{key}": {
             "get": {
                 "operationId": "v1.menu",
+                "description": "Each item carries `id`, `label`, `url`, `opens_in_new_tab`, `children` and a\n`meta` object with `is_fallback`, `fallback_locale` and `translation_status`\n\u2014 the same fallback reporting the content endpoints use, because an item's URL\nis built from its target's slug and may resolve through the source locale.\n\n`url` is root-relative, since the frontend renders navigation on its own host.\nAn item whose target is missing, unpublished, or owned by a disabled module is\nomitted, unless it still has children, in which case it is a section heading\nwith a null `url`. The tree is capped at three levels.\n\nAnswers 404 when the menu module is disabled, and 200 with an empty list for a\nmenu key that has no items.",
                 "summary": "A named navigation menu, resolved for the locale as a nested tree",
                 "tags": [
                     "Site"

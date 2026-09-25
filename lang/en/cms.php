@@ -120,10 +120,13 @@ return [
         'gallery_items_help' => 'The order you choose is the order the images appear in the gallery.',
         'translation_status' => 'Translation status',
         'parent' => 'Parent',
+        'parent_help' => 'Leave empty to keep this item at the top level. A menu may be at most :depth levels deep.',
         'position' => 'Order',
         'is_active' => 'Active',
         'link' => 'Link',
         'menu_key' => 'Menu',
+        'target' => 'Target',
+        'target_help' => 'Type a few letters of the title to search. The URL is built per locale from the target\'s slug in that locale.',
         'opens_in_new_tab' => 'Open in a new tab',
         'alt_text' => 'Alternative text',
         'alt_text_help' => 'Required for accessibility and image SEO.',
@@ -221,6 +224,10 @@ return [
         ],
     ],
 
+    'menu' => [
+        'target_not_live' => 'not published',
+    ],
+
     'media' => [
         'inline_upload' => 'Upload a new image',
         'inline_upload_heading' => 'Upload an image to the media library',
@@ -249,6 +256,11 @@ return [
         'invalid_transition' => 'Moving from ":from" to ":to" is not allowed.',
         'redirect_loop' => 'This redirect points back to itself and would create a loop.',
         'video_thumbnail_required' => 'A thumbnail must be uploaded before a locally hosted video can be published.',
+        'menu_target_required' => 'A menu item needs exactly one destination: either a manual link or a target inside the site.',
+        'menu_target_missing' => 'The chosen target does not exist, or is not of that type. Pick another one.',
+        'menu_parent_missing' => 'The chosen parent does not exist.',
+        'menu_parent_cycle' => 'An item cannot sit under itself or under one of its own children — the whole branch would disappear from the menu.',
+        'menu_depth' => 'A menu may be at most :depth levels deep, and this would go deeper.',
     ],
 
     'system' => [
