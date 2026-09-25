@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Enums\TranslationStatus;
 use App\Filament\Pages\TranslationReview;
+use App\Filament\RichContent\Blocks\CalloutBlock;
 use App\Models\Content;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Translation\AiTranslationException;
 use App\Services\Translation\AiTranslator;
+use App\Support\TipTap;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -132,7 +134,8 @@ it('translates the TipTap body while preserving its structure', function (): voi
     fakeOpenRouter('Machine title', static fn (string $s): string => 'EN: '.$s);
 
     // The factory body has: paragraph text, heading (level 2) text, another
-    // paragraph text, and a callout block carrying attrs.tone + attrs.body.
+    // paragraph text, and a callout custom block in the real Filament shape —
+    // type `customBlock`, block id in attrs.id, prose in attrs.config.
     $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
 
     /** @var array<string, mixed> $sourceBody */
@@ -148,19 +151,111 @@ it('translates the TipTap body while preserving its structure', function (): voi
         ->and(array_map(fn (array $n): string => $n['type'], $enBody['content']))
         ->toBe(array_map(fn (array $n): string => $n['type'], $sourceBody['content']));
 
-    // Structural attrs are byte-identical.
+    // Structural attrs are byte-identical — including the block id, which must
+    // keep pointing at the same block class.
     expect($enBody['content'][1]['attrs'])->toBe(['level' => 2])
-        ->and($enBody['content'][3]['attrs']['tone'])->toBe('info');
+        ->and($enBody['content'][3]['attrs']['config']['tone'])->toBe('info')
+        ->and($enBody['content'][3]['attrs']['id'])->toBe('callout');
 
-    // Every prose leaf was replaced by the faked translation of its source.
+    // Every prose leaf was replaced by the faked translation of its source,
+    // including the prose inside the custom block's config.
     expect($enBody['content'][0]['content'][0]['text'])
         ->toBe('EN: '.$sourceBody['content'][0]['content'][0]['text'])
         ->and($enBody['content'][1]['content'][0]['text'])
         ->toBe('EN: '.$sourceBody['content'][1]['content'][0]['text'])
         ->and($enBody['content'][2]['content'][0]['text'])
         ->toBe('EN: '.$sourceBody['content'][2]['content'][0]['text'])
-        ->and($enBody['content'][3]['attrs']['body'])
-        ->toBe('EN: '.$sourceBody['content'][3]['attrs']['body']);
+        ->and($enBody['content'][3]['attrs']['config']['body'])
+        ->toBe('EN: '.$sourceBody['content'][3]['attrs']['config']['body']);
+});
+
+it('rebuilds a custom block cached label and preview from the translated config', function (): void {
+    enableAiTranslation();
+    fakeOpenRouter('Machine title', static fn (string $s): string => 'EN: '.$s);
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    $sourceConfig = ['tone' => 'info', 'title' => 'عنوان بلوک', 'body' => 'متن بلوک'];
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'customBlock',
+                'attrs' => [
+                    'config' => $sourceConfig,
+                    'id' => 'callout',
+                    'label' => CalloutBlock::getPreviewLabel($sourceConfig),
+                    'preview' => base64_encode((string) CalloutBlock::toPreviewHtml($sourceConfig)),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    /** @var array<string, mixed> $sourceBody */
+    $sourceBody = $content->getTranslation('body', 'fa', useFallbackLocale: false);
+    $sourceCallout = $sourceBody['content'][0]['attrs'];
+
+    app(AiTranslator::class)->translate($content, 'en');
+
+    /** @var array<string, mixed> $enBody */
+    $enBody = $content->fresh()->getTranslation('body', 'en', useFallbackLocale: false);
+    $callout = $enBody['content'][0]['attrs'];
+
+    /*
+     * `label` and `preview` are SNAPSHOTS Filament derives from config at save
+     * time. Translating config without rebuilding them would leave an editor
+     * looking at the Persian preview above English content, and re-saving the
+     * English document would write that stale Persian preview back as current.
+     */
+    $translatedBody = 'EN: '.$sourceCallout['config']['body'];
+
+    expect($callout['config']['body'])->toBe($translatedBody)
+        ->and($callout['preview'])->not->toBe($sourceCallout['preview'])
+        ->and(base64_decode($callout['preview'], strict: true))->toContain($translatedBody)
+        // Rebuilt through the block class, so it matches byte-for-byte what
+        // CustomBlockAction writes when a human edits the block.
+        ->and($callout['label'])->toBe(CalloutBlock::getPreviewLabel($callout['config']))
+        ->and($callout['preview'])->toBe(base64_encode((string) CalloutBlock::toPreviewHtml($callout['config'])));
+});
+
+it('translates a body whose only prose lives in custom blocks', function (): void {
+    enableAiTranslation();
+    fakeOpenRouter('Machine title', static fn (string $s): string => 'EN: '.$s);
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    // No paragraphs at all: every word in this document sits inside a block's
+    // config. Under the old (imaginary) node shape nothing here was collected, so
+    // the walk found zero prose and the block text stayed Persian for ever.
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'customBlock',
+                'attrs' => [
+                    'config' => ['tone' => 'warning', 'title' => 'توجه', 'body' => 'متن هشدار'],
+                    'id' => 'callout',
+                    'label' => 'هشدار: توجه',
+                    'preview' => base64_encode('<div>متن هشدار</div>'),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    $result = app(AiTranslator::class)->translate($content, 'en');
+
+    /** @var array<string, mixed> $enBody */
+    $enBody = $content->fresh()->getTranslation('body', 'en', useFallbackLocale: false);
+    $config = $enBody['content'][0]['attrs']['config'];
+
+    expect($result->attributes)->toContain('body')
+        ->and($config['title'])->toBe('EN: توجه')
+        ->and($config['body'])->toBe('EN: متن هشدار')
+        ->and($config['tone'])->toBe('warning');
 });
 
 it('preserves marks and structural block attrs while translating only prose', function (): void {
@@ -169,8 +264,15 @@ it('preserves marks and structural block attrs while translating only prose', fu
 
     $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
 
-    // A body with a marked (bold) text leaf and a hero block whose cta_url and
-    // media_asset_id are structural and must survive byte-for-byte.
+    /*
+     * A body with a marked (bold) text leaf and a hero block whose cta_url and
+     * media_asset_id are structural and must survive byte-for-byte.
+     *
+     * The hero node is written the way Filament writes it — type `customBlock`,
+     * id `hero`, fields in config. The earlier version of this test hand-built
+     * `{"type":"hero","attrs":{...}}`, a node the editor cannot produce, so it
+     * asserted that an unreachable code path worked.
+     */
     $content->setTranslation('body', 'fa', [
         'type' => 'doc',
         'content' => [
@@ -185,13 +287,19 @@ it('preserves marks and structural block attrs while translating only prose', fu
                 ],
             ],
             [
-                'type' => 'hero',
+                'type' => 'customBlock',
                 'attrs' => [
-                    'heading' => 'سرتیتر',
-                    'lead' => 'مقدمه',
-                    'cta_label' => 'اقدام کنید',
-                    'cta_url' => 'https://example.test/go',
-                    'media_asset_id' => 42,
+                    'config' => [
+                        'heading' => 'سرتیتر',
+                        'lead' => 'مقدمه',
+                        'cta_label' => 'اقدام کنید',
+                        'cta_url' => 'https://example.test/go',
+                        'media_asset_id' => 42,
+                    ],
+                    'id' => 'hero',
+                    'label' => 'قهرمان: سرتیتر',
+                    'preview' => base64_encode('<section>سرتیتر</section>'),
+                    'shouldApplyProseStylingToPreview' => false,
                 ],
             ],
         ],
@@ -210,12 +318,64 @@ it('preserves marks and structural block attrs while translating only prose', fu
     expect($textNode['text'])->toBe('EN: متن پررنگ')
         ->and($textNode['marks'])->toBe([['type' => 'bold']]);
 
-    // Hero: prose attrs translated, structural attrs byte-identical.
-    expect($hero['attrs']['heading'])->toBe('EN: سرتیتر')
-        ->and($hero['attrs']['lead'])->toBe('EN: مقدمه')
-        ->and($hero['attrs']['cta_label'])->toBe('EN: اقدام کنید')
-        ->and($hero['attrs']['cta_url'])->toBe('https://example.test/go')
-        ->and($hero['attrs']['media_asset_id'])->toBe(42);
+    // Hero: prose config translated, structural config byte-identical, and the
+    // node itself still a `customBlock` pointing at the hero block.
+    expect($hero['type'])->toBe('customBlock')
+        ->and($hero['attrs']['id'])->toBe('hero')
+        ->and($hero['attrs']['config']['heading'])->toBe('EN: سرتیتر')
+        ->and($hero['attrs']['config']['lead'])->toBe('EN: مقدمه')
+        ->and($hero['attrs']['config']['cta_label'])->toBe('EN: اقدام کنید')
+        ->and($hero['attrs']['config']['cta_url'])->toBe('https://example.test/go')
+        ->and($hero['attrs']['config']['media_asset_id'])->toBe(42);
+});
+
+it('leaves a quote attribution untranslated while still indexing it', function (): void {
+    enableAiTranslation();
+    fakeOpenRouter('Machine title', static fn (string $s): string => 'EN: '.$s);
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'customBlock',
+                'attrs' => [
+                    'config' => [
+                        'quote' => 'دانش، قدرت است.',
+                        'attribution' => 'مریم احمدی',
+                        'attribution_role' => 'وزیر بهداشت',
+                    ],
+                    'id' => 'quote',
+                    'label' => 'دانش، قدرت است.',
+                    'preview' => base64_encode('<blockquote>دانش، قدرت است.</blockquote>'),
+                    'shouldApplyProseStylingToPreview' => true,
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    app(AiTranslator::class)->translate($content, 'en');
+
+    /** @var array<string, mixed> $enBody */
+    $enBody = $content->fresh()->getTranslation('body', 'en', useFallbackLocale: false);
+    $config = $enBody['content'][0]['attrs']['config'];
+
+    /*
+     * `attribution` is a person's NAME. A translation model does not translate a
+     * name, it transliterates or "localises" it, which damages a factual
+     * attribution and misattributes the quote. The role beside it IS a job title
+     * and is translated. A human reviewer can still adjust the name by hand.
+     */
+    expect($config['quote'])->toBe('EN: دانش، قدرت است.')
+        ->and($config['attribution_role'])->toBe('EN: وزیر بهداشت')
+        ->and($config['attribution'])->toBe('مریم احمدی');
+
+    // Excluded from TRANSLATION, not from SEARCH: looking up a speaker by name is
+    // a real query, so the fa index still carries it.
+    expect(TipTap::toPlainText($content->getTranslation('body', 'fa', useFallbackLocale: false)))
+        ->toContain('مریم احمدی');
 });
 
 it('does not re-translate a locale a human already reviewed', function (): void {
@@ -249,6 +409,87 @@ it('does not re-translate a locale a human already reviewed', function (): void 
         ->and($fresh->getTranslation('body', 'en', useFallbackLocale: false)['content'][0]['content'][0]['text'])
         ->toBe('Hand written English body')
         ->and($fresh->translationStatusFor('en'))->toBe(TranslationStatus::Reviewed);
+});
+
+it('drops an outdated locale out of sitemap eligibility when it is re-translated', function (): void {
+    /*
+     * Decision D-5: unreviewed machine output must never reach a sitemap.
+     *
+     * `outdated` IS sitemap-eligible — it was verified once, so serving slightly
+     * stale text beats dropping the page. But the two guards used to disagree
+     * about it: translate() refused only `reviewed`, so an outdated locale WAS
+     * re-translated, while markTranslationAiTranslated() guarded on wasReviewed()
+     * (true for `outdated` too) and left the status alone. The result was raw
+     * machine output sitting in the sitemap under a status that claimed a human
+     * had verified it, still credited to a named reviewer.
+     */
+    enableAiTranslation();
+    fakeOpenRouter('Machine English title', static fn (string $s): string => 'EN: '.$s);
+
+    $reviewer = User::factory()->admin()->create();
+    $content = Content::factory()->multilingual()->create();
+
+    $content->markTranslationReviewed('en', $reviewer->getKey());
+
+    // The Persian source moves on, which flags the reviewed locale as outdated.
+    $content->setTranslation('title', 'fa', 'عنوان تغییر یافته');
+    $content->save();
+
+    $content = $content->fresh();
+
+    expect($content->translationStatusFor('en'))->toBe(TranslationStatus::Outdated)
+        ->and($content->isSitemapEligibleFor('en'))->toBeTrue();
+
+    app(AiTranslator::class)->translate($content, 'en');
+
+    $content = $content->fresh();
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+
+    expect($content->translationStatusFor('en'))->toBe(TranslationStatus::AiTranslated)
+        // The point of the whole fix: machine text is out of the sitemap again.
+        ->and($content->isSitemapEligibleFor('en'))->toBeFalse()
+        ->and($content->getTranslation('title', 'en', useFallbackLocale: false))->toBe('Machine English title')
+        // Review provenance is cleared, so the backlog cannot credit a human for
+        // text a machine wrote, and no stale hash claims to describe it.
+        ->and($state->reviewed_by)->toBeNull()
+        ->and($state->reviewed_at)->toBeNull()
+        ->and($state->source_hash)->toBeNull();
+});
+
+it('offers the outdated-specific warning before re-translating a stale locale', function (): void {
+    // The consequences of re-translating an outdated locale (sign-off discarded,
+    // locale leaves its sitemap) have to be stated BEFORE the translator confirms.
+    enableAiTranslation();
+
+    actingAs(User::factory()->admin()->create());
+
+    $content = Content::factory()->multilingual()->create();
+    $content->markTranslationReviewed('en');
+    $content->setTranslation('title', 'fa', 'عنوان تغییر یافته');
+    $content->save();
+
+    $outdated = $content->translationStates()->where('locale', 'en')->firstOrFail();
+    $untouched = $content->translationStates()->where('locale', 'ar')->firstOrFail();
+
+    expect($outdated->status)->toBe(TranslationStatus::Outdated);
+
+    // Still actionable: refreshing a stale translation is the main reason to
+    // re-run the machine.
+    $outdatedModal = Livewire::test(TranslationReview::class)
+        ->assertActionVisible(TestAction::make('translateAi')->table($outdated))
+        ->mountAction(TestAction::make('translateAi')->table($outdated))
+        ->instance()
+        ->getMountedAction()
+        ?->getModalDescription();
+
+    $normalModal = Livewire::test(TranslationReview::class)
+        ->mountAction(TestAction::make('translateAi')->table($untouched))
+        ->instance()
+        ->getMountedAction()
+        ?->getModalDescription();
+
+    expect($outdatedModal)->toBe(__('cms.ai_translation.confirm_outdated'))
+        ->and($normalModal)->toBe(__('cms.ai_translation.confirm'));
 });
 
 it('replaces rather than appends when re-translating an ai_translated locale', function (): void {
@@ -376,6 +617,127 @@ it('rejects an empty-after-trim batch element rather than writing an invalid Tip
 
     // No invalid body was written for the target locale.
     expect($content->fresh()->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty();
+});
+
+it('leaves the target body empty rather than copying the Persian source when there is no prose to translate', function (): void {
+    /*
+     * A body can be valid and hold no translatable prose at all: a lone
+     * gallery_embed (it only references a gallery by id), an image-only body, or
+     * nothing but empty paragraphs. The walk then collects zero segments, and the
+     * translator used to write the UNTRANSLATED source document into the target
+     * locale anyway — it only skipped the bookkeeping. The locale ended up holding
+     * a verbatim Persian body that hasAnyTranslationFor() counted as present and
+     * the review queue showed as finished work: a silent false success nobody goes
+     * looking for.
+     */
+    enableAiTranslation();
+    fakeOpenRouter('Machine English title');
+
+    $content = Content::factory()->create(['title' => ['fa' => 'گزارش تصویری']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => TipTap::CUSTOM_BLOCK_NODE_TYPE,
+                'attrs' => [
+                    'config' => ['gallery_id' => 7, 'layout' => 'grid', 'max_items' => 12],
+                    'id' => 'gallery_embed',
+                    'label' => 'گالری',
+                    'preview' => base64_encode('<div>gallery 7</div>'),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+            // A structurally-empty paragraph, which is what an editor leaves behind
+            // by clicking into the field and out again.
+            ['type' => 'paragraph'],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    /** @var array<string, mixed> $sourceBody */
+    $sourceBody = $content->getTranslation('body', 'fa', useFallbackLocale: false);
+
+    // The title still IS translatable, so the run succeeds on its strength.
+    $result = app(AiTranslator::class)->translate($content, 'en');
+
+    $fresh = $content->fresh();
+
+    expect($fresh->getTranslation('title', 'en', useFallbackLocale: false))->toBe('Machine English title')
+        // The point of the fix: no body at all for the target locale — NOT a copy
+        // of the Persian one.
+        ->and($fresh->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty()
+        ->and($result->attributes)->not->toContain('body')
+        // The Persian source is untouched, structural attrs included.
+        ->and($fresh->getTranslation('body', 'fa', useFallbackLocale: false))->toBe($sourceBody);
+
+    /*
+     * The plain fields were sent one at a time as bare strings; no BATCH call (a
+     * JSON-array user message, which is the body path's shape) was made at all,
+     * because there was nothing in the body to batch.
+     */
+    Http::assertNotSent(function (Request $request): bool {
+        foreach ($request->data()['messages'] ?? [] as $message) {
+            if (($message['role'] ?? null) !== 'user') {
+                continue;
+            }
+
+            $decoded = json_decode((string) ($message['content'] ?? ''), true);
+
+            if (is_array($decoded) && array_is_list($decoded)) {
+                return true;
+            }
+        }
+
+        return false;
+    });
+});
+
+it('reports an empty source when a present body holds no translatable prose either', function (): void {
+    /*
+     * Coherence with the guard above. Once a prose-free body is no longer written,
+     * a record whose ONLY content is such a body has nothing translatable
+     * anywhere, and the honest answer is the same empty-source report a blank
+     * record gets — not a success that translated not one word and still left the
+     * locale sitting at ai_translated in the review queue.
+     */
+    enableAiTranslation();
+    Http::fake();
+
+    $content = Content::factory()->create([
+        'title' => ['fa' => ''],
+        'slug' => ['fa' => 'placeholder-slug'],
+        'excerpt' => ['fa' => ''],
+        'answer_paragraph' => ['fa' => ''],
+        'meta_title' => ['fa' => ''],
+        'meta_description' => ['fa' => ''],
+    ]);
+
+    $content->setTranslation('title', 'fa', '');
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => TipTap::CUSTOM_BLOCK_NODE_TYPE,
+                'attrs' => [
+                    'config' => ['gallery_id' => 3, 'layout' => 'carousel'],
+                    'id' => 'gallery_embed',
+                    'label' => 'گالری',
+                    'preview' => base64_encode('<div>gallery 3</div>'),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    expect(fn () => app(AiTranslator::class)->translate($content->fresh(), 'en'))
+        ->toThrow(AiTranslationException::class, 'cms.ai_translation.error.empty_source');
+
+    Http::assertNothingSent();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::NotTranslated)
+        ->and($content->fresh()->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty();
 });
 
 it('reports an empty source rather than calling the model', function (): void {

@@ -88,6 +88,20 @@ class UrlBuilder
     }
 
     /**
+     * A fragment URI on one of this site's URLs, e.g. https://site/fa/news/x#article.
+     *
+     * JSON-LD nodes need stable @id values, and the convention is a fragment on the
+     * URL of the thing being described. That still has to agree with the rest of the
+     * site's URL shape — an @id assembled by hand somewhere in the SEO layer is the
+     * fourth near-identical path builder this class exists to prevent, and a @graph
+     * whose nodes are addressed inconsistently cross-references nothing.
+     */
+    public function withFragment(string $url, string $fragment): string
+    {
+        return rtrim($url, '#').'#'.ltrim($fragment, '#');
+    }
+
+    /**
      * Absolute URL from a root-relative path.
      *
      * Built from the FRONTEND base URL, which may differ from APP_URL: this Core is

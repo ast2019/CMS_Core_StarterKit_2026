@@ -160,12 +160,26 @@ class TranslationReview extends Page implements HasTable
                     ->icon('heroicon-o-sparkles')
                     ->color('info')
                     ->requiresConfirmation()
-                    ->modalDescription(__('cms.ai_translation.confirm'))
+                    /*
+                     * An outdated locale gets a different warning. Re-translating
+                     * it is allowed and useful, but it has consequences the plain
+                     * message does not cover: the previous human sign-off is
+                     * discarded and the locale leaves its sitemap until somebody
+                     * reviews it again (Decision D-5). A translator should read
+                     * that before confirming, not discover it afterwards.
+                     */
+                    ->modalDescription(fn (TranslationState $record): string => $record->status === TranslationStatus::Outdated
+                        ? __('cms.ai_translation.confirm_outdated')
+                        : __('cms.ai_translation.confirm'))
                     // Visible only when the feature is switched on AND the row is
                     // not already human-reviewed. Re-running the machine over a
                     // reviewed locale would overwrite signed-off text, so the
                     // service refuses it (AiTranslationException::alreadyReviewed);
                     // hiding the action here makes that policy visible in the UI.
+                    // `outdated` stays actionable on purpose — refreshing a stale
+                    // translation is the main reason to re-run the machine — and
+                    // markTranslationAiTranslated() moves such a row to
+                    // ai_translated, clearing the old review provenance.
                     // Reviewers and above may run it, matching who can act on the
                     // backlog; the result still needs a human to sign off, so this
                     // does not let an Author self-approve.

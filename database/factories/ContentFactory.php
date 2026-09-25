@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Enums\ContentStatus;
+use App\Filament\RichContent\Blocks\CalloutBlock;
 use App\Models\Content;
 use App\Models\User;
+use App\Support\TipTap;
 use Database\Factories\Concerns\GeneratesPersianText;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -120,14 +122,42 @@ class ContentFactory extends Factory
                         ['type' => 'text', 'text' => $this->persianParagraph(350)],
                     ],
                 ],
-                [
-                    // A custom block, to prove the round-trip works.
-                    'type' => 'callout',
-                    'attrs' => [
-                        'tone' => 'info',
-                        'body' => $this->persianSentence(160),
-                    ],
-                ],
+                $this->calloutBlock($this->persianSentence(160)),
+            ],
+        ];
+    }
+
+    /**
+     * A callout custom block in the shape Filament ACTUALLY saves (RULE #6).
+     *
+     * This matters more than it looks. Every block is stored under the single node
+     * type `customBlock`, with the block id, its field values and its cached
+     * preview one level down inside `attrs`:
+     *
+     *     {"type":"customBlock","attrs":{"id":"callout","config":{...},
+     *      "label":"...","preview":"<base64 html>",...}}
+     *
+     * This factory previously emitted `{"type":"callout","attrs":{...fields...}}`,
+     * a shape no editor can produce. Because the fixture and the production code
+     * shared the same wrong assumption, the tests agreed with each other while
+     * real block prose was invisible to both search indexing and the AI
+     * translator. The fixture now mirrors CustomBlockAction, so a divergence shows
+     * up as a failing test instead of as missing Persian text in production.
+     *
+     * @return array<string, mixed>
+     */
+    protected function calloutBlock(string $body, string $tone = 'info'): array
+    {
+        $config = ['tone' => $tone, 'title' => '', 'body' => $body];
+
+        return [
+            'type' => TipTap::CUSTOM_BLOCK_NODE_TYPE,
+            'attrs' => [
+                'config' => $config,
+                'id' => CalloutBlock::getId(),
+                'label' => CalloutBlock::getPreviewLabel($config),
+                'preview' => base64_encode((string) CalloutBlock::toPreviewHtml($config)),
+                'shouldApplyProseStylingToPreview' => CalloutBlock::shouldApplyProseStylingToPreview($config),
             ],
         ];
     }
