@@ -123,6 +123,7 @@ return [
         'author' => 'الكاتب',
         'featured_image' => 'الصورة البارزة',
         'featured_image_help' => 'اختر من مكتبة الوسائط. الصورة البارزة مطلوبة.',
+        'gallery_items_help' => 'الترتيب الذي تختاره هو ترتيب ظهور الصور في المعرض.',
         'translation_status' => 'حالة الترجمة',
         'parent' => 'الأصل',
         'position' => 'الترتيب',
@@ -226,7 +227,27 @@ return [
         ],
     ],
 
+    'media' => [
+        'inline_upload' => 'رفع صورة جديدة',
+        'inline_upload_heading' => 'رفع صورة إلى مكتبة الوسائط',
+        'inline_upload_description' => 'تُضاف الصورة إلى مكتبة الوسائط وتُختار هنا، دون مغادرة هذه الصفحة.',
+        'inline_upload_submit' => 'رفع واختيار',
+    ],
+
+    'seo' => [
+        'warnings' => 'فحص تحسين محركات البحث',
+        'no_warnings' => 'لا توجد تحذيرات.',
+        'character_count' => ':count من :limit حرفًا',
+        'warning' => [
+            'missing_title' => 'عنوان الميتا فارغ ولم يُوجد بديل له.',
+            'title_too_long' => 'عنوان الميتا أطول من :title_limit حرفًا الموصى بها وسيقتطعه جوجل.',
+            'missing_description' => 'وصف الميتا فارغ ولم يُوجد بديل له.',
+            'description_too_long' => 'وصف الميتا أطول من :description_limit حرفًا الموصى بها وسيقتطعه جوجل.',
+        ],
+    ],
+
     'validation' => [
+        'media_file_required' => 'ملف الصورة مطلوب.',
         'featured_image_required' => 'اختيار صورة بارزة مطلوب.',
         'slides_max' => 'يمكنك إضافة :max شرائح كحد أقصى.',
         'slug_unique' => 'هذا المعرّف مستخدم بالفعل في اللغة :locale.',

@@ -123,6 +123,7 @@ return [
         'author' => 'نویسنده',
         'featured_image' => 'تصویر شاخص',
         'featured_image_help' => 'از کتابخانهٔ رسانه انتخاب کنید. انتخاب تصویر شاخص الزامی است.',
+        'gallery_items_help' => 'ترتیب انتخاب، ترتیب نمایش تصویرها در گالری است.',
         'translation_status' => 'وضعیت ترجمه',
         'parent' => 'والد',
         'position' => 'ترتیب',
@@ -226,7 +227,27 @@ return [
         ],
     ],
 
+    'media' => [
+        'inline_upload' => 'بارگذاری تصویر تازه',
+        'inline_upload_heading' => 'بارگذاری تصویر در کتابخانهٔ رسانه',
+        'inline_upload_description' => 'تصویر در کتابخانهٔ رسانه ثبت و همینجا انتخاب میشود؛ لازم نیست این صفحه را ترک کنید.',
+        'inline_upload_submit' => 'بارگذاری و انتخاب',
+    ],
+
+    'seo' => [
+        'warnings' => 'بررسی سئو',
+        'no_warnings' => 'هشداری وجود ندارد.',
+        'character_count' => ':count از :limit نویسه',
+        'warning' => [
+            'missing_title' => 'عنوان متا خالی است و جایگزینی هم برای آن پیدا نشد.',
+            'title_too_long' => 'عنوان متا از :title_limit نویسهٔ توصیهشده بلندتر است و گوگل آن را کوتاه میکند.',
+            'missing_description' => 'توضیح متا خالی است و جایگزینی هم برای آن پیدا نشد.',
+            'description_too_long' => 'توضیح متا از :description_limit نویسهٔ توصیهشده بلندتر است و گوگل آن را کوتاه میکند.',
+        ],
+    ],
+
     'validation' => [
+        'media_file_required' => 'انتخاب فایل تصویر الزامی است.',
         'featured_image_required' => 'انتخاب تصویر شاخص الزامی است.',
         'slides_max' => 'حداکثر :max اسلاید می‌توانید داشته باشید.',
         'slug_unique' => 'این نشانی (اسلاگ) در زبان :locale قبلاً استفاده شده است.',

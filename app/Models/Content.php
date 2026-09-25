@@ -13,6 +13,7 @@ use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
 use App\Concerns\IsSearchable;
 use App\Contracts\HasFeaturedMedia;
+use App\Contracts\HasSeoMetadata;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
 use App\Contracts\Versionable;
@@ -47,7 +48,7 @@ use Spatie\Translatable\HasTranslations;
  * @property-read Collection<int, Category> $categories
  * @property-read Collection<int, Tag> $tags
  */
-class Content extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus, Versionable
+class Content extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishable, TracksTranslationStatus, Versionable
 {
     use HasContentVersions;
     use HasFactory;

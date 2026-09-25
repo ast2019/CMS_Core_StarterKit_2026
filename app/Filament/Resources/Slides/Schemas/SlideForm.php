@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Slides\Schemas;
 
+use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\TranslatableTabs;
-use App\Models\MediaAsset;
 use App\Models\Slide;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -39,22 +39,8 @@ class SlideForm
             Section::make(__('cms.section.featured_image'))
                 ->columns(2)
                 ->schema([
-                    Select::make('featured_media_asset_id')
-                        ->label(__('cms.field.featured_image'))
-                        // RULE #7 — slides are content-bearing (blueprint §3).
-                        ->required()
-                        ->searchable()
-                        ->preload()
-                        ->options(fn (): array => MediaAsset::query()
-                            ->where('type', 'image')
-                            ->latest()
-                            ->limit(50)
-                            ->get()
-                            ->mapWithKeys(fn (MediaAsset $a): array => [
-                                $a->getKey() => $a->altTextFor(app()->getLocale()) ?: "#{$a->getKey()}",
-                            ])
-                            ->all())
-                        ->dehydrated(false)
+                    // RULE #7 — slides are content-bearing (blueprint §3).
+                    MediaAssetPicker::featured()
                         ->columnSpanFull()
                         ->afterStateHydrated(function (Select $component, $state, ?Slide $record): void {
                             if ($record !== null && $state === null) {

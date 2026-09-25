@@ -8,6 +8,7 @@ use App\Concerns\HasSeoMeta;
 use App\Concerns\HasSlug;
 use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
+use App\Contracts\HasSeoMetadata;
 use App\Contracts\TracksTranslationStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,7 +24,7 @@ use Spatie\Translatable\HasTranslations;
  *
  * @property-read Collection<int, self> $children
  */
-class Category extends Model implements TracksTranslationStatus
+class Category extends Model implements HasSeoMetadata, TracksTranslationStatus
 {
     use HasFactory;
     use HasSeoMeta;

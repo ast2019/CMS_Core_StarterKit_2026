@@ -12,6 +12,7 @@ use App\Concerns\HasSlug;
 use App\Concerns\HasTranslationStatus;
 use App\Concerns\IsAuditable;
 use App\Contracts\HasFeaturedMedia;
+use App\Contracts\HasSeoMetadata;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
 use App\Contracts\Versionable;
@@ -30,7 +31,7 @@ use Spatie\Translatable\HasTranslations;
  * @property int $position
  * @property string|null $system_key
  */
-class Page extends Model implements HasFeaturedMedia, Publishable, TracksTranslationStatus, Versionable
+class Page extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishable, TracksTranslationStatus, Versionable
 {
     use HasContentVersions;
     use HasFactory;

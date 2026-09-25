@@ -44,9 +44,7 @@ class PageResource extends JsonResource
 
             'seo' => [
                 'meta_title' => $this->metaTitleFor($locale),
-                // Not metaDescriptionFor(): a Page has no `excerpt`, and the trait's
-                // fallback reaches for one unguarded. See ResolvesLocale.
-                'meta_description' => $this->metaDescription($this->resource, $locale),
+                'meta_description' => $this->metaDescriptionFor($locale),
                 'robots' => $this->robotsMetaFor($locale),
             ],
 

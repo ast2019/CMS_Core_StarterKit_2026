@@ -6,12 +6,12 @@ namespace App\Filament\Resources\Pages\Schemas;
 
 use App\Enums\ContentStatus;
 use App\Filament\Schemas\CmsRichEditor;
+use App\Filament\Schemas\MediaAssetPicker;
+use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
-use App\Models\MediaAsset;
 use App\Models\Page;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -44,20 +44,15 @@ class PageForm
                 CmsRichEditor::make("blocks.{$locale}", $locale)
                     ->label(__('cms.field.blocks')),
 
-                Section::make(__('cms.section.seo'))
-                    ->collapsed()
-                    ->schema([
-                        TextInput::make("meta_title.{$locale}")
-                            ->label(__('cms.field.meta_title'))
-                            ->maxLength(255)
-                            ->extraInputAttributes(self::directionFor($locale)),
-
-                        Textarea::make("meta_description.{$locale}")
-                            ->label(__('cms.field.meta_description'))
-                            ->rows(2)
-                            ->maxLength(320)
-                            ->extraInputAttributes(self::directionFor($locale)),
-                    ]),
+                /*
+                 * Includes the robots directive, which this form never offered.
+                 * `robots_meta` has always been a translatable column on Page and
+                 * robotsMetaFor() has always read it, so a static page COULD be
+                 * noindex — just not from the panel. Anyone wanting to keep a
+                 * thank-you or a landing page out of the index had to edit the
+                 * database.
+                 */
+                SeoSection::make(Page::class, $locale),
             ]),
 
             Section::make(__('cms.section.publishing'))
@@ -97,22 +92,7 @@ class PageForm
 
             Section::make(__('cms.section.featured_image'))
                 ->schema([
-                    Select::make('featured_media_asset_id')
-                        ->label(__('cms.field.featured_image'))
-                        ->required()
-                        ->searchable()
-                        ->preload()
-                        ->options(fn (): array => MediaAsset::query()
-                            ->where('type', 'image')
-                            ->latest()
-                            ->limit(50)
-                            ->get()
-                            ->mapWithKeys(fn (MediaAsset $a): array => [
-                                $a->getKey() => $a->altTextFor(app()->getLocale()) ?: "#{$a->getKey()}",
-                            ])
-                            ->all())
-                        ->helperText(__('cms.field.featured_image_help'))
-                        ->dehydrated(false)
+                    MediaAssetPicker::featured()
                         ->afterStateHydrated(function (Select $component, $state, ?Page $record): void {
                             if ($record !== null && $state === null) {
                                 $component->state($record->featuredImage()?->getKey());

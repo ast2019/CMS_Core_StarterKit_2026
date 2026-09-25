@@ -69,9 +69,7 @@ class GalleryResource extends JsonResource
 
             'seo' => [
                 'meta_title' => $this->metaTitleFor($locale),
-                // Not metaDescriptionFor(): a Gallery has no `excerpt`, and the
-                // trait's fallback reaches for one unguarded. See ResolvesLocale.
-                'meta_description' => $this->metaDescription($this->resource, $locale),
+                'meta_description' => $this->metaDescriptionFor($locale),
                 // Unreviewed translations are noindex automatically, so a frontend
                 // that renders this verbatim cannot leak one to search.
                 'robots' => $this->robotsMetaFor($locale),

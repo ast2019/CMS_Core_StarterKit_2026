@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Galleries\Schemas;
 
 use App\Enums\ContentStatus;
+use App\Filament\Schemas\MediaAssetPicker;
+use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Gallery;
-use App\Models\MediaAsset;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -38,6 +39,15 @@ class GalleryForm
                     ->rows(3)
                     ->maxLength(1000)
                     ->extraInputAttributes(self::directionFor($locale)),
+
+                /*
+                 * This form had no SEO fields at all, despite Gallery using
+                 * HasSeoMeta, declaring all three meta columns as translatable, and
+                 * appearing in the sitemap. A gallery therefore went to search
+                 * engines with whatever the fallbacks produced and no way to
+                 * influence it — including no way to keep one out of the index.
+                 */
+                SeoSection::make(Gallery::class, $locale),
             ]),
 
             Section::make(__('cms.section.publishing'))
@@ -66,13 +76,7 @@ class GalleryForm
             Section::make(__('cms.section.featured_image'))
                 ->description(__('cms.field.featured_image_help'))
                 ->schema([
-                    Select::make('featured_media_asset_id')
-                        ->label(__('cms.field.featured_image'))
-                        ->required()
-                        ->searchable()
-                        ->preload()
-                        ->options(fn (): array => self::imageOptions())
-                        ->dehydrated(false)
+                    MediaAssetPicker::featured()
                         ->afterStateHydrated(function (Select $component, $state, ?Gallery $record): void {
                             if ($record !== null && $state === null) {
                                 $component->state($record->cover()?->getKey());
@@ -81,14 +85,13 @@ class GalleryForm
                 ]),
 
             Section::make(__('cms.resource.gallery'))
+                ->description(__('cms.field.gallery_items_help'))
                 ->schema([
-                    Select::make('gallery_item_ids')
+                    // Persisted by ManagesGalleryItems on the Create/Edit pages. It
+                    // was not persisted at all before, so the inline uploader here
+                    // would otherwise have been a faster way to lose an upload.
+                    MediaAssetPicker::images(MediaAssetPicker::GALLERY_ITEMS_FIELD)
                         ->label(__('cms.resource.media_assets'))
-                        ->multiple()
-                        ->searchable()
-                        ->preload()
-                        ->options(fn (): array => self::imageOptions(200))
-                        ->dehydrated(false)
                         ->afterStateHydrated(function (Select $component, $state, ?Gallery $record): void {
                             if ($record !== null && $state === null) {
                                 $component->state($record->items()->pluck('media_assets.id')->all());
@@ -96,22 +99,6 @@ class GalleryForm
                         }),
                 ]),
         ]);
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private static function imageOptions(int $limit = 50): array
-    {
-        return MediaAsset::query()
-            ->where('type', 'image')
-            ->latest()
-            ->limit($limit)
-            ->get()
-            ->mapWithKeys(fn (MediaAsset $a): array => [
-                $a->getKey() => $a->altTextFor(app()->getLocale()) ?: "#{$a->getKey()}",
-            ])
-            ->all();
     }
 
     /**

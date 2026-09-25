@@ -1388,8 +1388,7 @@
                                                             "type": "string"
                                                         },
                                                         "meta_description": {
-                                                            "type": "string",
-                                                            "description": "Not metaDescriptionFor(): a Page has no `excerpt`, and the trait's\nfallback reaches for one unguarded. See ResolvesLocale."
+                                                            "type": "string"
                                                         },
                                                         "robots": {
                                                             "type": "string"
@@ -1977,8 +1976,7 @@
                                 "type": "string"
                             },
                             "meta_description": {
-                                "type": "string",
-                                "description": "Not metaDescriptionFor(): a Gallery has no `excerpt`, and the\ntrait's fallback reaches for one unguarded. See ResolvesLocale."
+                                "type": "string"
                             },
                             "robots": {
                                 "type": "string",
@@ -2173,8 +2171,7 @@
                                 "type": "string"
                             },
                             "meta_description": {
-                                "type": "string",
-                                "description": "Not metaDescriptionFor(): a Page has no `excerpt`, and the trait's\nfallback reaches for one unguarded. See ResolvesLocale."
+                                "type": "string"
                             },
                             "robots": {
                                 "type": "string"

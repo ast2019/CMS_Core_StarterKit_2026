@@ -7,9 +7,11 @@ namespace App\Filament\Resources\Contents\Schemas;
 use App\Enums\ContentStatus;
 use App\Enums\MediaRole;
 use App\Filament\Schemas\CmsRichEditor;
+use App\Filament\Schemas\MediaAssetPicker;
+use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Category;
-use App\Models\MediaAsset;
+use App\Models\Content;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -61,32 +63,7 @@ class ContentForm
                     ->helperText(__('cms.field.answer_paragraph_help'))
                     ->extraInputAttributes(self::directionFor($locale)),
 
-                Section::make(__('cms.section.seo'))
-                    ->collapsed()
-                    ->schema([
-                        TextInput::make("meta_title.{$locale}")
-                            ->label(__('cms.field.meta_title'))
-                            ->maxLength(255)
-                            ->helperText(__('cms.field.meta_title_help'))
-                            ->extraInputAttributes(self::directionFor($locale)),
-
-                        Textarea::make("meta_description.{$locale}")
-                            ->label(__('cms.field.meta_description'))
-                            ->rows(2)
-                            ->maxLength(320)
-                            ->helperText(__('cms.field.meta_description_help'))
-                            ->extraInputAttributes(self::directionFor($locale)),
-
-                        Select::make("robots_meta.{$locale}")
-                            ->label(__('cms.field.robots_meta'))
-                            ->options([
-                                'index, follow' => 'index, follow',
-                                'noindex, follow' => 'noindex, follow',
-                                'index, nofollow' => 'index, nofollow',
-                                'noindex, nofollow' => 'noindex, nofollow',
-                            ])
-                            ->helperText(__('cms.field.robots_meta_help')),
-                    ]),
+                SeoSection::make(Content::class, $locale),
             ]),
 
             Section::make(__('cms.section.publishing'))
@@ -147,29 +124,16 @@ class ContentForm
 
             Section::make(__('cms.section.featured_image'))
                 ->schema([
-                    Select::make('featured_media_asset_id')
-                        ->label(__('cms.field.featured_image'))
-                        /*
-                         * RULE #7 — required, and validated here rather than only in
-                         * the model. The media library is the only source: an inline
-                         * uploader would produce an image with no per-locale alt text
-                         * (Requirement 2.7) and no library record.
-                         */
-                        ->required()
-                        ->searchable()
-                        ->preload()
-                        ->options(fn (): array => MediaAsset::query()
-                            ->where('type', 'image')
-                            ->latest()
-                            ->limit(50)
-                            ->get()
-                            ->mapWithKeys(fn (MediaAsset $a): array => [
-                                $a->getKey() => $a->altTextFor(app()->getLocale()) ?: "#{$a->getKey()}",
-                            ])
-                            ->all())
-                        ->helperText(__('cms.field.featured_image_help'))
-                        ->dehydrated(false)
-                        ->afterStateHydrated(function (Select $component, $state, $record): void {
+                    /*
+                     * RULE #7 — required, and validated here rather than only in
+                     * the model. The picker offers the library AND an inline
+                     * uploader, so attaching a new image no longer means abandoning
+                     * a half-written article to visit the Media section; see
+                     * MediaAssetPicker for why that stays compatible with
+                     * Requirement 2.7 and Decision D-3.
+                     */
+                    MediaAssetPicker::featured()
+                        ->afterStateHydrated(function (Select $component, $state, ?Content $record): void {
                             if ($record !== null && $state === null) {
                                 $component->state($record->featuredImage()?->getKey());
                             }
