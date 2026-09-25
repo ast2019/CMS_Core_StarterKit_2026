@@ -268,6 +268,176 @@ final class TipTap
     }
 
     /**
+     * Split a document into sections: each heading paired with the prose that
+     * FOLLOWS it, up to the next heading.
+     *
+     * headings() answers "what are the headings?" and toPlainText() answers "what
+     * does the whole document say?", but neither answers "what does this heading's
+     * section say?" — and without that, anything building per-heading output has
+     * to pick one blob of text and reuse it. FAQPage markup did exactly that: five
+     * question headings, five Questions, all five answered with the entire
+     * article. Google's structured-data policy treats markup that misrepresents
+     * the page as a violation, so the pairing has to be real.
+     *
+     * Prose is gathered through toPlainText(), so a custom block's prose inside a
+     * section is picked up by the same accessors search indexing and the AI
+     * translator use (see the class docblock) — a callout sitting under a question
+     * heading is part of that answer, and reading it any other way is how two
+     * views of the same document drift apart.
+     *
+     * A section's `text` may be EMPTY: a heading immediately followed by another
+     * heading, or one that ends the document, genuinely has no prose. That is
+     * reported rather than papered over, so the caller can decide — the FAQ
+     * builder omits such a Question instead of substituting unrelated text.
+     *
+     * Text BEFORE the first heading is not returned: it belongs to no heading.
+     *
+     * @return list<array{heading: string, level: int, text: string}>
+     */
+    public static function sections(mixed $document, int $maxLevel = 3): array
+    {
+        if (! is_array($document)) {
+            return [];
+        }
+
+        /** @var list<array{heading: string, level: int, fragments: list<string>}> $sections */
+        $sections = [];
+        $current = null;
+
+        self::collectSections($document, $maxLevel, $sections, $current);
+
+        return array_map(
+            static fn (array $section): array => [
+                'heading' => $section['heading'],
+                'level' => $section['level'],
+                'text' => trim(preg_replace(
+                    '/\s+/u',
+                    ' ',
+                    implode(' ', $section['fragments']),
+                ) ?? ''),
+            ],
+            $sections,
+        );
+    }
+
+    /**
+     * Walk $node in document order, opening a new section at every in-range
+     * heading and appending the plain text of every other block to whichever
+     * section is currently open.
+     *
+     * A container is descended into only when it CONTAINS an in-range heading;
+     * otherwise its text is taken whole. That avoids counting the same words
+     * twice (a list's text, then each list item's text) while still finding a
+     * heading nested inside a blockquote or a column layout, which keeps this in
+     * step with headings(), which searches recursively.
+     *
+     * @param  array<mixed>  $node
+     * @param  list<array{heading: string, level: int, fragments: list<string>}>  $sections
+     */
+    private static function collectSections(array $node, int $maxLevel, array &$sections, ?int &$current): void
+    {
+        if (($node['type'] ?? null) === 'heading') {
+            $level = (int) ($node['attrs']['level'] ?? 0);
+
+            // Out of range: not a boundary, so it reads as part of the section it
+            // sits in (an h4 under an h3 question is still that answer).
+            if ($level < 1 || $level > $maxLevel) {
+                self::appendSectionText($node, $sections, $current);
+
+                return;
+            }
+
+            $heading = self::toPlainText($node['content'] ?? []);
+
+            if ($heading === '') {
+                /*
+                 * An empty heading is still a boundary. Closing the current
+                 * section is the conservative reading: the prose after it has
+                 * left the previous heading behind, so attributing it there would
+                 * be exactly the misattribution this helper exists to prevent.
+                 */
+                $current = null;
+
+                return;
+            }
+
+            $sections[] = ['heading' => $heading, 'level' => $level, 'fragments' => []];
+            $current = count($sections) - 1;
+
+            return;
+        }
+
+        if (self::containsHeading($node, $maxLevel)) {
+            foreach ($node as $key => $value) {
+                if ($key === 'attrs' || ! is_array($value)) {
+                    continue;
+                }
+
+                self::collectSections($value, $maxLevel, $sections, $current);
+            }
+
+            return;
+        }
+
+        self::appendSectionText($node, $sections, $current);
+    }
+
+    /**
+     * @param  array<mixed>  $node
+     * @param  list<array{heading: string, level: int, fragments: list<string>}>  $sections
+     */
+    private static function appendSectionText(array $node, array &$sections, ?int $current): void
+    {
+        if ($current === null) {
+            return;
+        }
+
+        $text = self::toPlainText($node);
+
+        if ($text === '') {
+            return;
+        }
+
+        // Read-modify-write rather than appending in place: mutating a nested key
+        // through a by-ref parameter loses the section's declared shape as far as
+        // static analysis is concerned, and silencing that would hide the next real
+        // mistake in here.
+        $section = $sections[$current];
+        $section['fragments'][] = $text;
+        $sections[$current] = $section;
+    }
+
+    /**
+     * Whether any DESCENDANT of $node is a heading within $maxLevel. Only called
+     * on nodes that are not themselves headings, so it never needs to consider
+     * $node itself.
+     *
+     * @param  array<mixed>  $node
+     */
+    private static function containsHeading(array $node, int $maxLevel): bool
+    {
+        foreach ($node as $key => $value) {
+            if ($key === 'attrs' || ! is_array($value)) {
+                continue;
+            }
+
+            if (($value['type'] ?? null) === 'heading') {
+                $level = (int) ($value['attrs']['level'] ?? 0);
+
+                if ($level >= 1 && $level <= $maxLevel) {
+                    return true;
+                }
+            }
+
+            if (self::containsHeading($value, $maxLevel)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param  array<mixed>  $node
      * @param  list<string>  $headings
      */

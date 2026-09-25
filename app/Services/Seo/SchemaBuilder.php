@@ -31,6 +31,21 @@ use Spatie\SchemaOrg\Schema;
  */
 class SchemaBuilder
 {
+    /**
+     * Fragments that turn a page URL into a stable @id for each node type.
+     *
+     * Fixed strings, so the same record always produces the same URIs across
+     * requests and locales — an @id that changed between responses would break the
+     * cross-references it exists to carry. They live here as constants because both
+     * the builder that MINTS an @id and forArticle(), which links to it, have to
+     * agree on it.
+     */
+    private const ID_ARTICLE = 'article';
+
+    private const ID_BREADCRUMB = 'breadcrumb';
+
+    private const ID_ORGANIZATION = 'organization';
+
     public function __construct(private readonly UrlBuilder $urls) {}
 
     /**
@@ -65,6 +80,17 @@ class SchemaBuilder
             ->datePublished($content->publish_date)
             ->dateModified($content->updated_at);
 
+        /*
+         * The Article is a distinct thing from the page it appears on, so it gets
+         * its own URI (#article) and names the page separately. Collapsing the two
+         * onto one @id is what makes a @graph unlinkable: `breadcrumb` belongs to
+         * the page, `headline` to the article, and a single node claiming both has
+         * nowhere left to point.
+         */
+        $article
+            ->setProperty('@id', $this->urls->withFragment($url, self::ID_ARTICLE))
+            ->setProperty('mainEntityOfPage', ['@type' => 'WebPage', '@id' => $url]);
+
         $description = $content->metaDescriptionFor($locale);
 
         if ($description !== '') {
@@ -85,7 +111,15 @@ class SchemaBuilder
         $publisher = $this->organization($locale);
 
         if ($publisher !== null) {
-            $article->publisher(Schema::organization()->name($publisher['name']));
+            /*
+             * The built Organization is used as-is. It previously built the whole
+             * object — url, sameAs profiles, @id — and then threw all of it away to
+             * emit a name-only publisher, which is the weakest publisher signal
+             * there is and leaves nothing for a consumer to reconcile with the
+             * Organization node beside it. Inside forArticle() this is narrowed to
+             * an @id reference, because there the full node is already in the graph.
+             */
+            $article->setProperty('publisher', $this->embedded($publisher));
         }
 
         $featured = $content->featuredImage();
@@ -94,7 +128,14 @@ class SchemaBuilder
             $image = $this->imageObject($featured, $locale);
 
             if ($image !== null) {
-                $article->image($image['url']);
+                /*
+                 * The full ImageObject, not just its URL. Google uses width and
+                 * height to decide which rich-result layouts a page qualifies for,
+                 * and the caption is the alt text Requirement 2.7 already made
+                 * mandatory — all of it was built and then dropped for a bare
+                 * string.
+                 */
+                $article->setProperty('image', $this->embedded($image));
             }
         }
 
@@ -127,9 +168,18 @@ class SchemaBuilder
             return null;
         }
 
+        $home = $this->urls->localeHome($locale);
+
         $organization = Schema::organization()
             ->name((string) $name)
-            ->url($this->urls->localeHome($locale));
+            ->url($home)
+            /*
+             * Anchored to the locale home rather than to any one article, because
+             * the publisher is the same entity on every page of the locale. That is
+             * what lets every Article in every response refer to ONE Organization
+             * instead of describing a new one each time.
+             */
+            ->setProperty('@id', $this->urls->withFragment($home, self::ID_ORGANIZATION));
 
         /*
          * Not annotated as array<int, string>: the value comes from a JSON settings
@@ -268,7 +318,12 @@ class SchemaBuilder
                 ->setProperty('item', $item['url']);
         }
 
-        return Schema::breadcrumbList()->itemListElement($listItems)->toArray();
+        return Schema::breadcrumbList()
+            ->itemListElement($listItems)
+            // The trail describes THIS page, so its URI is a fragment on the page's
+            // URL; that is the URI the page node's `breadcrumb` property resolves.
+            ->setProperty('@id', $this->urls->withFragment($url, self::ID_BREADCRUMB))
+            ->toArray();
     }
 
     /**
@@ -374,58 +429,150 @@ class SchemaBuilder
     }
 
     /**
-     * FAQPage built from question-style headings in the body.
+     * FAQPage built from question-style headings in the body, each answered by the
+     * prose of ITS OWN section.
      *
      * Blueprint §6's GEO strategy asks for question-based headings; this turns them
      * into markup. Returns null below two pairs, because a one-entry FAQPage is not
      * an FAQ and Google is liable to treat it as markup spam.
+     *
+     * WHY the pairing is done by section rather than by a single answer:
+     *
+     * This builder used to compute ONE answer — the answer_paragraph field, or
+     * failing that the entire plain-text body — and hand that same string to every
+     * Question. A five-question article emitted five Questions all answered with
+     * the whole article: markup that does not match what the page shows under each
+     * heading, which is precisely the misrepresentation Google's structured-data
+     * policy penalises, and flatly against this class's own "omit rather than
+     * guess" rule. TipTap::sections() now pairs each heading with the prose that
+     * follows it, and a heading with no following prose is OMITTED rather than
+     * filled with unrelated text — a missing Question costs one rich result, a
+     * wrong one risks the page's whole markup being distrusted.
+     *
+     * answer_paragraph is deliberately no longer used here. It is the article's
+     * single direct answer for GEO (and is still served as `answer` by the Delivery
+     * API), so reusing it as the acceptedAnswer of every heading — or of one
+     * arbitrary heading — would recreate the same mismatch in a smaller form.
      *
      * @return array<string, mixed>|null
      */
     public function faqPage(Content $content, string $locale): ?array
     {
         $body = $content->getTranslation('body', $locale, useFallbackLocale: true);
-        $headings = TipTap::headings($body);
-
-        $questions = array_values(array_filter($headings, fn (string $h): bool => $this->looksLikeQuestion($h)));
-
-        if (count($questions) < 2) {
-            return null;
-        }
-
-        $answer = $content->getTranslation('answer_paragraph', $locale, useFallbackLocale: true);
-        $fallbackAnswer = filled($answer)
-            ? (string) $answer
-            : TipTap::toPlainText($body);
-
-        if ($fallbackAnswer === '') {
-            return null;
-        }
 
         $entities = [];
 
-        foreach ($questions as $question) {
+        foreach (TipTap::sections($body) as $section) {
+            if (! $this->looksLikeQuestion($section['heading'])) {
+                continue;
+            }
+
+            // No prose under the question: omit the pair. Substituting the
+            // article body, or the next section's text, would answer the reader's
+            // question with something the page does not say there.
+            if ($section['text'] === '') {
+                continue;
+            }
+
             $entities[] = Schema::question()
-                ->name($question)
-                ->acceptedAnswer(Schema::answer()->text($fallbackAnswer));
+                ->name($section['heading'])
+                ->acceptedAnswer(Schema::answer()->text($section['text']));
         }
 
-        return Schema::fAQPage()->mainEntity($entities)->toArray();
+        if (count($entities) < 2) {
+            return null;
+        }
+
+        $faq = Schema::fAQPage()->mainEntity($entities)->inLanguage($locale);
+
+        $url = $this->urls->canonicalFor($content, $locale);
+
+        if ($url !== null) {
+            /*
+             * The FAQ is not a separate document — it IS this page. So it carries
+             * the page's own URI as its @id, which is what makes it the same node
+             * the Article points at through mainEntityOfPage. (FAQPage is a
+             * subtype of WebPage, so the two descriptions merge rather than
+             * conflict.) Without a canonical URL there is no stable URI to give
+             * it, and an invented one would be worse than none.
+             */
+            $faq->setProperty('@id', $url)->url($url);
+        }
+
+        return $faq->toArray();
     }
 
     /**
      * Every applicable schema for an article, ready to emit as a @graph.
      *
+     * WHY the nodes are cross-referenced here rather than inside each builder:
+     *
+     * A @graph is only worth more than four loose objects if its nodes point at
+     * one another — that is what lets a consumer see that THIS Article is
+     * published by THAT Organization and sits on the page THAT BreadcrumbList
+     * describes. The nodes previously carried no @id at all, so nothing referenced
+     * anything and the Delivery API's promise that "search engines resolve
+     * cross-references between the nodes" was not true of the payload it served.
+     *
+     * Each builder assigns its own @id (so a node is addressable even when used on
+     * its own), but the LINKING happens here, where it is known which nodes
+     * actually exist. A reference to an absent node is a dangling URI — a guess by
+     * another name — so a link is only written when both ends are present.
+     *
      * @return list<array<string, mixed>>
      */
     public function forArticle(Content $content, string $locale): array
     {
-        return array_values(array_filter([
-            $this->article($content, $locale),
-            $this->breadcrumbs($content, $locale),
-            $this->organization($locale),
-            $this->faqPage($content, $locale),
-        ]));
+        $article = $this->article($content, $locale);
+        $breadcrumbs = $this->breadcrumbs($content, $locale);
+        $organization = $this->organization($locale);
+        $faq = $this->faqPage($content, $locale);
+
+        if ($article !== null) {
+            /*
+             * The Organization is a full node of this graph, so the Article refers
+             * to it by @id instead of repeating it. article() keeps the complete
+             * object for standalone use, where there would be no node to resolve.
+             */
+            if (isset($organization['@id']) && is_string($organization['@id'])) {
+                $article['publisher'] = ['@id' => $organization['@id']];
+            }
+
+            /*
+             * `breadcrumb` is a property of WebPage, not of Article, so it hangs
+             * off the page node the Article already declares through
+             * mainEntityOfPage rather than being bolted onto the Article itself.
+             */
+            if (
+                isset($breadcrumbs['@id'], $article['mainEntityOfPage'])
+                && is_string($breadcrumbs['@id'])
+                && is_array($article['mainEntityOfPage'])
+            ) {
+                $article['mainEntityOfPage']['breadcrumb'] = ['@id' => $breadcrumbs['@id']];
+            }
+        }
+
+        return array_values(array_filter([$article, $breadcrumbs, $organization, $faq]));
+    }
+
+    /**
+     * A built node prepared for NESTING inside another node.
+     *
+     * Only @context is dropped. A JSON-LD document declares its context once at the
+     * top; repeating it on an embedded object changes nothing for a consumer and is
+     * noise in every payload. The builders keep emitting it at their own top level,
+     * where a node may be served on its own. Everything else — including @id, which
+     * is what lets a consumer reconcile the embedded copy with the standalone node —
+     * is left intact.
+     *
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function embedded(array $node): array
+    {
+        unset($node['@context']);
+
+        return $node;
     }
 
     private function looksLikeQuestion(string $heading): bool

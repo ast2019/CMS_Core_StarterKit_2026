@@ -205,6 +205,238 @@ it('serves an SEO payload with canonical, hreflang and a JSON-LD graph', functio
         ->and($response->json('data.open_graph.og:image'))->not->toBeNull();
 });
 
+it('answers each FAQ question with its own section and omits a question with no prose', function (): void {
+    /*
+     * The whole point of FAQPage markup is that each Question is answered by what
+     * the page actually says under that heading. This builder used to compute ONE
+     * answer — answer_paragraph, or failing that the entire plain-text body — and
+     * hand the same string to every Question, so a three-question article claimed
+     * three different questions were all answered by the whole article. That is the
+     * misrepresentation Google's structured-data policy penalises, and it defeats
+     * the rich result it was trying to earn.
+     */
+    $content = Content::factory()->published()->create([
+        'title' => ['fa' => 'پرسش‌های متداول'],
+        // Present, and deliberately NOT reused as an answer: it is the article's
+        // single direct answer for GEO, not the answer to every heading.
+        'answer_paragraph' => ['fa' => 'پاسخ کوتاه کلی مقاله.'],
+    ]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            // Prose before the first heading belongs to no question.
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'مقدمه']]],
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'ثبت‌نام چگونه است؟']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'از طریق فرم آنلاین ثبت‌نام کنید.']]],
+            // Latin '?' as well as Arabic '؟', depending on the editor's keyboard.
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'هزینه چقدر است?']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'هزینه ثبت‌نام صد هزار تومان است.']]],
+            // A callout inside a section is part of that answer, and is reached
+            // through the same custom-block accessors search indexing uses.
+            [
+                'type' => 'customBlock',
+                'attrs' => [
+                    'config' => ['tone' => 'info', 'title' => '', 'body' => 'پرداخت فقط آنلاین است.'],
+                    'id' => 'callout',
+                ],
+            ],
+            // A nested container: its text must be counted ONCE, not once for the
+            // list and again for each item inside it.
+            [
+                'type' => 'bulletList',
+                'content' => [
+                    [
+                        'type' => 'listItem',
+                        'content' => [
+                            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'کارت بانکی']]],
+                        ],
+                    ],
+                ],
+            ],
+            // A question heading that ends the document with no prose under it.
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'انصراف چگونه است؟']]],
+        ],
+    ]);
+    $content->save();
+
+    $faq = app(SchemaBuilder::class)->faqPage($content->fresh(), 'fa');
+
+    expect($faq['@type'])->toBe('FAQPage');
+
+    $names = array_column($faq['mainEntity'], 'name');
+    $answers = array_map(fn (array $q): string => $q['acceptedAnswer']['text'], $faq['mainEntity']);
+
+    // The third question has no prose beneath it, so it is OMITTED rather than
+    // answered with unrelated text — a missing Question costs one rich result, a
+    // wrong one risks the page's whole markup being distrusted.
+    expect($names)->toBe(['ثبت‌نام چگونه است؟', 'هزینه چقدر است?'])
+        // The defect in one assertion: the answers must not be the same string.
+        ->and($answers[0])->not->toBe($answers[1])
+        ->and($answers[0])->toBe('از طریق فرم آنلاین ثبت‌نام کنید.')
+        // Second section: its paragraph, the callout prose and the list that follow
+        // it, each counted exactly once.
+        ->and($answers[1])->toBe('هزینه ثبت‌نام صد هزار تومان است. پرداخت فقط آنلاین است. کارت بانکی')
+        ->and(substr_count($answers[1], 'کارت بانکی'))->toBe(1)
+        // No answer swallows the whole article, the preamble, or answer_paragraph.
+        ->and($answers[0])->not->toContain('مقدمه')
+        ->and($answers[0])->not->toContain('هزینه')
+        ->and($answers[1])->not->toContain('ثبت‌نام کنید')
+        ->and(implode(' ', $answers))->not->toContain('پاسخ کوتاه کلی مقاله');
+});
+
+it('omits an FAQPage when fewer than two questions survive the pairing', function (): void {
+    // Two question headings, only one of which has prose. A one-entry FAQPage is
+    // not an FAQ, and Google is liable to read it as markup spam.
+    $content = Content::factory()->published()->create(['title' => ['fa' => 'یک پرسش']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'پرسش اول؟']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'پاسخ اول.']]],
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'پرسش دوم؟']]],
+        ],
+    ]);
+    $content->save();
+
+    expect(app(SchemaBuilder::class)->faqPage($content->fresh(), 'fa'))->toBeNull();
+});
+
+it('cross-references the JSON-LD graph nodes by @id', function (): void {
+    /*
+     * The Delivery API promises a @graph "so search engines resolve cross-references
+     * between the nodes". That was not true of what it served: Article,
+     * BreadcrumbList, Organization and FAQPage were assembled side by side with no
+     * @id on any of them, so nothing referenced anything and the graph was four
+     * loose objects in a list.
+     */
+    $category = Category::factory()->create(['name' => ['fa' => 'رویدادها']]);
+    $content = Content::factory()->published()->create([
+        'title' => ['fa' => 'خبر پیوندها'],
+        'primary_category_id' => $category->id,
+    ]);
+
+    $graph = app(SchemaBuilder::class)->forArticle($content->fresh()->load('primaryCategory'), 'fa');
+
+    $byType = [];
+
+    foreach ($graph as $node) {
+        $byType[$node['@type']] = $node;
+    }
+
+    expect($byType)->toHaveKeys(['NewsArticle', 'BreadcrumbList', 'Organization']);
+
+    $canonical = $byType['NewsArticle']['url'];
+
+    // Stable, fragment-based URIs built on the record's real URL, so the same
+    // record yields the same URIs on every request.
+    expect($byType['NewsArticle']['@id'])->toBe($canonical.'#article')
+        ->and($byType['BreadcrumbList']['@id'])->toBe($canonical.'#breadcrumb')
+        // The publisher is the same entity on every page of the locale, so it is
+        // anchored to the locale home rather than to this article.
+        ->and($byType['Organization']['@id'])->toBe($byType['Organization']['url'].'#organization');
+
+    // The Article refers to the Organization NODE instead of repeating a name-only
+    // copy of it.
+    expect($byType['NewsArticle']['publisher'])->toBe(['@id' => $byType['Organization']['@id']]);
+
+    /*
+     * `breadcrumb` is a property of WebPage, not of Article, so it hangs off the
+     * page node the Article declares through mainEntityOfPage — which is the page
+     * itself, a different thing from the article on it.
+     */
+    expect($byType['NewsArticle']['mainEntityOfPage']['@id'])->toBe($canonical)
+        ->and($byType['NewsArticle']['mainEntityOfPage']['@type'])->toBe('WebPage')
+        ->and($byType['NewsArticle']['mainEntityOfPage']['breadcrumb'])
+        ->toBe(['@id' => $byType['BreadcrumbList']['@id']]);
+
+    // Internal consistency: every @id referenced from inside the graph resolves to
+    // a node IN the graph (or to the page node the Article defines inline). A
+    // dangling URI is a guess by another name.
+    $declared = array_merge(
+        array_column($graph, '@id'),
+        [$byType['NewsArticle']['mainEntityOfPage']['@id']],
+    );
+
+    $referenced = [
+        $byType['NewsArticle']['publisher']['@id'],
+        $byType['NewsArticle']['mainEntityOfPage']['breadcrumb']['@id'],
+    ];
+
+    foreach ($referenced as $reference) {
+        expect($declared)->toContain($reference);
+    }
+});
+
+it('links the FAQPage to the page the article sits on', function (): void {
+    // FAQPage is a subtype of WebPage and it IS this page, so it shares the page's
+    // URI — which is the node the Article points at through mainEntityOfPage.
+    $content = Content::factory()->published()->create(['title' => ['fa' => 'پرسش و پاسخ']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'چطور؟']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'این‌طور.']]],
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'چرا؟']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'به این دلیل.']]],
+        ],
+    ]);
+    $content->save();
+
+    $graph = app(SchemaBuilder::class)->forArticle($content->fresh(), 'fa');
+
+    $byType = [];
+
+    foreach ($graph as $node) {
+        $byType[$node['@type']] = $node;
+    }
+
+    expect($byType)->toHaveKey('FAQPage')
+        ->and($byType['FAQPage']['@id'])->toBe($byType['NewsArticle']['mainEntityOfPage']['@id'])
+        ->and($byType['FAQPage']['inLanguage'])->toBe('fa');
+});
+
+it('keeps the built ImageObject on the article instead of reducing it to a URL', function (): void {
+    /*
+     * The ImageObject was constructed with width, height and the mandatory alt text
+     * as its caption, and then discarded in favour of a bare URL string. Google uses
+     * the dimensions to decide which rich-result layouts a page qualifies for, so
+     * throwing them away costs eligibility that was already paid for.
+     */
+    $content = Content::factory()->published()->create(['title' => ['fa' => 'خبر تصویری']]);
+    $asset = MediaAsset::factory()->withFile()->create(['alt_text' => ['fa' => 'توضیح تصویر']]);
+
+    $content->setFeaturedImage($asset);
+
+    $article = app(SchemaBuilder::class)->article($content->fresh(), 'fa');
+
+    expect($article['image']['@type'])->toBe('ImageObject')
+        ->and($article['image']['width'])->toBe($asset->width)
+        ->and($article['image']['height'])->toBe($asset->height)
+        ->and($article['image']['caption'])->toBe('توضیح تصویر')
+        ->and($article['image']['url'])->toBe($asset->getFirstMedia('file')->getFullUrl())
+        // An embedded node inherits the document's context; repeating it is noise.
+        ->and($article['image'])->not->toHaveKey('@context');
+});
+
+it('keeps the full Organization as the publisher when an article stands alone', function (): void {
+    // Outside a @graph there is no Organization node for an @id to resolve, so the
+    // whole object travels with the Article rather than a name-only stub.
+    Setting::put(Setting::SOCIAL_LINKS, ['telegram' => 'https://t.me/example']);
+
+    $content = Content::factory()->published()->create(['title' => ['fa' => 'خبر ناشر']]);
+
+    $article = app(SchemaBuilder::class)->article($content->fresh(), 'fa');
+
+    expect($article['publisher']['@type'])->toBe('Organization')
+        ->and($article['publisher']['name'])->toBe('سایت نمونه')
+        ->and($article['publisher']['sameAs'])->toBe(['https://t.me/example'])
+        ->and($article['publisher'])->toHaveKey('@id')
+        ->and($article['publisher'])->not->toHaveKey('@context');
+});
+
 it('marks a draft noindex in its SEO payload', function (): void {
     $draft = Content::factory()->create();
 

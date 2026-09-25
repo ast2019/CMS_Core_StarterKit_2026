@@ -63,6 +63,21 @@ use Throwable;
  * STATUS row, but translate() used to overwrite the field values regardless.
  * Re-running over an unreviewed locale REPLACES the target text via
  * setTranslation() (it never appends), so nothing is duplicated.
+ *
+ * WHY a body with nothing to translate is left UNWRITTEN:
+ *
+ * A body can be perfectly valid and still contain no translatable prose — one
+ * that is only a gallery_embed block, only images, or only structurally-empty
+ * paragraphs. The walk then collects zero segments, and an earlier version still
+ * wrote that UNTRANSLATED source document into the target locale (it only skipped
+ * the bookkeeping). The target locale ended up holding a verbatim Persian body,
+ * hasAnyTranslationFor() reported the locale as populated, and the review queue
+ * showed the work as done — a silent false success, and worse than a failure
+ * because nobody goes looking for it. So the body is written ONLY when prose was
+ * actually collected AND translated. A record with no translatable prose ANYWHERE
+ * (no plain fields either) reports emptySource() instead of "succeeding" with
+ * nothing, which is decided before any HTTP work because segment collection is
+ * purely local.
  */
 class AiTranslator
 {
@@ -129,7 +144,27 @@ class AiTranslator
         $fields = $this->translatableFields($record, $source);
         $bodyDoc = $this->sourceBodyDocument($record, $source);
 
-        if ($fields === [] && $bodyDoc === null) {
+        /*
+         * The body's prose leaves are collected up front because collection is
+         * purely local — it makes no request — and knowing whether the body holds
+         * ANY translatable prose is what both decisions below need.
+         */
+        $bodySegments = [];
+
+        if ($bodyDoc !== null) {
+            $this->collectProseSegments($bodyDoc, $bodySegments);
+        }
+
+        /*
+         * Nothing translatable anywhere: no plain field, and a body that is
+         * present but prose-free (a lone gallery_embed, only images, only empty
+         * paragraphs). Reporting an empty source is the honest answer. Checking
+         * `$bodyDoc === null` instead would call a prose-free body translatable
+         * work, run the whole flow over it, and land the locale at ai_translated
+         * having translated not one word. A body whose only prose sits inside
+         * custom blocks DOES produce segments and is translated normally.
+         */
+        if ($fields === [] && $bodySegments === []) {
             throw AiTranslationException::emptySource();
         }
 
@@ -144,16 +179,24 @@ class AiTranslator
             $translatedAttributes[] = $attribute;
         }
 
-        if ($bodyDoc !== null) {
-            [$rebuiltDoc, $bodyHadText] = $this->translateBodyDocument($apiKey, $bodyDoc, $source, $targetLocale);
-
+        /*
+         * Written ONLY when there was prose to translate. A prose-free body is
+         * left absent in the target locale rather than filled with a copy of the
+         * Persian source: an untranslated copy would make the locale look
+         * populated to hasAnyTranslationFor() and finished to the review queue.
+         * The record can still translate successfully on the strength of its
+         * plain fields alone — it simply reports `body` as untranslated, which is
+         * what happened.
+         */
+        if ($bodyDoc !== null && $bodySegments !== []) {
             // setTranslation REPLACES the locale's stored array value, so a
             // re-run overwrites the previous body rather than appending to it.
-            $record->setTranslation('body', $targetLocale, $rebuiltDoc);
-
-            if ($bodyHadText) {
-                $translatedAttributes[] = 'body';
-            }
+            $record->setTranslation(
+                'body',
+                $targetLocale,
+                $this->translateBodyDocument($apiKey, $bodyDoc, $bodySegments, $source, $targetLocale),
+            );
+            $translatedAttributes[] = 'body';
         }
 
         $record->save();
@@ -241,29 +284,27 @@ class AiTranslator
     /**
      * Translate a TipTap body document while preserving its structure exactly.
      *
-     * The tree is walked once to collect the ordered prose leaves (text nodes'
-     * `text` plus the whitelisted block attrs), those strings are batch
-     * translated 1:1, then written back into the SAME positions. Node types,
-     * marks, and all structural attrs are left byte-identical.
+     * $segments is the ordered prose leaves the caller already collected from
+     * $doc (text nodes' `text` plus the whitelisted block attrs). They are batch
+     * translated 1:1 and written back into the SAME positions. Node types, marks,
+     * and all structural attrs are left byte-identical.
+     *
+     * Collection happens in translate() rather than here because its RESULT
+     * decides whether a body should be written at all — a prose-free body must
+     * not be persisted as an untranslated copy of the source — and that decision
+     * has to be made before any request is issued.
      *
      * @param  array<string, mixed>  $doc
-     * @return array{0: array<string, mixed>, 1: bool} rebuilt doc, and whether it contained any prose
+     * @param  non-empty-list<string>  $segments
+     * @return array<string, mixed>
      */
-    private function translateBodyDocument(string $apiKey, array $doc, string $source, string $target): array
+    private function translateBodyDocument(string $apiKey, array $doc, array $segments, string $source, string $target): array
     {
-        $segments = [];
-        $this->collectProseSegments($doc, $segments);
-
-        if ($segments === []) {
-            return [$doc, false];
-        }
-
         $translations = $this->translateBatch($apiKey, $segments, $source, $target);
 
         $cursor = 0;
-        $rebuilt = $this->applyProseTranslations($doc, $translations, $cursor);
 
-        return [$rebuilt, true];
+        return $this->applyProseTranslations($doc, $translations, $cursor);
     }
 
     /**

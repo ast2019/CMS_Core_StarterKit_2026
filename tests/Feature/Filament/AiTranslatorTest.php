@@ -619,6 +619,127 @@ it('rejects an empty-after-trim batch element rather than writing an invalid Tip
     expect($content->fresh()->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty();
 });
 
+it('leaves the target body empty rather than copying the Persian source when there is no prose to translate', function (): void {
+    /*
+     * A body can be valid and hold no translatable prose at all: a lone
+     * gallery_embed (it only references a gallery by id), an image-only body, or
+     * nothing but empty paragraphs. The walk then collects zero segments, and the
+     * translator used to write the UNTRANSLATED source document into the target
+     * locale anyway — it only skipped the bookkeeping. The locale ended up holding
+     * a verbatim Persian body that hasAnyTranslationFor() counted as present and
+     * the review queue showed as finished work: a silent false success nobody goes
+     * looking for.
+     */
+    enableAiTranslation();
+    fakeOpenRouter('Machine English title');
+
+    $content = Content::factory()->create(['title' => ['fa' => 'گزارش تصویری']]);
+
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => TipTap::CUSTOM_BLOCK_NODE_TYPE,
+                'attrs' => [
+                    'config' => ['gallery_id' => 7, 'layout' => 'grid', 'max_items' => 12],
+                    'id' => 'gallery_embed',
+                    'label' => 'گالری',
+                    'preview' => base64_encode('<div>gallery 7</div>'),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+            // A structurally-empty paragraph, which is what an editor leaves behind
+            // by clicking into the field and out again.
+            ['type' => 'paragraph'],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    /** @var array<string, mixed> $sourceBody */
+    $sourceBody = $content->getTranslation('body', 'fa', useFallbackLocale: false);
+
+    // The title still IS translatable, so the run succeeds on its strength.
+    $result = app(AiTranslator::class)->translate($content, 'en');
+
+    $fresh = $content->fresh();
+
+    expect($fresh->getTranslation('title', 'en', useFallbackLocale: false))->toBe('Machine English title')
+        // The point of the fix: no body at all for the target locale — NOT a copy
+        // of the Persian one.
+        ->and($fresh->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty()
+        ->and($result->attributes)->not->toContain('body')
+        // The Persian source is untouched, structural attrs included.
+        ->and($fresh->getTranslation('body', 'fa', useFallbackLocale: false))->toBe($sourceBody);
+
+    /*
+     * The plain fields were sent one at a time as bare strings; no BATCH call (a
+     * JSON-array user message, which is the body path's shape) was made at all,
+     * because there was nothing in the body to batch.
+     */
+    Http::assertNotSent(function (Request $request): bool {
+        foreach ($request->data()['messages'] ?? [] as $message) {
+            if (($message['role'] ?? null) !== 'user') {
+                continue;
+            }
+
+            $decoded = json_decode((string) ($message['content'] ?? ''), true);
+
+            if (is_array($decoded) && array_is_list($decoded)) {
+                return true;
+            }
+        }
+
+        return false;
+    });
+});
+
+it('reports an empty source when a present body holds no translatable prose either', function (): void {
+    /*
+     * Coherence with the guard above. Once a prose-free body is no longer written,
+     * a record whose ONLY content is such a body has nothing translatable
+     * anywhere, and the honest answer is the same empty-source report a blank
+     * record gets — not a success that translated not one word and still left the
+     * locale sitting at ai_translated in the review queue.
+     */
+    enableAiTranslation();
+    Http::fake();
+
+    $content = Content::factory()->create([
+        'title' => ['fa' => ''],
+        'slug' => ['fa' => 'placeholder-slug'],
+        'excerpt' => ['fa' => ''],
+        'answer_paragraph' => ['fa' => ''],
+        'meta_title' => ['fa' => ''],
+        'meta_description' => ['fa' => ''],
+    ]);
+
+    $content->setTranslation('title', 'fa', '');
+    $content->setTranslation('body', 'fa', [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => TipTap::CUSTOM_BLOCK_NODE_TYPE,
+                'attrs' => [
+                    'config' => ['gallery_id' => 3, 'layout' => 'carousel'],
+                    'id' => 'gallery_embed',
+                    'label' => 'گالری',
+                    'preview' => base64_encode('<div>gallery 3</div>'),
+                    'shouldApplyProseStylingToPreview' => false,
+                ],
+            ],
+        ],
+    ]);
+    $content->saveQuietly();
+
+    expect(fn () => app(AiTranslator::class)->translate($content->fresh(), 'en'))
+        ->toThrow(AiTranslationException::class, 'cms.ai_translation.error.empty_source');
+
+    Http::assertNothingSent();
+
+    expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::NotTranslated)
+        ->and($content->fresh()->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty();
+});
+
 it('reports an empty source rather than calling the model', function (): void {
     enableAiTranslation();
     Http::fake();
