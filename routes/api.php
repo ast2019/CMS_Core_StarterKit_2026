@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\Delivery\CategoryController;
 use App\Http\Controllers\Api\V1\Delivery\ContactController;
 use App\Http\Controllers\Api\V1\Delivery\ContentController;
+use App\Http\Controllers\Api\V1\Delivery\GalleryController;
+use App\Http\Controllers\Api\V1\Delivery\PageController;
 use App\Http\Controllers\Api\V1\Delivery\SearchController;
 use App\Http\Controllers\Api\V1\Delivery\SeoController;
 use App\Http\Controllers\Api\V1\Delivery\SiteController;
@@ -55,6 +58,35 @@ Route::prefix('v1')->group(function (): void {
         Route::get('news/{slug}/seo', [SeoController::class, 'forArticle'])
             ->where('slug', '[^/]+')
             ->name('api.v1.news.seo');
+
+        /*
+         * Pages, categories and galleries.
+         *
+         * These three are linkable menu targets AND sitemap entries, so the API was
+         * already handing frontends URLs — /fa/about, /fa/category-slug,
+         * /fa/gallery-slug — that nothing here could resolve. A header menu built in
+         * the panel therefore produced links the frontend had to hardcode or drop.
+         *
+         * `[^/]+` on the slug, like news: a slug is per-locale and may be a Persian
+         * or Arabic string, so the alpha-numeric constraints used for the menu key
+         * would reject most real slugs.
+         *
+         * Each controller gates itself on its module toggle (Requirement 1.1). That
+         * is done in the controller rather than by omitting the route, so the
+         * OpenAPI document describes the same surface on every deployment and a
+         * disabled module answers 404 instead of vanishing from the spec.
+         */
+        Route::get('pages/{slug}', [PageController::class, 'show'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.pages.show');
+
+        Route::get('categories/{slug}', [CategoryController::class, 'show'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.categories.show');
+
+        Route::get('galleries/{slug}', [GalleryController::class, 'show'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.galleries.show');
 
         Route::get('search', SearchController::class)->name('api.v1.search');
 

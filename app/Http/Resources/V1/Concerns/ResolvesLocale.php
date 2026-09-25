@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Resources\V1\Concerns;
 
 use App\Contracts\TracksTranslationStatus;
+use App\Models\Content;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Locale resolution and explicit fallback reporting for API resources.
@@ -41,6 +43,44 @@ trait ResolvesLocale
     protected function translated(Model $model, string $attribute, string $locale): mixed
     {
         return $model->getTranslation($attribute, $locale, useFallbackLocale: true);
+    }
+
+    /**
+     * The SEO meta description for a model that has no `excerpt`.
+     *
+     * HasSeoMeta::metaDescriptionFor() falls back to the excerpt when no explicit
+     * description is set, and calls getTranslation('excerpt', ...) unconditionally.
+     * Only Content declares that attribute, so for a Page, Gallery or Category the
+     * call throws AttributeIsNotTranslatable and takes the whole response with it —
+     * which is why the existing `not-found-page` endpoint 500s for any 404 page
+     * without a hand-written meta description.
+     *
+     * This mirrors the trait's logic with the missing guard, deliberately reusing its
+     * constant so the two cannot disagree about the limit. It lives here rather than
+     * in the trait because the SEO trait is owned by the SEO-panel work; that is
+     * where the guard belongs permanently, and these callers should go back to
+     * metaDescriptionFor() once it is safe for every model that uses it.
+     */
+    protected function metaDescription(Model $model, string $locale): string
+    {
+        $explicit = $model->getTranslation('meta_description', $locale, useFallbackLocale: false);
+
+        if (filled($explicit)) {
+            return (string) $explicit;
+        }
+
+        if (! in_array('excerpt', $model->getTranslatableAttributes(), true)) {
+            return '';
+        }
+
+        $excerpt = $model->getTranslation('excerpt', $locale, useFallbackLocale: true);
+
+        // Read through Content rather than through HasSeoMeta: PHP does not allow a
+        // trait constant to be accessed by the trait's own name, and hardcoding 155
+        // here would let the two limits drift apart silently.
+        return filled($excerpt)
+            ? Str::limit(strip_tags((string) $excerpt), Content::META_DESCRIPTION_ADVISORY_LIMIT, '')
+            : '';
     }
 
     /**
