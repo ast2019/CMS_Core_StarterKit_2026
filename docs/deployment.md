@@ -135,6 +135,31 @@ Getting it wrong is quietly expensive: canonical URLs, hreflang annotations and 
 sitemap entry are built from it, so leaving it unset on a split deployment submits a
 sitemap full of API hostnames to Search Console and indexes the wrong host.
 
+## Redirects are the frontend's job
+
+The redirect table is stored and maintained here; **honouring it is the frontend's
+responsibility**, because a visitor clicking a stale link hits the old URL on the frontend
+and never passes through this host's middleware. `docs/redirects.md` is the contract — read
+it before signing off a deployment, because nothing errors when this is skipped. The
+symptom is simply that accepted 301s appear to do nothing.
+
+## robots.txt and the two hosts
+
+`/robots.txt` is served dynamically by this application, not from `public/`. It has to be:
+the panel path is configurable (`CMS_PANEL_PATH`), and the `Sitemap:` directive needs an
+absolute URL on **this** host, which is where the sitemap suite is generated and served.
+
+It describes this host only — panel, API, previews and media disallowed, sitemap index
+advertised. The public frontend is a separate deployment with its own `robots.txt`, which
+should advertise the same sitemap URL:
+
+```
+Sitemap: https://api.example.com/sitemap.xml
+```
+
+Do not copy this host's `robots.txt` to the frontend. It disallows `/api/` and the panel
+path, neither of which exists there, and it says nothing about the frontend's own routes.
+
 ## Video (Decision D-6)
 
 Google's video sitemap format requires a thumbnail. A thumbnail cannot be derived from
@@ -226,6 +251,19 @@ Everything below is data, not code — the Core ships no client-specific values
 - [ ] Contact address, phone and map coordinates in **Contact**
 - [ ] `CMS_BRAND_PRIMARY` for the panel accent colour
 - [ ] Disable unused modules in `config/cms.php`
+- [ ] **Designate a homepage.** Open the page that belongs at `/fa` and set its *Page
+      role* to *Homepage*. Optional — a site that skips this behaves exactly as before,
+      with `GET /api/v1/home-page` answering 404 and the frontend rendering its own root —
+      but without it the homepage is not a CMS concept and a menu item can only reach it as
+      a raw `/fa` string. Only **one** page can hold the role; designating a second is
+      refused with a message naming the first, including when the first is in the trash.
+- [ ] **Declare the site's menu locations** in `cms.menus.locations` if the frontend
+      renders anything other than a header, footer and sidebar. The list validates
+      `menu_key` on save and decides whether `GET /api/v1/menus/{key}` is a 404, so a
+      location the frontend asks for and this list does not contain is now an error rather
+      than an empty menu. Optionally add a label under `cms.menu.location.{key}` in
+      `lang/fa`, `lang/en` and `lang/ar`; without one the panel shows the raw key.
+- [ ] **Confirm the frontend honours redirects** — see `docs/redirects.md`
 - [ ] One admin account per real person, each with its own MFA enrolment
 - [ ] Remove the seeded demo accounts (`*@example.test`)
 

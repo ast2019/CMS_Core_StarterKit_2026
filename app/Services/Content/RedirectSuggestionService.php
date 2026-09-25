@@ -105,13 +105,19 @@ class RedirectSuggestionService
      * changed segment, had to be remembered in three files, and a 301 pointing
      * somewhere the sitemap does not list is a silently broken link.
      *
-     * pathForSlug() rather than pathFor(): the OLD slug is no longer on the record
-     * by the time a redirect is offered, so the path has to be built from a slug
-     * passed in. The result is root-relative, which is what `redirects.from_path`
-     * stores and what HandleRedirects matches on.
+     * pathForRecordSlug() rather than pathFor(): the OLD slug is no longer on the record
+     * by the time a redirect is offered, so the path has to be built from a slug passed
+     * in. The result is root-relative, which is what `redirects.from_path` stores and
+     * what HandleRedirects matches on.
+     *
+     * The record-aware variant rather than the class-only pathForSlug(), because the
+     * homepage's URL does not contain its slug. Renaming the homepage's slug therefore
+     * produces the same path before and after, pendingFor() sees `from === to` and offers
+     * no redirect — which is right: no public URL changed. The class-only version would
+     * have suggested a 301 from /fa/old-home-slug, a URL that was never reachable.
      */
     public function pathFor(Model $record, string $locale, string $slug): string
     {
-        return $this->urls->pathForSlug($record::class, $locale, $slug);
+        return $this->urls->pathForRecordSlug($record, $locale, $slug);
     }
 }

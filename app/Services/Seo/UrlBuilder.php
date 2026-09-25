@@ -74,6 +74,22 @@ class UrlBuilder
      */
     public function pathFor(Model $record, string $locale): ?string
     {
+        /*
+         * The homepage owns the locale root and NOT /{locale}/{slug}. Checked before
+         * the slug is read, because the slug is irrelevant to the answer: a homepage
+         * with no English slug is still reachable at /en, since the locale root is the
+         * site's entry point rather than a translated address.
+         *
+         * A homepage reachable at both /fa and /fa/{slug} is a duplicate-content bug,
+         * and it is the kind that is invisible until a crawler finds it. Answering
+         * here means the canonical, the sitemap, the hreflang cluster, the redirect
+         * suggestions and the navigation resolver all agree, because all five ask this
+         * class.
+         */
+        if ($this->hasLocaleRootUrl($record)) {
+            return $this->localeHomePath($locale);
+        }
+
         $slug = $record->getTranslation('slug', $locale, useFallbackLocale: false);
 
         if (blank($slug)) {
@@ -81,6 +97,35 @@ class UrlBuilder
         }
 
         return $this->pathForSlug($record::class, $locale, (string) $slug);
+    }
+
+    /**
+     * Path for a record whose slug is supplied rather than read off it.
+     *
+     * The record-aware counterpart of pathForSlug(), for the two callers that hold
+     * both: the redirect engine (which has the OLD slug, no longer on the record) and
+     * the navigation resolver (which reads the slug WITH locale fallback). Both would
+     * otherwise send the homepage to /{locale}/{slug} — a menu item pointing at the
+     * homepage would link to a URL the sitemap does not list, and renaming the
+     * homepage's slug would generate a 301 from a URL that was never public.
+     */
+    public function pathForRecordSlug(Model $record, string $locale, string $slug): string
+    {
+        return $this->hasLocaleRootUrl($record)
+            ? $this->localeHomePath($locale)
+            : $this->pathForSlug($record::class, $locale, $slug);
+    }
+
+    /**
+     * Whether this record IS the locale root rather than a page beneath it.
+     *
+     * Narrow by design: "homepage" is a Page designated by system key (see
+     * Page::SYSTEM_HOME), so there is exactly one such record and no other type can
+     * claim the root.
+     */
+    public function hasLocaleRootUrl(Model $record): bool
+    {
+        return $record instanceof Page && $record->isHomePage();
     }
 
     /**
@@ -99,11 +144,23 @@ class UrlBuilder
     }
 
     /**
-     * Locale home page, e.g. /fa.
+     * Locale home page as an absolute URL, e.g. https://site/fa.
      */
     public function localeHome(string $locale): string
     {
-        return $this->absolute("/{$locale}");
+        return $this->absolute($this->localeHomePath($locale));
+    }
+
+    /**
+     * Locale home page as a root-relative path, e.g. /fa.
+     *
+     * Separate from localeHome() because navigation needs the relative form (it is
+     * rendered by the frontend on its own host) while the sitemap and canonical layers
+     * need the absolute one. Splitting them here keeps "/{locale}" written once.
+     */
+    public function localeHomePath(string $locale): string
+    {
+        return "/{$locale}";
     }
 
     /**

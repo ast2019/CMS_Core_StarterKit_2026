@@ -10,6 +10,7 @@ use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Page;
+use Closure;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -76,18 +77,46 @@ class PageForm
                         ->default(0)
                         ->minValue(0),
 
-                    TextInput::make('system_key')
-                        ->label(__('cms.field.system_key'))
+                    /*
+                     * The page's ROLE, which is what `system_key` has always been: the
+                     * marker for a page the application resolves by name rather than by
+                     * slug (Requirement 3.8's branded 404, and now the homepage).
+                     *
+                     * It used to be a disabled text input shown only on pages that
+                     * already had a key, so the mechanism existed and nothing in the
+                     * panel could assign it — which is why there was no way to say
+                     * "this page is the homepage" at all.
+                     *
+                     * Only the homepage is assignable. The 404 and maintenance keys are
+                     * seeded and protected: renaming one would orphan the page the error
+                     * handler looks up, and the site would silently lose its branded 404.
+                     * So a page already holding one of those shows its role read-only
+                     * (disabled AND not dehydrated, or the save would clear the column).
+                     */
+                    Select::make('system_key')
+                        ->label(__('cms.field.page_role'))
+                        ->options(fn (?Page $record): array => self::roleOptions($record))
+                        ->placeholder(__('cms.page.role_none'))
+                        ->helperText(__('cms.field.page_role_help'))
+                        ->disabled(fn (?Page $record): bool => self::isProtectedRole($record))
+                        ->dehydrated(fn (?Page $record): bool => ! self::isProtectedRole($record))
                         /*
-                         * Requirement 3.8 — the 404 page is a Page record so it can
-                         * be branded. Its key is shown but never editable: renaming
-                         * it would orphan the page the error handler looks up, and
-                         * the site would silently lose its branded 404.
+                         * Validated as well as enforced by the unique index on the
+                         * column and by Page::guardSystemKeyIsUnique(). The rule is what
+                         * turns "two pages competing for /fa" into a message naming the
+                         * page that already holds the role — the model's exception would
+                         * otherwise surface as a generic error, and the database's as a
+                         * 500.
                          */
-                        ->disabled()
-                        ->dehydrated(false)
-                        ->visible(fn (?Page $record): bool => $record?->isSystemPage() ?? false)
-                        ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
+                        ->rules([
+                            fn (?Page $record): Closure => static function (
+                                string $attribute,
+                                mixed $value,
+                                Closure $fail,
+                            ) use ($record): void {
+                                self::validateRole($record, $value, $fail);
+                            },
+                        ]),
                 ]),
 
             Section::make(__('cms.section.featured_image'))
@@ -100,6 +129,67 @@ class PageForm
                         }),
                 ]),
         ]);
+    }
+
+    /**
+     * Roles selectable on this record.
+     *
+     * The homepage is always offered. A record that already holds a DIFFERENT system
+     * key has that key added as its own label so the read-only field renders something
+     * meaningful instead of an empty select — the options list is what a Select shows,
+     * and a value with no matching option displays as blank.
+     *
+     * @return array<string, string>
+     */
+    private static function roleOptions(?Page $record): array
+    {
+        $options = [Page::SYSTEM_HOME => __('cms.page.homepage')];
+
+        if ($record !== null && $record->isSystemPage() && ! $record->isHomePage()) {
+            $key = (string) $record->system_key;
+            $options[$key] = __('cms.page.system_role', ['key' => $key]);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Whether this record's role is one the panel must never change.
+     */
+    private static function isProtectedRole(?Page $record): bool
+    {
+        return $record !== null && $record->isSystemPage() && ! $record->isHomePage();
+    }
+
+    /**
+     * @param  Closure(string): void  $fail
+     */
+    private static function validateRole(?Page $record, mixed $value, Closure $fail): void
+    {
+        if (! is_string($value) || $value === '') {
+            return;
+        }
+
+        $existing = Page::otherPageWithSystemKey(
+            $value,
+            $record?->getKey() === null ? null : (int) $record->getKey(),
+        );
+
+        if ($existing === null) {
+            return;
+        }
+
+        /*
+         * Naming the competing page is the whole value of this rule, and the reason it
+         * also looks at TRASHED pages: the unique index counts them, so without this the
+         * editor would be told nothing holds the role and the save would then fail as an
+         * integrity error against a page they cannot see anywhere in the panel.
+         */
+        $fail(__('cms.validation.system_key_taken', [
+            'key' => $value,
+            'title' => $existing->getTranslation('title', config('cms.locales.source', 'fa'))
+                ?: '#'.$existing->getKey(),
+        ]));
     }
 
     /**

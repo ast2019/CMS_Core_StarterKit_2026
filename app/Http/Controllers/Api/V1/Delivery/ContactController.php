@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Delivery;
 
+use App\Http\Controllers\Api\V1\Delivery\Concerns\ResolvesDeliveryRequest;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreContactSubmissionRequest;
 use App\Models\ContactSubmission;
@@ -16,8 +17,18 @@ use Illuminate\Http\JsonResponse;
  */
 class ContactController extends Controller
 {
+    use ResolvesDeliveryRequest;
+
     public function store(StoreContactSubmissionRequest $request): JsonResponse
     {
+        /*
+         * Requirement 1.1. Gated alongside the read endpoint that serves the form's
+         * labels and address: a site with the contact module off renders no form, so an
+         * accepted submission could only come from a stale cached page or a script — and
+         * writing it to a table nobody in the panel is looking at is worse than refusing.
+         */
+        $this->ensureModuleEnabled('contact');
+
         $submission = ContactSubmission::query()->create([
             ...$request->validated(),
 

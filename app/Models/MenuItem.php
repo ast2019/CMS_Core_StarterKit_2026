@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Concerns\HasLinkTarget;
 use App\Concerns\InteractsWithLocales;
 use App\Concerns\IsAuditable;
-use App\Contracts\Publishable;
-use App\Services\Seo\UrlBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Validation\ValidationException;
 use Spatie\Translatable\HasTranslations;
 
@@ -24,12 +22,14 @@ use Spatie\Translatable\HasTranslations;
  * An item points either at a raw URL or at a CMS record. The relational form is
  * the one worth having: a linked record's slug is per-locale, so one item resolves
  * to a different path in each language, and renaming the record's slug moves the
- * menu with it instead of breaking it.
+ * menu with it instead of breaking it. That behaviour is shared with Slide and lives
+ * in HasLinkTarget.
  *
- * Two invariants are enforced on the write path rather than only in the panel, so
+ * Three invariants are enforced on the write path rather than only in the panel, so
  * a seed, an import or a future Management API cannot produce navigation that
  * silently disappears from the API:
- *  - exactly one of `link` / `linkable_type` is set (see normaliseTarget());
+ *  - exactly one of `link` / `linkable_type` is set (HasLinkTarget::normaliseTarget());
+ *  - `menu_key` names a location this deployment declares (guardMenuLocation());
  *  - the tree stays acyclic and no deeper than MAX_DEPTH (the form validates it;
  *    the read path caps traversal regardless).
  *
@@ -38,6 +38,13 @@ use Spatie\Translatable\HasTranslations;
 class MenuItem extends Model
 {
     use HasFactory;
+
+    /*
+     * The raw-URL-or-record target, shared with Slide. It used to live here; Slide
+     * needed the identical rules, and two copies of "which target wins, and when is a
+     * target unreachable" would drift the first time one of them was fixed.
+     */
+    use HasLinkTarget;
     use HasTranslations;
     use InteractsWithLocales;
     use IsAuditable;
@@ -52,6 +59,16 @@ class MenuItem extends Model
      * the API's traversal so the two cannot disagree.
      */
     public const MAX_DEPTH = 3;
+
+    /**
+     * The location every site has, and the column default.
+     *
+     * Kept as a constant rather than read from config because it is also the `menu_key`
+     * column's default in the migration and the fallback when the configured list is
+     * empty — a value the schema depends on should not be able to drift with an
+     * environment variable.
+     */
+    public const DEFAULT_MENU_KEY = 'header';
 
     /**
      * Upper bound on any single upward or downward walk of the tree.
@@ -90,33 +107,69 @@ class MenuItem extends Model
     protected static function booted(): void
     {
         static::saving(function (self $item): void {
-            $item->normaliseTarget();
+            $item->guardMenuLocation();
         });
     }
 
     /**
-     * The menus a site has. Requirement 3.1.
+     * Keys of the menu locations this deployment declares. Requirement 3.1.
      *
-     * Centralised because the value was already hardcoded in the form and in the
-     * table filter, and this is the third reader. Still a flat list of keys rather
-     * than a location concept with names and constraints — that is a separate piece
-     * of work, and duplicating the array a third time now would make it harder.
+     * Reads `cms.menus.locations`, so a client site declares its own navigation
+     * regions in config instead of editing this class — the previous hardcoded list
+     * meant a site with a "utility" bar or no sidebar had to patch the Core, which is
+     * the thing a reusable Core exists to avoid (Requirement 1.2).
      *
      * @return list<string>
      */
     public static function menuKeys(): array
     {
-        return ['header', 'footer', 'sidebar'];
+        /** @var array<array-key, mixed> $configured */
+        $configured = (array) config('cms.menus.locations', []);
+
+        $keys = array_values(array_filter(
+            array_map(fn (mixed $key): string => is_string($key) ? $key : '', $configured),
+            fn (string $key): bool => $key !== '',
+        ));
+
+        /*
+         * Never an empty set. A deployment that mis-configures the list to nothing
+         * would otherwise be unable to save a menu item at all AND would 404 every
+         * menu endpoint — a config typo taking the whole navigation subsystem down. The
+         * default location is the one every site has.
+         */
+        return $keys === [] ? [self::DEFAULT_MENU_KEY] : $keys;
     }
 
     /**
-     * The CMS record this item points at, when it is not a raw URL.
+     * Location key => human label, for the panel's Select and table filter.
      *
-     * @return MorphTo<Model, $this>
+     * The label is a TRANSLATION, resolved by convention from the key, rather than a
+     * string stored beside the key in config. Two reasons: the panel is trilingual, so
+     * a literal label in config would force a client to pick one language for a field
+     * the rest of the panel translates; and config is loaded before (and cached
+     * independently of) the locale, so a translated value there could not follow the
+     * active locale anyway. A location with no translation falls back to its own key,
+     * so a client can add "utility" to config and ship without touching lang files.
+     *
+     * @return array<string, string>
      */
-    public function linkable(): MorphTo
+    public static function menuLocations(): array
     {
-        return $this->morphTo();
+        $locations = [];
+
+        foreach (self::menuKeys() as $key) {
+            $translationKey = "cms.menu.location.{$key}";
+            $label = __($translationKey);
+
+            $locations[$key] = is_string($label) && $label !== $translationKey ? $label : $key;
+        }
+
+        return $locations;
+    }
+
+    public static function isKnownMenuKey(string $key): bool
+    {
+        return in_array($key, self::menuKeys(), strict: true);
     }
 
     /**
@@ -161,117 +214,29 @@ class MenuItem extends Model
      * children and one for its target — an N+1 that only appears on the sites that
      * actually use sub-navigation.
      *
+     * The target's `translationStates` are loaded with it, not just the target. The
+     * payload reports `meta.translation_status` per item (Requirement 5.5), which reads
+     * that relation — so loading the morph and not its states traded one N+1 for
+     * another, and the second one was invisible because the first had been fixed.
+     *
+     * The nested string form works because every linkable type tracks translation
+     * status; a MorphTo merges nested eager loads across all of its types, so a future
+     * linkable type WITHOUT `translationStates` would need morphWith() here. It would
+     * fail loudly rather than silently, which is why the simpler form is acceptable.
+     *
      * @return list<string>
      */
     public static function treeEagerLoads(): array
     {
-        $loads = ['linkable'];
+        $loads = [self::LINK_TARGET_EAGER_LOAD];
         $path = '';
 
         for ($level = 1; $level < self::MAX_DEPTH; $level++) {
             $path .= 'children.';
-            $loads[] = $path.'linkable';
+            $loads[] = $path.self::LINK_TARGET_EAGER_LOAD;
         }
 
         return $loads;
-    }
-
-    /**
-     * Resolve the destination for a locale, root-relative.
-     *
-     * Root-relative, not absolute: navigation is rendered by the frontend on its
-     * own host, so a base URL here would hardcode one deployment into every link.
-     * Canonical and sitemap URLs are absolute for the opposite reason — they are
-     * consumed by crawlers that need the authoritative host — which is why
-     * UrlBuilder exposes both `pathForSlug()` and `absolute()`.
-     *
-     * Returns null when the item resolves to nothing, so the frontend omits it
-     * rather than rendering a link into a 404.
-     *
-     * Locale note: the slug is read WITH fallback, unlike UrlBuilder::pathFor(),
-     * which refuses to fall back. The asymmetry is deliberate and is the one place
-     * navigation and the SEO layer are allowed to differ:
-     *  - a canonical that points at another locale's content is worse than no
-     *    canonical, so pathFor() returns null;
-     *  - a menu that empties itself in every locale but Persian is a broken site,
-     *    and the Delivery API already resolves a source-locale slug under any
-     *    locale (ResolvesDeliveryRequest::resolveBySlug), so the path does resolve.
-     * What must not happen is the fallback being SILENT (Requirement 5.5), so
-     * MenuItemResource reports `meta.is_fallback`, `fallback_locale` and
-     * `translation_status` per item exactly as the content resources do, and a
-     * frontend that wants a strictly-translated menu can drop those items itself.
-     */
-    public function resolveUrl(string $locale): ?string
-    {
-        if (blank($this->linkable_type)) {
-            return filled($this->link) ? (string) $this->link : null;
-        }
-
-        /*
-         * The relation wins when a row somehow carries both (a legacy row, a seed,
-         * an import). normaliseTarget() clears the loser on write, so this is a
-         * read-path backstop — but the precedence still has to be stated, because
-         * the old order checked `link` first and therefore ignored the relation the
-         * editor had just chosen.
-         */
-        $target = $this->resolvedTarget();
-
-        if ($target === null) {
-            return null;
-        }
-
-        $slug = $target->getTranslation('slug', $locale, useFallbackLocale: true);
-
-        if (blank($slug)) {
-            return null;
-        }
-
-        // UrlBuilder is the single source of truth for the site's URL shape. It is
-        // resolved from the container rather than injected because this is a model:
-        // Eloquent controls construction, and HasSlug::fillMissingSlugs() already
-        // reaches SlugGenerator the same way. The service is stateless, so there is
-        // nothing to share and nothing to mock around.
-        return app(UrlBuilder::class)->pathForSlug($target::class, $locale, (string) $slug);
-    }
-
-    /**
-     * The linked record, if this item has one that is actually reachable.
-     *
-     * Null for a raw-URL item, a dangling morph (the target was deleted), a target
-     * whose type has no public URL, a target whose MODULE is switched off, and a
-     * target that is not live. The module check is the reason a menu cannot outlive
-     * a disabled feature: with `cms.modules.gallery` off the Delivery API answers
-     * 404 for every gallery (Requirement 1.1), so a gallery link would be a link to
-     * nothing, and the item is dropped instead.
-     */
-    public function resolvedTarget(): ?Model
-    {
-        if (blank($this->linkable_type)) {
-            return null;
-        }
-
-        $target = $this->linkable;
-
-        if ($target === null) {
-            return null;
-        }
-
-        if (! app(UrlBuilder::class)->isPubliclyRoutable($target::class)) {
-            return null;
-        }
-
-        /*
-         * Publishable rather than a method_exists() probe: the contract exists
-         * precisely so "is this live?" is a typed question, and a probe's silent
-         * default is what let an unpublishable type be treated as live. A Category
-         * has no publish workflow and correctly does not implement it — a category
-         * exists or it does not.
-         */
-        if ($target instanceof Publishable && ! $target->isLive()) {
-            return null;
-        }
-
-        return $target;
     }
 
     /**
@@ -383,43 +348,46 @@ class MenuItem extends Model
     }
 
     /**
-     * Force "exactly one of link / linkable" on every write.
+     * The message for an item with no destination at all.
      *
-     * Three things were wrong before, and all three are cheap to fix here rather
-     * than in the one form that happens to be the only writer today:
-     *  - an item with NEITHER set was savable and simply never appeared in the API,
-     *    which looks like a caching bug from the editor's side;
-     *  - an item with BOTH set ignored its relation, because the raw link was
-     *    checked first — so re-pointing a raw-URL item at a page appeared to do
-     *    nothing (Filament does not dehydrate a hidden field, so the stale `link`
-     *    column survived the save);
-     *  - a `linkable_type` with no id (or the reverse) is a half-written morph that
-     *    resolves to nothing.
-     *
-     * The relation is the winner when both arrive: it is the form the editor was
-     * offered second, it is per-locale, and it is the one this model can validate.
+     * Overrides HasLinkTarget's generic wording because the menu form names the two
+     * options the editor was actually offered, and a message that does not match the
+     * fields on screen reads as a bug in the panel.
      */
-    public function normaliseTarget(): void
+    protected function linkTargetRequiredMessage(): string
     {
-        $hasRelation = filled($this->linkable_type) && filled($this->linkable_id);
+        return __('cms.validation.menu_target_required');
+    }
 
-        if ($hasRelation) {
-            $this->link = null;
+    /**
+     * Refuse a `menu_key` this deployment does not declare.
+     *
+     * The column was a free string with no validation anywhere, so a typo in a seed
+     * or an import produced a menu nobody could find: the items existed, the panel
+     * filter did not offer the key, and `GET /api/v1/menus/{key}` answered 200 with an
+     * empty list for both a typo and a genuinely empty menu. Validating the write and
+     * 404ing the unknown read makes those two cases distinguishable — which is the
+     * whole point of locations being a declared set.
+     */
+    protected function guardMenuLocation(): void
+    {
+        $key = (string) $this->menu_key;
+
+        if ($key === '') {
+            $this->menu_key = self::DEFAULT_MENU_KEY;
 
             return;
         }
 
-        // A half-written morph is not a target; drop both halves so the row does
-        // not carry a type pointing at nothing.
-        $this->linkable_type = null;
-        $this->linkable_id = null;
-
-        if (filled($this->link)) {
+        if (self::isKnownMenuKey($key)) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'link' => __('cms.validation.menu_target_required'),
+            'menu_key' => __('cms.validation.menu_key_unknown', [
+                'key' => $key,
+                'locations' => implode('، ', self::menuKeys()),
+            ]),
         ]);
     }
 }

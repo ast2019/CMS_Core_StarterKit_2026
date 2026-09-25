@@ -98,9 +98,6 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
-                    },
-                    "403": {
-                        "$ref": "#/components/responses/AuthorizationException"
                     }
                 }
             },
@@ -1001,6 +998,134 @@
                 }
             }
         },
+        "/v1/redirects": {
+            "get": {
+                "operationId": "v1.redirects.index",
+                "description": "Paginated rather than returned whole: the table grows by one row per slug change\nper locale and has no natural ceiling, so an unbounded export is the same\ndenial-of-service shape `per_page` exists to prevent elsewhere. A build-time\nconsumer walks the pages once, which is cheap when it happens at deploy time.\n\nOrdered by id so pagination is stable \u2014 ordering by `from_path` would reshuffle\npages as new redirects are inserted, and a consumer walking page by page would\nsilently miss rows.",
+                "summary": "The whole redirect table, paginated and collapsed",
+                "tags": [
+                    "Redirect"
+                ],
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/redirects/resolve": {
+            "get": {
+                "operationId": "v1.redirects.resolve",
+                "description": "404 when no redirect applies, which is the honest answer and the one the caller\ncan act on directly: the frontend renders its own not-found page (the branded one\nfrom `not-found-page`, Requirement 3.8). A 200 carrying `{\"to\": null}` would make\nevery consumer write the same null check and would cache \"no redirect\" and \"a\n     * redirect to null\" identically.\n\nNot wrapped in DeliveryCache. RedirectResolver caches the whole table as one\nentry, so a lookup is already an in-memory array read \u2014 while caching PER PATH\nwould create one cache entry for every URL anyone ever asks about, including every\nnonsense path a crawler tries. That is unbounded key growth driven by untrusted\ninput, on the exact endpoint a 404 flood would target.",
+                "summary": "Resolve one path to its final destination",
+                "tags": [
+                    "Redirect"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "from": {
+                                                    "type": "string"
+                                                },
+                                                "to": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "description": "The HTTP status the frontend must emit, not the enum name: 301 and 302\nare the contract, and `permanent` would make every consumer write the\nsame mapping table.",
+                                                    "type": [
+                                                        "string",
+                                                        "integer"
+                                                    ]
+                                                },
+                                                "hops": {
+                                                    "type": "string",
+                                                    "description": "How many stored redirects were traversed to reach `to`. 1 means this row\npointed straight at the destination. Exposed because it is the only way a\nfrontend can tell that `to` is not the `to_path` an editor typed, which\notherwise looks like a bug when someone compares the API against the\npanel."
+                                                },
+                                                "preserve_query": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the frontend should carry the incoming query string across.\nFalse when the destination defines its own, so that a deliberate\n`?sort=latest` is not overwritten by the visitor's `?sort=oldest`.\nStated in the payload rather than left to each frontend to re-derive,\nbecause it is a rule of this redirect engine, not a rendering choice."
+                                                }
+                                            },
+                                            "required": [
+                                                "from",
+                                                "to",
+                                                "status",
+                                                "hops",
+                                                "preserve_query"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "No redirect is configured for this path."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "A [from] path is required, e.g. ?from=/fa/news/old-slug."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/search": {
             "get": {
                 "operationId": "v1.search",
@@ -1234,7 +1359,7 @@
         "/v1/menus/{key}": {
             "get": {
                 "operationId": "v1.menu",
-                "description": "Each item carries `id`, `label`, `url`, `opens_in_new_tab`, `children` and a\n`meta` object with `is_fallback`, `fallback_locale` and `translation_status`\n\u2014 the same fallback reporting the content endpoints use, because an item's URL\nis built from its target's slug and may resolve through the source locale.\n\n`url` is root-relative, since the frontend renders navigation on its own host.\nAn item whose target is missing, unpublished, or owned by a disabled module is\nomitted, unless it still has children, in which case it is a section heading\nwith a null `url`. The tree is capped at three levels.\n\nAnswers 404 when the menu module is disabled, and 200 with an empty list for a\nmenu key that has no items.",
+                "description": "Each item carries `id`, `label`, `url`, `opens_in_new_tab`, `children` and a\n`meta` object with `is_fallback`, `fallback_locale` and `translation_status`\n\u2014 the same fallback reporting the content endpoints use, because an item's URL\nis built from its target's slug and may resolve through the source locale.\n\n`url` is root-relative, since the frontend renders navigation on its own host.\nAn item whose target is missing, unpublished, or owned by a disabled module is\nomitted, unless it still has children, in which case it is a section heading\nwith a null `url`. The tree is capped at three levels.\n\nAnswers 404 when the menu module is disabled OR when the location is not one\nthis deployment declares, and 200 with an empty list for a declared location\nthat simply has no items.",
                 "summary": "A named navigation menu, resolved for the locale as a nested tree",
                 "tags": [
                     "Site"
@@ -1284,6 +1409,9 @@
                                 }
                             }
                         }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFoundHttpException"
                     }
                 }
             }
@@ -1366,6 +1494,10 @@
                                                         "null"
                                                     ]
                                                 },
+                                                "is_homepage": {
+                                                    "type": "boolean",
+                                                    "description": "Stated explicitly even though it is derivable from `system_key`, because\nthis is the flag that prevents a duplicate-content bug and a frontend\nshould not have to know the Core's magic string to find it. The homepage is addressed at /{locale}, not /{locale}/{slug} \u2014 that is\nwhat UrlBuilder returns for it, so the canonical, the sitemap and every\nmenu link agree. But `pages/{slug}` still resolves it, deliberately: a\nfrontend built before the homepage concept existed keeps working. Such a\nfrontend must use this flag to redirect /{locale}/{slug} to /{locale} (or\nat minimum canonicalise it there), or the same content will be reachable\nat two URLs. See docs/redirects.md."
+                                                },
                                                 "position": {
                                                     "type": "integer"
                                                 },
@@ -1434,6 +1566,7 @@
                                                 "slug",
                                                 "blocks",
                                                 "system_key",
+                                                "is_homepage",
                                                 "position",
                                                 "featured_image",
                                                 "seo",
@@ -1470,6 +1603,165 @@
                                         "message": {
                                             "type": "string",
                                             "const": "No 404 page is configured."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/home-page": {
+            "get": {
+                "operationId": "v1.home-page",
+                "description": "A DEDICATED endpoint rather than a field on `settings`, deliberately, even though\n\"which page is the homepage\" sounds like a setting. Three reasons, in order of\nhow expensive getting it wrong would be:\n\n 1. Cache tags. `settings` is cached under TAG_SETTINGS and a Page is content\n    under TAG_CONTENT. Embedding the page body in the settings payload would mean\n    either serving a stale homepage until the settings cache expired, or\n    invalidating settings \u2014 read on every single request \u2014 on every content\n    write. Neither is acceptable and there is no third option.\n 2. Consistency. `not-found-page` is the existing precedent for \"a Page the\n     *     application resolves by system key rather than by slug\", and it is served\n    exactly this way. A homepage served differently would be an inconsistency a\n    frontend developer has to memorise.\n 3. Payload size. The homepage carries a full TipTap document and a featured\n    image; `settings` is fetched by every page of the frontend, including the\n    ones that will never render the homepage.\n\n404 when no page has been designated, or when the designated page is not live \u2014\nthe frontend then renders its own root, which is what a site that has not adopted\nthe homepage concept keeps doing.",
+                "summary": "The page rendered at the locale root, e.g. /fa",
+                "tags": [
+                    "Site"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "title": {
+                                                    "type": "string"
+                                                },
+                                                "slug": {
+                                                    "type": "string"
+                                                },
+                                                "blocks": {
+                                                    "type": "string",
+                                                    "description": "Named `blocks` to match the blueprint's \u00a73 vocabulary, though it holds\nthe same TipTap document shape as an article body."
+                                                },
+                                                "system_key": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "is_homepage": {
+                                                    "type": "boolean",
+                                                    "description": "Stated explicitly even though it is derivable from `system_key`, because\nthis is the flag that prevents a duplicate-content bug and a frontend\nshould not have to know the Core's magic string to find it. The homepage is addressed at /{locale}, not /{locale}/{slug} \u2014 that is\nwhat UrlBuilder returns for it, so the canonical, the sitemap and every\nmenu link agree. But `pages/{slug}` still resolves it, deliberately: a\nfrontend built before the homepage concept existed keeps working. Such a\nfrontend must use this flag to redirect /{locale}/{slug} to /{locale} (or\nat minimum canonicalise it there), or the same content will be reachable\nat two URLs. See docs/redirects.md."
+                                                },
+                                                "position": {
+                                                    "type": "integer"
+                                                },
+                                                "featured_image": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "null"
+                                                        },
+                                                        {
+                                                            "$ref": "#/components/schemas/MediaAssetResource"
+                                                        },
+                                                        {
+                                                            "type": "object"
+                                                        }
+                                                    ]
+                                                },
+                                                "seo": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "meta_title": {
+                                                            "type": "string"
+                                                        },
+                                                        "meta_description": {
+                                                            "type": "string"
+                                                        },
+                                                        "robots": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "meta_title",
+                                                        "meta_description",
+                                                        "robots"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "locale": {
+                                                            "type": "string"
+                                                        },
+                                                        "is_fallback": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "fallback_locale": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "translation_status": {
+                                                            "type": "null"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "locale",
+                                                        "is_fallback",
+                                                        "fallback_locale",
+                                                        "translation_status"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "title",
+                                                "slug",
+                                                "blocks",
+                                                "system_key",
+                                                "is_homepage",
+                                                "position",
+                                                "featured_image",
+                                                "seo",
+                                                "meta"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "No homepage is designated."
                                         }
                                     },
                                     "required": [
@@ -2152,6 +2444,10 @@
                             "null"
                         ]
                     },
+                    "is_homepage": {
+                        "type": "boolean",
+                        "description": "Stated explicitly even though it is derivable from `system_key`, because\nthis is the flag that prevents a duplicate-content bug and a frontend\nshould not have to know the Core's magic string to find it. The homepage is addressed at /{locale}, not /{locale}/{slug} \u2014 that is\nwhat UrlBuilder returns for it, so the canonical, the sitemap and every\nmenu link agree. But `pages/{slug}` still resolves it, deliberately: a\nfrontend built before the homepage concept existed keeps working. Such a\nfrontend must use this flag to redirect /{locale}/{slug} to /{locale} (or\nat minimum canonicalise it there), or the same content will be reachable\nat two URLs. See docs/redirects.md."
+                    },
                     "position": {
                         "type": "integer"
                     },
@@ -2217,6 +2513,7 @@
                     "slug",
                     "blocks",
                     "system_key",
+                    "is_homepage",
                     "position",
                     "seo",
                     "meta"

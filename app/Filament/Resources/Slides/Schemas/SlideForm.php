@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Slides\Schemas;
 
+use App\Filament\Schemas\LinkTargetFields;
 use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Slide;
@@ -73,13 +74,18 @@ class SlideForm
             Section::make(__('cms.section.link'))
                 ->columns(2)
                 ->schema([
-                    TextInput::make('link')
-                        ->label(__('cms.field.link'))
-                        ->maxLength(500)
-                        // Relative internal paths are normal here, so a url() rule
-                        // would be wrong; this only blocks the dangerous schemes.
-                        ->regex('/^(?!javascript:|data:|vbscript:)/i')
-                        ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
+                    /*
+                     * The same picker the menu form offers, and for the same reason: a
+                     * slide's `link` was a bare string, so the call-to-action on a
+                     * Persian-authored hero sent English and Arabic visitors to the
+                     * Persian page, and renaming the target's slug broke the slideshow
+                     * silently. Pointing at a record resolves per locale and follows
+                     * the target when it moves.
+                     *
+                     * targetRequired: false — unlike a menu item, a slide with no
+                     * destination is a legitimate decorative hero.
+                     */
+                    ...LinkTargetFields::make(targetRequired: false),
 
                     TextInput::make('position')
                         ->label(__('cms.field.position'))

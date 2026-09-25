@@ -7,6 +7,7 @@ namespace Database\Factories;
 use App\Models\Slide;
 use Database\Factories\Concerns\GeneratesPersianText;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * @extends Factory<Slide>
@@ -37,5 +38,36 @@ class SlideFactory extends Factory
     public function inactive(): static
     {
         return $this->state(fn (): array => ['is_active' => false]);
+    }
+
+    /**
+     * Point the slide at a CMS record instead of a raw URL.
+     *
+     * Clears `link` explicitly rather than relying on HasLinkTarget::normaliseTarget()
+     * to do it on save: a factory is also used with make() and without a save, and a
+     * state that only becomes correct when persisted is a trap in a test.
+     */
+    public function pointingAt(Model $target): static
+    {
+        return $this->state(fn (): array => [
+            'link' => null,
+            'linkable_type' => $target::class,
+            'linkable_id' => $target->getKey(),
+        ]);
+    }
+
+    /**
+     * A slide with no destination at all — a decorative hero.
+     *
+     * Legitimate for a slide and impossible for a menu item, which is the one place the
+     * two diverge (Slide::linkTargetIsRequired()).
+     */
+    public function withoutLink(): static
+    {
+        return $this->state(fn (): array => [
+            'link' => null,
+            'linkable_type' => null,
+            'linkable_id' => null,
+        ]);
     }
 }

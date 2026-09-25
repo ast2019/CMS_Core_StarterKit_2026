@@ -32,6 +32,23 @@ class RateLimitServiceProvider extends ServiceProvider
             return Limit::perMinute($perMinute)->by($request->ip() ?? 'unknown');
         });
 
+        RateLimiter::for('cms-redirects', function (Request $request): Limit {
+            /*
+             * Redirect lookups, which the frontend calls on every 404 IT serves — from
+             * one server IP for the whole site. Under the shared `cms-delivery` limit a
+             * crawler walking a handful of stale URLs would exhaust the budget for every
+             * real visitor, and the thing that breaks is redirect handling: exactly the
+             * gap this endpoint was added to close.
+             *
+             * Still keyed by IP and still limited: each call is an in-memory map lookup,
+             * but it also increments a hit counter, so an unbounded 404 flood would be
+             * an unbounded stream of UPDATEs.
+             */
+            $perMinute = (int) config('cms.api.delivery.redirect_rate_limit', 600);
+
+            return Limit::perMinute($perMinute)->by('redirects:'.($request->ip() ?? 'unknown'));
+        });
+
         RateLimiter::for('cms-manage', function (Request $request): Limit {
             $perMinute = (int) config('cms.api.management.rate_limit', 60);
 

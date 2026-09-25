@@ -185,6 +185,42 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Menu Locations
+    |--------------------------------------------------------------------------
+    |
+    | The navigation regions this deployment has. One `menu_items` table serves all
+    | of them, grouped by `menu_key` — so a location is METADATA about the frontend's
+    | layout, not content, and deliberately has no model or table of its own. A
+    | `menus` table would have to be seeded per deployment, would let an editor create
+    | a location the frontend has no slot to render, and would answer no question this
+    | list does not.
+    |
+    | Declared here rather than hardcoded in App\Models\MenuItem so a client site can
+    | add a "utility" bar or drop the sidebar without patching the Core (Requirement
+    | 1.2). The same list does three jobs, which is why it is one list:
+    |   - it populates the location Select and the table filter in the panel;
+    |   - it VALIDATES `menu_key` on save, so a seed or an import cannot write items
+    |     into a menu nothing renders;
+    |   - it decides whether GET /api/v1/menus/{key} is a 404. An undeclared location
+    |     is a frontend typo and now says so, instead of being indistinguishable from
+    |     a declared menu that happens to be empty.
+    |
+    | Labels are NOT here. The panel is trilingual, so a literal label in config would
+    | force one language on a field the rest of the panel translates, and config is
+    | resolved (and cached) independently of the active locale. Each key is labelled
+    | from `cms.menu.location.{key}` in the lang files, falling back to the raw key —
+    | so a client can add a location and ship without touching lang files at all.
+    |
+    | Requirement 3.1.
+    |
+    */
+
+    'menus' => [
+        'locations' => ['header', 'footer', 'sidebar'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Slides
     |--------------------------------------------------------------------------
     |
@@ -218,6 +254,23 @@ return [
             'key' => env('CMS_DELIVERY_API_KEY'),
             'rate_limit' => env('CMS_DELIVERY_RATE_LIMIT', 120),
             'cache_ttl' => env('CMS_DELIVERY_CACHE_TTL', 300),
+
+            /*
+             * Redirect lookups get their own, much higher allowance.
+             *
+             * Not generosity — a correction for how the traffic actually arrives. The
+             * delivery limiter is keyed by IP, which is right for browsers hitting the
+             * API directly. But the redirect lookup is called by the FRONTEND server on
+             * every 404 it serves, from one IP for the entire site's traffic, so the
+             * shared 120/min ceiling would throttle the whole deployment the moment a
+             * crawler walked a few stale URLs — and the failure mode is that redirects
+             * stop working, which is the bug this endpoint exists to fix.
+             *
+             * The work behind each call is an in-memory lookup against one cached map,
+             * so a high limit is cheap. It is still a limit: without one, a 404 flood
+             * would drive an unbounded number of hit-counter UPDATEs.
+             */
+            'redirect_rate_limit' => env('CMS_REDIRECT_RATE_LIMIT', 600),
         ],
 
         'management' => [

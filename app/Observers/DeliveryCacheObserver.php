@@ -11,6 +11,7 @@ use App\Models\Gallery;
 use App\Models\MediaAsset;
 use App\Models\MenuItem;
 use App\Models\Page;
+use App\Models\Redirect;
 use App\Models\Setting;
 use App\Models\Slide;
 use App\Models\Tag;
@@ -52,6 +53,17 @@ class DeliveryCacheObserver
         MenuItem::class => [DeliveryCache::TAG_NAVIGATION],
         Setting::class => [DeliveryCache::TAG_SETTINGS],
         ContactSetting::class => [DeliveryCache::TAG_SETTINGS],
+
+        /*
+         * The redirect table is served to the frontend (GET /api/v1/redirects), so a
+         * new 301 must reach it promptly — a build-time consumer that cached a stale
+         * export would keep 404ing the URL the editor just fixed.
+         *
+         * Note that this observer only sees real model writes. HandleRedirects and the
+         * Delivery lookup increment hit counters with a bare UPDATE precisely so that
+         * counting a hit does not bust this cache on every redirect served.
+         */
+        Redirect::class => [DeliveryCache::TAG_REDIRECT],
     ];
 
     public function __construct(private readonly DeliveryCache $cache) {}

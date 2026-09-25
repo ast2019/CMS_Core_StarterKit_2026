@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Delivery\ContactController;
 use App\Http\Controllers\Api\V1\Delivery\ContentController;
 use App\Http\Controllers\Api\V1\Delivery\GalleryController;
 use App\Http\Controllers\Api\V1\Delivery\PageController;
+use App\Http\Controllers\Api\V1\Delivery\RedirectController;
 use App\Http\Controllers\Api\V1\Delivery\SearchController;
 use App\Http\Controllers\Api\V1\Delivery\SeoController;
 use App\Http\Controllers\Api\V1\Delivery\SiteController;
@@ -91,13 +92,55 @@ Route::prefix('v1')->group(function (): void {
         Route::get('search', SearchController::class)->name('api.v1.search');
 
         Route::get('slides', [SiteController::class, 'slides'])->name('api.v1.slides');
+
+        /*
+         * The location key allows `-` and `_` as well as alphanumerics, because
+         * `cms.menus.locations` is a per-deployment list and a client declaring
+         * `utility-bar` or `mobile_drawer` would otherwise get a 404 from the ROUTER —
+         * indistinguishable from the controller's "no such location" and impossible to
+         * debug from the frontend. The controller validates the key against the
+         * configured set, so the pattern only has to be permissive enough not to reject
+         * a legitimate one first.
+         */
         Route::get('menus/{key}', [SiteController::class, 'menu'])
-            ->whereAlphaNumeric('key')
+            ->where('key', '[A-Za-z0-9_-]+')
             ->name('api.v1.menu');
+
         Route::get('settings', [SiteController::class, 'settings'])->name('api.v1.settings');
         Route::get('contact', [SiteController::class, 'contact'])->name('api.v1.contact');
         Route::get('not-found-page', [SiteController::class, 'notFoundPage'])->name('api.v1.not-found');
+
+        /*
+         * The page rendered at the locale root. Served like `not-found-page` — by system
+         * key rather than by slug — because that is what it is: a Page the application
+         * resolves by name. A frontend had no way to ask which page belongs at /fa, so a
+         * homepage was either hardcoded per client or not a CMS concept at all.
+         */
+        Route::get('home-page', [SiteController::class, 'homePage'])->name('api.v1.home-page');
+
+        /*
+         * The full redirect table, for a frontend that compiles redirects at build time.
+         * The single-path lookup lives in its own throttle group below.
+         */
+        Route::get('redirects', [RedirectController::class, 'index'])->name('api.v1.redirects.index');
     });
+
+    /*
+     * Redirect resolution, with its own rate limiter.
+     *
+     * The frontend calls this on every 404 IT serves, from one server IP for the whole
+     * site's traffic. Under the shared read limiter a crawler walking a few stale URLs
+     * would exhaust the budget for every real visitor — and what breaks is redirect
+     * handling, which is precisely the gap this endpoint closes. Same guards otherwise,
+     * so it is still a public read-only Delivery route.
+     */
+    Route::middleware([
+        'throttle:cms-redirects',
+        AuthenticateDeliveryApi::class,
+        EnsureMaintenanceModeAllowsDelivery::class,
+        ResolveApiLocale::class,
+    ])->get('redirects/resolve', [RedirectController::class, 'resolve'])
+        ->name('api.v1.redirects.resolve');
 
     /*
      * The contact form is the one public write. It gets its own, much tighter

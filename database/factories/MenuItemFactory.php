@@ -30,7 +30,10 @@ class MenuItemFactory extends Factory
     {
         return [
             'label' => ['fa' => $this->persianTopic()],
-            'menu_key' => 'header',
+            // The constant, not the literal: `menu_key` is now validated against the
+            // locations in `cms.menus.locations`, and a factory writing a key the
+            // model rejects would fail every test that touches navigation.
+            'menu_key' => MenuItem::DEFAULT_MENU_KEY,
             'link' => '/fa/'.$this->faker->unique()->slug(2),
             'position' => 0,
         ];

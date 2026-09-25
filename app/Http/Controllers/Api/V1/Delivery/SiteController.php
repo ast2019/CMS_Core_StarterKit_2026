@@ -18,6 +18,7 @@ use App\Services\Api\DeliveryCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Site chrome: slides, navigation, settings and contact details.
@@ -39,6 +40,15 @@ class SiteController extends Controller
      */
     public function slides(Request $request): AnonymousResourceCollection
     {
+        /*
+         * Requirement 1.1, and before the cache lookup so switching the module off
+         * takes the endpoint out of service immediately rather than at the end of the
+         * TTL. Stage 1 flagged this endpoint as ungated: a site with no slideshow still
+         * served its slides, which makes the toggle a lie in the one place a consumer
+         * can see it.
+         */
+        $this->ensureModuleEnabled('slide');
+
         $locale = $this->locale($request);
 
         return $this->cache->remember(
@@ -47,7 +57,12 @@ class SiteController extends Controller
             function (): AnonymousResourceCollection {
                 $slides = Slide::query()
                     ->active()
-                    ->with('mediaAssets')
+                    // The link target because a slide's destination is now resolved
+                    // from its target's per-locale slug, and the target's translation
+                    // states because the payload reports whether that slug was a
+                    // fallback. Without both, every slide costs several queries on a
+                    // public cached endpoint fetched for the homepage of every visit.
+                    ->with(['mediaAssets', Slide::LINK_TARGET_EAGER_LOAD])
                     /*
                      * Requirements 3.4/3.5 cap active slides at 5, enforced in
                      * validation and the policy. The limit is applied here as well:
@@ -76,10 +91,11 @@ class SiteController extends Controller
      * omitted, unless it still has children, in which case it is a section heading
      * with a null `url`. The tree is capped at three levels.
      *
-     * Answers 404 when the menu module is disabled, and 200 with an empty list for a
-     * menu key that has no items.
+     * Answers 404 when the menu module is disabled OR when the location is not one
+     * this deployment declares, and 200 with an empty list for a declared location
+     * that simply has no items.
      */
-    public function menu(Request $request, string $key = 'header'): JsonResponse
+    public function menu(Request $request, string $key = MenuItem::DEFAULT_MENU_KEY): JsonResponse
     {
         /*
          * Requirement 1.1, and before the cache lookup so switching the module off
@@ -91,12 +107,20 @@ class SiteController extends Controller
         $this->ensureModuleEnabled('menu');
 
         /*
-         * An unknown key answers 200 with an empty list, which is left as it is on
-         * purpose: menu keys are not a validated set today (any string is a
-         * menu_key), so a 404 would have to be based on a hardcoded list. The menu
-         * LOCATION concept is separate work; until it exists MenuItem::menuKeys() is
-         * only what the panel offers.
+         * An UNDECLARED location is a 404, which is the whole point of locations being
+         * a configured set (`cms.menus.locations`). Until now any alphanumeric key
+         * answered 200 with an empty array, so a frontend typo — `?menu=headr`, a
+         * mis-copied constant — was indistinguishable from a menu the editor had not
+         * filled in yet, and the frontend rendered no navigation with nothing anywhere
+         * to explain why. A DECLARED location with no items still answers 200 and an
+         * empty list, because that is a content state rather than a mistake.
          */
+        if (! MenuItem::isKnownMenuKey($key)) {
+            throw new NotFoundHttpException(
+                "No menu location [{$key}] is declared on this site.",
+            );
+        }
+
         $locale = $this->locale($request);
 
         $tree = $this->cache->remember(
@@ -128,6 +152,9 @@ class SiteController extends Controller
      */
     public function settings(Request $request): JsonResponse
     {
+        // Requirement 1.1 — stage 1 flagged this endpoint as ungated.
+        $this->ensureModuleEnabled('settings');
+
         $locale = $this->locale($request);
 
         $payload = $this->cache->remember(
@@ -174,6 +201,9 @@ class SiteController extends Controller
      */
     public function contact(Request $request): JsonResponse
     {
+        // Requirement 1.1 — stage 1 flagged this endpoint as ungated.
+        $this->ensureModuleEnabled('contact');
+
         $locale = $this->locale($request);
 
         $payload = $this->cache->remember(
@@ -204,6 +234,12 @@ class SiteController extends Controller
      */
     public function notFoundPage(Request $request): JsonResponse
     {
+        /*
+         * Requirement 1.1 — the 404 page is a Page record, so it belongs to the page
+         * module. Stage 1 flagged this endpoint as ungated.
+         */
+        $this->ensureModuleEnabled('page');
+
         $page = Page::notFoundPage();
 
         if ($page === null) {
@@ -217,6 +253,53 @@ class SiteController extends Controller
 
         return new JsonResponse([
             'data' => PageResource::make($page->load('mediaAssets'))->toArray($request),
+            'meta' => ['locale' => $this->locale($request)],
+        ]);
+    }
+
+    /**
+     * The page rendered at the locale root, e.g. /fa.
+     *
+     * A DEDICATED endpoint rather than a field on `settings`, deliberately, even though
+     * "which page is the homepage" sounds like a setting. Three reasons, in order of
+     * how expensive getting it wrong would be:
+     *
+     *  1. Cache tags. `settings` is cached under TAG_SETTINGS and a Page is content
+     *     under TAG_CONTENT. Embedding the page body in the settings payload would mean
+     *     either serving a stale homepage until the settings cache expired, or
+     *     invalidating settings — read on every single request — on every content
+     *     write. Neither is acceptable and there is no third option.
+     *  2. Consistency. `not-found-page` is the existing precedent for "a Page the
+     *     application resolves by system key rather than by slug", and it is served
+     *     exactly this way. A homepage served differently would be an inconsistency a
+     *     frontend developer has to memorise.
+     *  3. Payload size. The homepage carries a full TipTap document and a featured
+     *     image; `settings` is fetched by every page of the frontend, including the
+     *     ones that will never render the homepage.
+     *
+     * 404 when no page has been designated, or when the designated page is not live —
+     * the frontend then renders its own root, which is what a site that has not adopted
+     * the homepage concept keeps doing.
+     */
+    public function homePage(Request $request): JsonResponse
+    {
+        $this->ensureModuleEnabled('page');
+
+        $page = Page::homePage();
+
+        /*
+         * `isLive()` here and NOT in Page::homePage(). The model answers "which record
+         * owns the URL /fa", which governs URL shape and must not flicker while the
+         * page is unpublished for an edit; whether it may be SERVED is this endpoint's
+         * question. Without the check, unpublishing the homepage would keep publishing
+         * it.
+         */
+        if ($page === null || ! $page->isLive()) {
+            return new JsonResponse(['message' => 'No homepage is designated.'], 404);
+        }
+
+        return new JsonResponse([
+            'data' => PageResource::make($page->load(['mediaAssets', 'translationStates']))->toArray($request),
             'meta' => ['locale' => $this->locale($request)],
         ]);
     }

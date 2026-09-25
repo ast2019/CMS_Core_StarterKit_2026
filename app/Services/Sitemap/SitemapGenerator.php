@@ -51,9 +51,31 @@ class SitemapGenerator
      * Collection<int, Model> is expected, and every factory yields a different
      * concrete model type.
      *
+     * Types whose MODULE is switched off are filtered out (Requirement 1.1).
+     * config/cms.php promises that a disabled module "contributes no sitemap entries",
+     * and until now this class never consulted the toggles — so a site with the gallery
+     * module off still submitted every gallery URL to Search Console, where each one
+     * resolves to a 404 on the frontend. UrlBuilder::isPubliclyRoutable() answers the
+     * same question for navigation, which is why it is asked here rather than
+     * re-deriving the module map.
+     *
      * @return array<class-string<Model>, callable(): list<Model>>
      */
     private function indexableQueries(): array
+    {
+        return array_filter(
+            $this->allIndexableQueries(),
+            fn (string $modelClass): bool => $this->urls->isPubliclyRoutable($modelClass),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
+     * Every indexable type, before module filtering.
+     *
+     * @return array<class-string<Model>, callable(): list<Model>>
+     */
+    private function allIndexableQueries(): array
     {
         return [
             Content::class => fn (): array => Content::query()
@@ -111,13 +133,29 @@ class SitemapGenerator
     {
         $sitemap = Sitemap::create();
 
-        // The locale home page is always present; it is the entry point and has no
-        // translation status of its own.
-        $sitemap->add(
-            Url::create($this->urls->localeHome($locale))
-                ->setPriority(1.0)
-                ->setChangeFrequency(Url::CHANGE_FREQUENCY_DAILY),
-        );
+        /*
+         * The locale home page, but only when no Page record owns it.
+         *
+         * A designated homepage (Page::SYSTEM_HOME) IS /{locale} — UrlBuilder::pathFor()
+         * returns the locale root for it rather than /{locale}/{slug}, so the loop below
+         * contributes that URL itself, with a real lastmod and the reciprocal hreflang
+         * alternates Requirement 7.2 wants. Spatie's Sitemap de-duplicates by URL at
+         * render time and keeps the FIRST occurrence, so adding this synthetic entry
+         * unconditionally would shadow the richer one and quietly strip the homepage's
+         * hreflang cluster.
+         *
+         * The fallback still matters: when there is no homepage record, or when the one
+         * there is is unpublished or has no reviewed translation for this locale
+         * (Decision D-5), /{locale} must still be listed. It is the site's entry point,
+         * and a locale sitemap that omits its own root is a crawl dead end.
+         */
+        if (! $this->homePageCoversLocaleRoot($locale)) {
+            $sitemap->add(
+                Url::create($this->urls->localeHome($locale))
+                    ->setPriority(1.0)
+                    ->setChangeFrequency(Url::CHANGE_FREQUENCY_DAILY),
+            );
+        }
 
         foreach ($this->indexableQueries() as $modelClass => $factory) {
             foreach ($this->filterEligible($factory(), $locale) as $record) {
@@ -297,15 +335,45 @@ class SitemapGenerator
     }
 
     /**
+     * Whether a designated homepage already contributes /{locale} to this sitemap.
+     *
+     * Three conditions, all necessary: a homepage exists, it is live (an unpublished
+     * homepage contributes nothing), and it is eligible for this locale under Decision
+     * D-5 — so `sitemap-en.xml` falls back to the synthetic root entry until the English
+     * homepage has been reviewed, rather than losing its root altogether.
+     */
+    private function homePageCoversLocaleRoot(string $locale): bool
+    {
+        if (! (bool) config('cms.modules.page', true)) {
+            return false;
+        }
+
+        $home = Page::homePage();
+
+        return $home !== null
+            && $home->isLive()
+            && $this->isEligible($home, $locale);
+    }
+
+    /**
      * Live articles eligible for a locale, with media loaded.
      *
      * Typed to Content specifically because the image and video sitemaps read the
      * mediaAssets relation, which only exists on media-bearing models.
      *
+     * Returns nothing when the content module is off (Requirement 1.1): the image and
+     * video sitemaps hang images off the article URL that shows them, so with articles
+     * unreachable there is no host page for any of those images to be indexed against.
+     *
      * @return Collection<int, Content>
      */
     public function eligibleArticles(string $locale): Collection
     {
+        if (! $this->urls->isPubliclyRoutable(Content::class)) {
+            /** @var Collection<int, Content> */
+            return new Collection;
+        }
+
         return Content::query()
             ->live()
             ->with(['translationStates', 'mediaAssets'])

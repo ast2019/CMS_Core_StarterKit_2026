@@ -131,6 +131,7 @@ return [
         'is_active' => 'نشط',
         'link' => 'الرابط',
         'menu_key' => 'القائمة',
+        'menu_key_help' => 'تُعرَّف مواضع القوائم في إعدادات الموقع. هذه القائمة هي ما يمكن للواجهة عرضه فعلاً.',
         'target' => 'الهدف',
         'target_help' => 'اكتب بعض أحرف العنوان للبحث. يُبنى الرابط في كل لغة من معرّف الهدف في تلك اللغة.',
         'opens_in_new_tab' => 'الفتح في تبويب جديد',
@@ -156,6 +157,8 @@ return [
         'email' => 'البريد الإلكتروني',
         'phone' => 'الهاتف',
         'subject' => 'الموضوع',
+        'page_role' => 'دور الصفحة',
+        'page_role_help' => 'يحدد الدور صفحةً يعرفها النظام بالاسم لا بالاسم اللطيف. تُقدَّم الصفحة الرئيسية على /fa (جذر اللغة) وليس على /fa/slug. صفحة واحدة فقط يمكن أن تكون الرئيسية.',
         'system_key' => 'المفتاح النظامي',
         'password' => 'كلمة المرور',
         'role' => 'الدور',
@@ -230,7 +233,23 @@ return [
         ],
     ],
 
+    'page' => [
+        'homepage' => 'الصفحة الرئيسية',
+        'role_none' => 'صفحة عادية',
+        'system_role' => 'صفحة نظامية (:key)',
+    ],
+
     'menu' => [
+        /*
+         * Labels for the menu locations declared in `cms.menus.locations`.
+         * A location with no entry here falls back to its own key, so a client site
+         * can add one to config and ship without editing three lang files.
+         */
+        'location' => [
+            'header' => 'قائمة الرأس',
+            'footer' => 'قائمة التذييل',
+            'sidebar' => 'القائمة الجانبية',
+        ],
         'target_not_live' => 'غير منشور',
     ],
 
@@ -262,7 +281,10 @@ return [
         'invalid_transition' => 'الانتقال من ":from" إلى ":to" غير مسموح.',
         'redirect_loop' => 'إعادة التوجيه هذه تعود إلى نفسها وتُنشئ حلقة.',
         'video_thumbnail_required' => 'يجب رفع صورة مصغّرة قبل نشر فيديو مُستضاف محليًا.',
+        'link_target_required' => 'اختر وجهة واحدة فقط: رابط يدوي أو هدف داخل الموقع.',
         'menu_target_required' => 'يحتاج عنصر القائمة إلى وجهة واحدة فقط: رابط يدوي أو هدف داخل الموقع.',
+        'menu_key_unknown' => 'الموضع [:key] غير معرَّف في إعدادات هذا الموقع. المواضع المتاحة: :locations',
+        'system_key_taken' => 'الدور [:key] يخص بالفعل الصفحة «:title». أزِله من هناك أولاً ثم احفظ هذه الصفحة، وإلا تنازعت صفحتان على النشاني نفسه.',
         'menu_target_missing' => 'الهدف المختار غير موجود أو ليس من هذا النوع. اختر هدفًا آخر.',
         'menu_parent_missing' => 'الأصل المختار غير موجود.',
         'menu_parent_cycle' => 'لا يمكن أن يكون العنصر تابعًا لنفسه أو لأحد فروعه، وإلا فسيختفي هذا الفرع من القائمة بالكامل.',

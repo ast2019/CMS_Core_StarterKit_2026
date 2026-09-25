@@ -20,8 +20,17 @@ class StoreContactSubmissionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Public by design, but gated on the module toggle (Requirement 1.1).
-        return (bool) config('cms.modules.contact', true);
+        /*
+         * Public by design. The module toggle used to be checked here and has moved to
+         * ContactController::store(), because a Form Request can only refuse with a 403
+         * and every other Delivery endpoint answers a disabled module with a 404
+         * (ResolvesDeliveryRequest::ensureModuleEnabled). The distinction is not
+         * pedantry: 403 tells a caller there is something here to get access to, which
+         * for a module that does not exist on this site is simply untrue — and one
+         * endpoint disagreeing with the other seven is the kind of inconsistency a
+         * frontend developer has to special-case.
+         */
+        return true;
     }
 
     /**

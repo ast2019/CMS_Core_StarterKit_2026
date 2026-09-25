@@ -25,11 +25,17 @@ class PagesTable
                     ->getStateUsing(fn (Page $record): string => $record->getTranslation('title', app()->getLocale()))
                     ->searchable(query: fn (Builder $query, string $search): Builder => $query
                         ->whereJsonContainsLocale('title', app()->getLocale(), "%{$search}%", 'like'))
-                    // Marks system pages so an editor understands why delete is
-                    // unavailable on them (Requirement 3.8).
-                    ->description(fn (Page $record): ?string => $record->isSystemPage()
-                        ? __('cms.field.system_key').': '.$record->system_key
-                        : null),
+                    /*
+                     * Marks system pages so an editor understands why delete is
+                     * unavailable on them (Requirement 3.8) — and, for the homepage,
+                     * WHICH page currently owns /fa. Only one page can, and finding out
+                     * by opening each page in turn is the tedium this line removes.
+                     */
+                    ->description(fn (Page $record): ?string => match (true) {
+                        $record->isHomePage() => __('cms.page.homepage'),
+                        $record->isSystemPage() => __('cms.field.page_role').': '.$record->system_key,
+                        default => null,
+                    }),
 
                 TextColumn::make('status')
                     ->label(__('cms.field.status'))

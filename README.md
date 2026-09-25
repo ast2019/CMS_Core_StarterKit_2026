@@ -40,13 +40,18 @@ Pint clean.
   and FAQPage
 - A sitemap index per locale, plus image and video sitemaps
 - A redirect engine that auto-suggests a 301 when a published slug changes, collapses
-  chains and refuses to loop
+  chains and refuses to loop — exposed over the Delivery API, because the frontend is the
+  deployment that actually receives the stale traffic (`docs/redirects.md`)
+- A `robots.txt` generated for this host, with the configured panel path and an absolute
+  sitemap URL
 
 **APIs**
 - `/api/v1/…` — Delivery (public, cached, rate-limited) and Management (Sanctum,
   ability-scoped), as two separate route groups with separate guards
 - OpenAPI spec committed at `docs/openapi.json`, with a test that fails when it drifts from
   the code
+- `docs/redirects.md` states what a frontend must implement: honouring redirects,
+  canonicalising the homepage, and the module-toggle 404s
 
 **Admin panel**
 - Persian, RTL, mandatory two-factor authentication

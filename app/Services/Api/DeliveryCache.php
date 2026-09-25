@@ -38,6 +38,16 @@ class DeliveryCache
     public const TAG_SITEMAP = 'cms:sitemap';
 
     /**
+     * The redirect table, exposed to the frontend over the Delivery API.
+     *
+     * Its own tag rather than folded into TAG_CONTENT: accepting a 301 suggestion is a
+     * redirect write, and reusing the content tag would discard every cached article
+     * listing each time an editor renamed a slug — on the one endpoint a frontend polls
+     * at build time and therefore caches hardest.
+     */
+    public const TAG_REDIRECT = 'cms:redirect';
+
+    /**
      * Every tag this service manages, for a blanket invalidation.
      *
      * @var list<string>
@@ -49,6 +59,7 @@ class DeliveryCache
         self::TAG_NAVIGATION,
         self::TAG_SETTINGS,
         self::TAG_SITEMAP,
+        self::TAG_REDIRECT,
     ];
 
     /**

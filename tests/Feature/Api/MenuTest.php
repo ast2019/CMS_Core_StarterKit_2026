@@ -260,16 +260,77 @@ it('serves no menu when the navigation module is switched off', function (): voi
     getJson('/api/v1/menus/header')->assertNotFound();
 });
 
-it('answers an unknown menu key with an empty list', function (): void {
-    // Documented, not fixed here: menu keys are not a validated set yet, so a 404
-    // would have to be based on a hardcoded list. The menu LOCATION concept is
-    // separate work.
+it('answers an undeclared menu location with a 404', function (): void {
+    /*
+     * The behaviour stage 1 documented as a known gap. Any alphanumeric key used to
+     * answer 200 with an empty array, so a frontend typo was indistinguishable from a
+     * menu the editor had not filled in — the navigation rendered as nothing, with
+     * nothing anywhere to say why. Locations are a declared set now
+     * (`cms.menus.locations`), so an undeclared one is a mistake and says so.
+     */
     MenuItem::factory()->create();
 
-    getJson('/api/v1/menus/nosuchmenu')
+    getJson('/api/v1/menus/nosuchmenu')->assertNotFound();
+});
+
+it('answers a declared but empty menu location with an empty list', function (): void {
+    // The other half, and the reason the 404 above is not simply "404 when empty": a
+    // declared location with no items is a content state, not a mistake.
+    MenuItem::factory()->create();
+
+    getJson('/api/v1/menus/footer')
         ->assertOk()
         ->assertJsonPath('data', [])
-        ->assertJsonPath('meta.menu', 'nosuchmenu');
+        ->assertJsonPath('meta.menu', 'footer');
+});
+
+it('takes its locations from config rather than from code', function (): void {
+    /*
+     * Requirement 1.2 — a client deployment declares its own navigation regions without
+     * patching the Core. The previous hardcoded list meant a site with a utility bar had
+     * to edit MenuItem.
+     */
+    config()->set('cms.menus.locations', ['header', 'utility-bar']);
+
+    MenuItem::factory()->inMenu('utility-bar')->create(['label' => ['fa' => 'ورود']]);
+
+    expect(MenuItem::menuKeys())->toBe(['header', 'utility-bar'])
+        // No lang entry for a client-specific location, so the label falls back to the
+        // key instead of rendering an untranslated `cms.menu.location.utility-bar`.
+        ->and(MenuItem::menuLocations()['utility-bar'])->toBe('utility-bar')
+        ->and(MenuItem::menuLocations()['header'])->toBe(__('cms.menu.location.header'));
+
+    getJson('/api/v1/menus/utility-bar')
+        ->assertOk()
+        ->assertJsonPath('data.0.label', 'ورود');
+
+    // And the location that is no longer declared is gone.
+    getJson('/api/v1/menus/sidebar')->assertNotFound();
+});
+
+it('refuses to save an item into a location this site does not declare', function (): void {
+    /*
+     * Validated on the write path, not only in the form: a seed or an import writing
+     * `menu_key => 'headr'` used to succeed and produce items nobody could find — the
+     * panel filter did not offer the key and the API answered 200 with an empty list.
+     */
+    expect(fn () => MenuItem::factory()->inMenu('nowhere')->create())
+        ->toThrow(ValidationException::class);
+
+    expect(MenuItem::query()->count())->toBe(0);
+});
+
+it('never leaves a site with no menu location at all', function (): void {
+    // A config typo that empties the list would otherwise make every menu item
+    // unsavable AND 404 every menu endpoint — the whole navigation subsystem down for a
+    // missing comma.
+    config()->set('cms.menus.locations', []);
+
+    expect(MenuItem::menuKeys())->toBe([MenuItem::DEFAULT_MENU_KEY]);
+
+    MenuItem::factory()->create();
+
+    getJson('/api/v1/menus/header')->assertOk();
 });
 
 it('refreshes the menu when a linked record changes its slug', function (): void {

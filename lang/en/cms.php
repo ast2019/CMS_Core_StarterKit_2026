@@ -125,6 +125,7 @@ return [
         'is_active' => 'Active',
         'link' => 'Link',
         'menu_key' => 'Menu',
+        'menu_key_help' => 'Menu locations are declared in the site configuration. This list is what the frontend can actually render.',
         'target' => 'Target',
         'target_help' => 'Type a few letters of the title to search. The URL is built per locale from the target\'s slug in that locale.',
         'opens_in_new_tab' => 'Open in a new tab',
@@ -150,6 +151,8 @@ return [
         'email' => 'Email',
         'phone' => 'Phone',
         'subject' => 'Subject',
+        'page_role' => 'Page role',
+        'page_role_help' => 'A role marks a page the application resolves by name rather than by slug. The homepage is served at /fa (the locale root), not at /fa/slug. Only one page can be the homepage.',
         'system_key' => 'System key',
         'password' => 'Password',
         'role' => 'Role',
@@ -224,7 +227,23 @@ return [
         ],
     ],
 
+    'page' => [
+        'homepage' => 'Homepage',
+        'role_none' => 'Ordinary page',
+        'system_role' => 'System page (:key)',
+    ],
+
     'menu' => [
+        /*
+         * Labels for the menu locations declared in `cms.menus.locations`.
+         * A location with no entry here falls back to its own key, so a client site
+         * can add one to config and ship without editing three lang files.
+         */
+        'location' => [
+            'header' => 'Header menu',
+            'footer' => 'Footer menu',
+            'sidebar' => 'Sidebar menu',
+        ],
         'target_not_live' => 'not published',
     ],
 
@@ -256,7 +275,10 @@ return [
         'invalid_transition' => 'Moving from ":from" to ":to" is not allowed.',
         'redirect_loop' => 'This redirect points back to itself and would create a loop.',
         'video_thumbnail_required' => 'A thumbnail must be uploaded before a locally hosted video can be published.',
+        'link_target_required' => 'Pick exactly one destination: either a manual link or a target inside the site.',
         'menu_target_required' => 'A menu item needs exactly one destination: either a manual link or a target inside the site.',
+        'menu_key_unknown' => 'The location [:key] is not declared in this site’s configuration. Available locations: :locations',
+        'system_key_taken' => 'The [:key] role already belongs to the page “:title”. Clear it there first, then save this page — otherwise two pages compete for the same URL.',
         'menu_target_missing' => 'The chosen target does not exist, or is not of that type. Pick another one.',
         'menu_parent_missing' => 'The chosen parent does not exist.',
         'menu_parent_cycle' => 'An item cannot sit under itself or under one of its own children — the whole branch would disappear from the menu.',

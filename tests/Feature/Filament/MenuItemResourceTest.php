@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Enums\ContentStatus;
 use App\Filament\Resources\MenuItems\Pages\CreateMenuItem;
 use App\Filament\Resources\MenuItems\Pages\EditMenuItem;
-use App\Filament\Resources\MenuItems\Schemas\MenuItemForm;
+use App\Filament\Schemas\LinkTargetFields;
 use App\Models\Content;
 use App\Models\MenuItem;
 use App\Models\Page;
@@ -165,7 +165,10 @@ it('finds a target beyond the first hundred records of its type', function (): v
 
     $needle = Page::factory()->create(['title' => ['fa' => 'صفحهٔ یگانه برای جستوجو']]);
 
-    $options = MenuItemForm::targetOptions(Page::class, like: 'یگانه');
+    // The picker moved to LinkTargetFields when SlideForm needed the identical
+    // behaviour; the rule under test is unchanged and is now asserted once for both
+    // forms rather than once per form.
+    $options = LinkTargetFields::targetOptions(Page::class, like: 'یگانه');
 
     expect($options)->toHaveKey($needle->id)
         ->and($options)->toHaveCount(1);
@@ -179,7 +182,7 @@ it('marks a target that will not produce a live URL', function (): void {
         'status' => ContentStatus::Draft,
     ]);
 
-    $label = MenuItemForm::targetOptions(Content::class, key: $draft->id)[$draft->id] ?? '';
+    $label = LinkTargetFields::targetOptions(Content::class, key: $draft->id)[$draft->id] ?? '';
 
     expect($label)->toContain('خبر پیشنویس')
         ->and($label)->toContain(__('cms.menu.target_not_live'));
