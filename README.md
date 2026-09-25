@@ -1,58 +1,181 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# CMS Core Starter Kit
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A reusable Persian-first headless CMS core, built to be copied per client. Laravel 13 with
+a Filament 5 admin panel, a read-only Delivery API for public sites and a Sanctum-guarded
+Management API, three locales from day one, and SEO output that search engines can actually
+use.
 
-## About Laravel
+The Core ships no client-specific content or configuration. Branding, locales, modules and
+API limits are all data or environment values, so a copy is customised without editing it.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+**Status:** all 32 planned tasks complete — 171 tests passing, PHPStan level 6 clean,
+Pint clean.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+---
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## What it does
 
-## Learning Laravel
+**Content**
+- Articles, pages, categories (nested, with a primary path for breadcrumbs), tags,
+  galleries, slideshows, menus, contact submissions and site settings — each a module that
+  can be switched off in `config/cms.php`
+- A rich editor storing TipTap JSON, with custom blocks: Callout, Hero, Quote and Gallery
+  Embed
+- Draft → published workflow, version history with restore, and draft preview through
+  signed, time-limited URLs
+- A reusable media library: describe an image once and every use is correct, with queued
+  thumbnail and WebP conversions
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+**Three locales (fa / en / ar)**
+- Per-locale fields, slugs and URLs, with RTL handled properly for both Persian and Arabic
+- A translation lifecycle — `not_translated → ai_translated → reviewed → outdated` — with a
+  review screen, and an `outdated` flag raised automatically when the source changes
+- Only `reviewed` and `outdated` content is eligible for sitemaps, hreflang and search.
+  Publishing machine-translated text to Search Console is a reputational risk, not a
+  coverage win
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+**SEO**
+- Per-locale meta and Open Graph, canonical URLs, reciprocal hreflang with `x-default`
+- JSON-LD: Article, Organization, LocalBusiness, BreadcrumbList, ImageObject, VideoObject
+  and FAQPage
+- A sitemap index per locale, plus image and video sitemaps
+- A redirect engine that auto-suggests a 301 when a published slug changes, collapses
+  chains and refuses to loop
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+**APIs**
+- `/api/v1/…` — Delivery (public, cached, rate-limited) and Management (Sanctum,
+  ability-scoped), as two separate route groups with separate guards
+- OpenAPI spec committed at `docs/openapi.json`, with a test that fails when it drifts from
+  the code
 
-## Agentic Development
+**Admin panel**
+- Persian, RTL, mandatory two-factor authentication
+- Vazirmatn bundled locally as woff2 — no Google Fonts, no CDN
+- Role-based access (Admin / Editor / Author / Viewer) with full audit logging, including
+  denied attempts
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Deliberately not included
+
+Adding any of these is a defect, not an enhancement, and tests assert their absence:
+
+- **Cloud or object storage.** Media is local-disk only (RULE #9).
+- **GraphQL.** REST only.
+- **Automated backups.** An operational concern for the host, not the application.
+
+## Requirements
+
+| | |
+|---|---|
+| PHP | **8.4+** — a hard floor; several dependencies require it |
+| Database | **MySQL 8+** in production, SQLite for local development |
+| Node | 22+ (build only) |
+| Extensions | `mbstring`, `intl`, `gd`, `exif`, `pdo_mysql`, `zip`, `bcmath`, `openssl`, `fileinfo` |
+
+`gd` is not optional in practice: Media Library generates thumbnail and WebP conversions
+with it.
+
+**Optional:** Redis (faster cache, and the only store supporting cache tags), Meilisearch
+(typo tolerance and relevance ranking), ffmpeg (fills a video's duration and dimensions
+automatically; the Docker image includes it).
+
+Why MySQL rather than SQLite in production: per-locale slug uniqueness is enforced by
+stored generated columns with unique indexes, which SQLite cannot express.
+
+## Local setup
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate --seed
+npm install && npm run build
+php artisan serve
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+`--seed` runs `DatabaseSeeder`, which creates Persian demo content and four accounts, one
+per role (`admin@example.test` and so on). The panel is at `/admin`.
 
-## Contributing
+That seeder is **development only**: it builds demo content with model factories, and
+factories need `fakerphp/faker`, a dev dependency. A production install runs
+`php artisan db:seed --class=InstallSeeder --force` instead, which creates only what a live
+site cannot work without — the version row, the settings records and the branded 404 page.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+A queue worker is needed for image conversions and search indexing:
 
-## Code of Conduct
+```bash
+php artisan queue:work
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Deployment
 
-## Security Vulnerabilities
+**[docs/coolify.md](docs/coolify.md)** — Docker and Coolify. One container plus MySQL is a
+complete deployment; ten environment variables, and everything else has a correct default.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+**[docs/deployment.md](docs/deployment.md)** — traditional hosting: nginx, queues, the
+scheduler, optional services, and the per-client handover checklist.
+
+The `Dockerfile` builds a single self-sufficient image (nginx + PHP-FPM, able to run the
+worker and scheduler as well). Two things to know before deploying it:
+
+- it listens on **8080**, because it runs unprivileged;
+- the media directory **must** be on a persistent volume, or every upload is lost on
+  redeploy — silently, because the application keeps working with an empty library.
+
+## Working on it
+
+```bash
+composer gates     # Pint, PHPStan, OpenAPI export, tests
+php artisan test
+./vendor/bin/pint
+./vendor/bin/phpstan analyse
+```
+
+`npm run build` must run before the test suite: an architecture test scans the built assets
+for external font and CDN hosts, and `public/build` is gitignored.
+
+Two commands worth knowing:
+
+```bash
+php artisan cms:release minor --added="…"   # bumps the version, changelog table and CHANGELOG.md together
+php artisan cms:audit-rules                 # audits the nine architecture rules against the RUNNING app
+```
+
+`cms:audit-rules` is not a duplicate of the test suite. The tests prove the *code* is
+compliant against a fresh database; the audit inspects a *running deployment* — resolved
+filesystem disks, the live panel's MFA setting, the real version row. Neither can see what
+the other sees, and the audit has already caught a real defect the tests could not.
+
+## How it is organised
+
+```
+app/
+  Concerns/        shared model behaviour (featured image, slugs, SEO, auditing)
+  Filament/        the admin panel: resources, pages, custom blocks
+  Http/            controllers (Delivery + Management), middleware, resources
+  Services/        SEO, sitemaps, search, media, content
+docs/              deployment guides, blueprint, committed OpenAPI spec
+.kiro/             the spec this was built from: requirements, design, tasks
+tests/
+  Architecture/    the nine hard rules, enforced as tests
+  Feature/         behaviour
+```
+
+### The nine rules
+
+`.kiro/steering/architecture-rules.md` lists nine non-negotiable rules — local-only media,
+mandatory 2FA, no external CDN, a changelog and SemVer per release, API documentation that
+cannot drift, audit logging with no opt-out, and so on.
+
+Each has a test that fails when the rule is broken, and every one of those gates was
+verified to fail before being trusted. A gate nobody has watched fail is an assumption.
+
+### Design decisions
+
+`.kiro/specs/cms-core-starter-kit/design.md` §12 records ten places where the blueprint was
+ambiguous or self-contradictory, with the option chosen, the options rejected, and why. Read
+those before changing the data model — several exist because the obvious approach is wrong.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+MIT.

@@ -57,7 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
          * Trust the reverse proxy's X-Forwarded-* headers.
          *
          * Required for any deployment behind a proxy, which includes the Docker/Coolify
-         * stack in docker-compose.yaml. Two things break without it, both quietly:
+         * Docker image. Two things break without it, both quietly:
          *
          *  - Every request appears to originate from the proxy, so the IP-keyed rate
          *    limiters (CMS_DELIVERY_RATE_LIMIT) put ALL visitors in one bucket: a single
@@ -70,8 +70,8 @@ return Application::configure(basePath: dirname(__DIR__))
          *    mixed-content warnings and preview links that look untrustworthy.
          *
          * Default '*' trusts any proxy. That is correct when the application is only
-         * reachable THROUGH the proxy — docker-compose.yaml publishes no host port for
-         * `app`, so nothing else can connect. If you expose the container directly,
+         * reachable THROUGH the proxy, which is how the container is deployed: it publishes
+         * no host port, so nothing else can connect. If you expose it directly,
          * set TRUSTED_PROXIES to the proxy's address, because a client that can reach
          * the app itself could otherwise spoof its own IP and evade rate limits.
          */

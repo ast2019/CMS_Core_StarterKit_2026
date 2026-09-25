@@ -31,6 +31,9 @@ class SystemInfo extends Model
         ];
     }
 
+    /**
+     * Used only when the version cannot be read from CHANGELOG.md.
+     */
     public const INITIAL_VERSION = '0.1.0';
 
     /**
@@ -40,9 +43,41 @@ class SystemInfo extends Model
     {
         /** @var self */
         return static::query()->firstOrCreate([], [
-            'version' => self::INITIAL_VERSION,
+            'version' => self::initialVersion(),
             'installed_at' => now(),
         ]);
+    }
+
+    /**
+     * The version a fresh installation starts at: whatever the deployed code's newest
+     * release is.
+     *
+     * Read from CHANGELOG.md rather than hardcoded, because a hardcoded initial version
+     * is simply untrue — a brand-new install of 0.5.0 is at 0.5.0, not at 0.1.0. That
+     * discrepancy was not cosmetic: it made `cms:audit-rules` report RULES #1 and #3 as
+     * violated on every fresh deployment, because the changelog and the published API
+     * spec both named a release the database disagreed with. A gate that cries wolf on a
+     * correct install is a gate that gets ignored.
+     *
+     * CHANGELOG.md is the right source because `cms:release` writes it, so it cannot fall
+     * behind the code without the release command itself being bypassed.
+     */
+    public static function initialVersion(): string
+    {
+        $path = (string) config('cms.changelog_path') ?: base_path('CHANGELOG.md');
+
+        if (! is_file($path)) {
+            return self::INITIAL_VERSION;
+        }
+
+        // Keep a Changelog puts the newest release first, so the first heading wins.
+        $matched = preg_match(
+            '/^##\s*\[(\d+\.\d+\.\d+)\]/m',
+            (string) file_get_contents($path),
+            $matches,
+        );
+
+        return $matched === 1 ? $matches[1] : self::INITIAL_VERSION;
     }
 
     public static function version(): string

@@ -102,3 +102,37 @@ it('exposes all three locales as structural even though only Persian ships', fun
         ->and(config('cms.locales.rtl'))->toContain('fa')
         ->and(config('cms.locales.rtl'))->toContain('ar');
 });
+
+it('defaults to Persian without any environment variable', function (): void {
+    /*
+     * RULE #5 requires a Persian RTL panel. This asserts the CORE's default rather than
+     * the running configuration, because phpunit.xml sets APP_LOCALE=fa — so every other
+     * locale assertion in this suite passes regardless of what config/app.php falls back
+     * to, and the real default went unexercised.
+     *
+     * It was 'en', Laravel's default. A container deployment ships no .env file, so the
+     * panel rendered in English, left-to-right, until APP_LOCALE was set by hand. Found
+     * by `cms:audit-rules` inside a container, not by these tests.
+     */
+    $config = require projectPath('config/app.php');
+
+    // Re-read with the environment stripped, so the fallback itself is what is checked.
+    $defaults = [
+        'locale' => 'APP_LOCALE',
+        'fallback_locale' => 'APP_FALLBACK_LOCALE',
+    ];
+
+    foreach ($defaults as $key => $variable) {
+        expect($config[$key])->toBe(
+            env($variable, 'fa'),
+            "config/app.php [{$key}] must default to Persian, or a deployment without "
+            ."{$variable} renders the panel in English and left-to-right (RULE #5)."
+        );
+    }
+
+    $source = file_get_contents(projectPath('config/app.php'));
+
+    expect($source)
+        ->toContain("env('APP_LOCALE', 'fa')")
+        ->toContain("env('APP_FALLBACK_LOCALE', 'fa')");
+});

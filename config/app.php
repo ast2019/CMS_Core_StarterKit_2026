@@ -78,11 +78,20 @@ return [
     |
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    /*
+     * Persian, not Laravel's 'en'.
+     *
+     * This is a Persian-first CMS (RULE #5 requires a Persian RTL panel), so Persian is
+     * the Core's default rather than something each deployment must remember to set. A
+     * container with no APP_LOCALE previously fell back to English and rendered the panel
+     * LTR — and the test suite could not catch it, because phpunit.xml sets APP_LOCALE=fa
+     * and so never exercised the default.
+     */
+    'locale' => env('APP_LOCALE', 'fa'),
 
-    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
+    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'fa'),
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
+    'faker_locale' => env('APP_FAKER_LOCALE', 'fa_IR'),
 
     /*
     |--------------------------------------------------------------------------
