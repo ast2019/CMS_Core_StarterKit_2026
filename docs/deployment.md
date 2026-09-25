@@ -102,9 +102,17 @@ server {
 
 ## Queues
 
-Image conversions, search indexing and sitemap regeneration are all queued, so a
-worker is not optional in production — without one, uploaded images never get their
-thumbnails and search results never update.
+Image conversions, search indexing, sitemap regeneration and AI translation are all
+queued, so a worker is not optional in production — without one, uploaded images never
+get their thumbnails, search results never update, and a translator who clicks
+"Translate with AI" is told the work was queued but never receives the outcome
+notification.
+
+AI translation is the longest job in the system: up to six sequential OpenRouter calls
+at `cms.ai.translation.timeout` seconds each (30 by default). The job derives its own
+timeout from that config value, so a worker started with a shorter `--timeout` than the
+job asks for would kill translations mid-run — leave the worker's timeout at the default
+or above the job's.
 
 ```bash
 php artisan queue:work --tries=3 --max-time=3600

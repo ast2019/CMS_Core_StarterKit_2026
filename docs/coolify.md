@@ -25,8 +25,11 @@ the library is simply empty — so the loss is usually noticed days later, by th
 the public site.
 
 **3. A queue worker is required.** Image conversions, search indexing, sitemap
-regeneration and video metadata extraction are all queued. Without one, uploads succeed
-and thumbnails are never generated — again, with no error anywhere. See
+regeneration, video metadata extraction and AI translation are all queued. Without one,
+uploads succeed and thumbnails are never generated — again, with no error anywhere. AI
+translation is the one case that does report itself: the panel says the translation was
+queued and then nothing arrives in the notification bell, because the job is sitting in
+the `jobs` table waiting for a worker that does not exist. See
 [Worker and scheduler](#worker-and-scheduler).
 
 ## Step 1 — MySQL
@@ -229,6 +232,7 @@ untouched.
 | Login succeeds then returns to the form | Serving over plain HTTP; set `PHP_SESSION_COOKIE_SECURE=0` |
 | A changed variable seems ignored | Redeploy rather than restart — config is cached at container start |
 | Video duration is not filled in | ffprobe runs on the queue; check a worker is running |
+| "Translation queued" but no notification ever arrives | AI translation runs on the queue; check a worker is running |
 
 Do not use a **Post-deployment Command** for migrations. Coolify marks the deployment
 successful before running it, and a failure there does not change that status — so a broken

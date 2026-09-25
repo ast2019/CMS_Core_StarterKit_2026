@@ -340,6 +340,8 @@ return [
         'confirm' => 'This whole record, including the rich body, will be translated from Persian into this locale and saved as machine-translated. The document structure is preserved, but the result needs human review before publishing.',
         'confirm_outdated' => 'This locale was reviewed once and the Persian source has changed since. Re-translating overwrites the existing text, discards the previous reviewer sign-off, and removes this locale from its sitemap until a human reviews it again.',
         'success' => 'Machine-translated into :locale and awaiting review.',
+        'queued' => 'Machine translation into :locale has been queued.',
+        'queued_hint' => 'The translation runs in the background and may take a few minutes. The outcome — success or failure — will appear in the panel notification bell.',
         'skipped' => 'AI translation skipped',
         'failed' => 'AI translation failed',
         'error' => [

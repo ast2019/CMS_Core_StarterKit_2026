@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\TranslationStatus;
 use App\Filament\Pages\TranslationReview;
 use App\Filament\RichContent\Blocks\CalloutBlock;
+use App\Filament\Schemas\TranslatableTabs;
+use App\Jobs\TranslateRecordJob;
 use App\Models\Content;
 use App\Models\Setting;
 use App\Models\User;
@@ -12,8 +14,11 @@ use App\Services\Translation\AiTranslationException;
 use App\Services\Translation\AiTranslator;
 use App\Support\TipTap;
 use Filament\Actions\Testing\TestAction;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
@@ -767,7 +772,11 @@ it('reports an empty source rather than calling the model', function (): void {
     Http::assertNothingSent();
 });
 
-it('exposes the Translate with AI action on the review page and runs it', function (): void {
+it('exposes the Translate with AI action on the review page and translates through the queued job', function (): void {
+    // End to end over the real dispatch path. QUEUE_CONNECTION=sync in the test
+    // environment, so the job runs inline here and the assertions below are about
+    // the RESULT of the queued flow, not about it being synchronous — the test
+    // above it asserts that the action itself only dispatches.
     enableAiTranslation();
     fakeOpenRouter('Machine English title');
 
@@ -782,6 +791,226 @@ it('exposes the Translate with AI action on the review page and runs it', functi
     expect($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::AiTranslated)
         ->and($content->fresh()->getTranslation('title', 'en', useFallbackLocale: false))
         ->toBe('Machine English title');
+});
+
+it('queues the translation instead of running it inside the Livewire request', function (): void {
+    /*
+     * The whole point of the change. One run makes up to six sequential OpenRouter
+     * calls at 30s each — around three minutes — which PHP's max_execution_time and
+     * nginx's fastcgi_read_timeout kill first, losing work that has already been
+     * paid for while holding a PHP-FPM worker throughout.
+     */
+    Queue::fake();
+    enableAiTranslation();
+    Http::fake();
+
+    $user = User::factory()->admin()->create();
+    actingAs($user);
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان فارسی']]);
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+
+    Livewire::test(TranslationReview::class)
+        ->callAction(TestAction::make('translateAi')->table($state))
+        // The user is TOLD it was queued rather than left to assume it happened.
+        ->assertNotified(__('cms.ai_translation.queued', [
+            'locale' => TranslatableTabs::localeLabel('en'),
+        ]));
+
+    Queue::assertPushed(
+        TranslateRecordJob::class,
+        // uniqueId() is the job's own public statement of what it will work on, so
+        // asserting through it also pins the deduplication key.
+        fn (TranslateRecordJob $job): bool => $job->uniqueId() === Content::class.':'.$content->getKey().':en',
+    );
+
+    // Nothing happened in the request itself: no API call, no write, and the row is
+    // still in the backlog exactly as it was.
+    Http::assertNothingSent();
+
+    expect($content->fresh()->getTranslation('title', 'en', useFallbackLocale: false))->toBeEmpty()
+        ->and($content->fresh()->translationStatusFor('en'))->toBe(TranslationStatus::NotTranslated);
+});
+
+it('collapses a double-clicked action into a single queued translation', function (): void {
+    /*
+     * The action is a row button, and a double click used to fire two complete
+     * translation runs: both paid for every field, both wrote the same locale, and
+     * the later one won. ShouldBeUnique on (record, locale) makes the second
+     * dispatch a no-op while the first is still outstanding.
+     */
+    Queue::fake();
+    enableAiTranslation();
+
+    actingAs(User::factory()->admin()->create());
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+    $english = $content->translationStates()->where('locale', 'en')->firstOrFail();
+    $arabic = $content->translationStates()->where('locale', 'ar')->firstOrFail();
+
+    $page = Livewire::test(TranslationReview::class);
+
+    $page->callAction(TestAction::make('translateAi')->table($english));
+    $page->callAction(TestAction::make('translateAi')->table($english));
+
+    Queue::assertPushed(TranslateRecordJob::class, 1);
+
+    // Scoped to the locale, not to the record: Arabic is different work and must
+    // still queue while English is outstanding.
+    $page->callAction(TestAction::make('translateAi')->table($arabic));
+
+    Queue::assertPushed(TranslateRecordJob::class, 2);
+});
+
+it('refuses fast, without queueing, when the feature is off or the key is missing', function (): void {
+    /*
+     * These two answers cost one query each. Queueing a job that can only report
+     * them back minutes later would turn an immediate, actionable message ("turn it
+     * on in Settings") into a notification about work that was never going to run.
+     */
+    Queue::fake();
+    Http::fake();
+
+    actingAs(User::factory()->admin()->create());
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+    $state = $content->translationStates()->where('locale', 'en')->firstOrFail();
+
+    // Enabled but no key: the action is visible (isEnabled() is true) and must
+    // still refuse without queueing.
+    Setting::put(Setting::AI_TRANSLATION_ENABLED, true);
+
+    Livewire::test(TranslationReview::class)
+        ->callAction(TestAction::make('translateAi')->table($state))
+        ->assertNotified(__('cms.ai_translation.failed'));
+
+    // assertNotPushed rather than assertNothingPushed: creating the article queued a
+    // search-index sync, which is unrelated and expected.
+    Queue::assertNotPushed(TranslateRecordJob::class);
+    Http::assertNothingSent();
+});
+
+it('tells the user the outcome through a database notification', function (): void {
+    /*
+     * The request that queued the work is long gone by the time the work finishes,
+     * so a flash notification cannot report it. Without a durable channel the
+     * translator is told "queued" and never learns whether it worked.
+     */
+    enableAiTranslation();
+    fakeOpenRouter('Machine English title');
+
+    $user = User::factory()->admin()->create();
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    TranslateRecordJob::dispatchSync(Content::class, $content->getKey(), 'en', $user->getKey());
+
+    $notification = $user->notifications()->firstOrFail();
+
+    expect($notification->data['title'] ?? null)->toBe(__('cms.ai_translation.success', [
+        'locale' => TranslatableTabs::localeLabel('en'),
+    ]));
+});
+
+it('reports a refusal to the user instead of retrying it', function (): void {
+    /*
+     * A retry re-translates from scratch, so every attempt costs another full set of
+     * paid calls. A domain refusal is an ANSWER, not a transient fault: the job
+     * reports it and returns, which is why it must never reach the queue's failure
+     * handling.
+     */
+    enableAiTranslation();
+    fakeOpenRouter('Should never be written');
+
+    $user = User::factory()->admin()->create();
+    $content = Content::factory()->multilingual()->create();
+    $content->markTranslationReviewed('en');
+
+    TranslateRecordJob::dispatchSync(Content::class, $content->getKey(), 'en', $user->getKey());
+
+    $notification = $user->notifications()->firstOrFail();
+
+    expect($notification->data['title'] ?? null)->toBe(__('cms.ai_translation.skipped'))
+        ->and($notification->data['body'] ?? null)->toBe(__('cms.ai_translation.error.already_reviewed'))
+        // A warning, not danger: the machine declining to overwrite signed-off text
+        // is the policy working, and colouring it red would teach translators to
+        // treat a correct refusal as a broken service.
+        ->and($notification->data['status'] ?? null)->toBe('warning');
+
+    Http::assertNothingSent();
+});
+
+it('does not overwrite a locale a human signs off while the translation is running', function (): void {
+    /*
+     * The guard→write TOCTOU window. The up-front reviewed check runs before the
+     * first request and the write lands up to three minutes later, so a translator
+     * who finishes reviewing the locale in between used to have their work silently
+     * replaced by machine output.
+     *
+     * The sign-off is performed from INSIDE the faked HTTP call, which is exactly
+     * where it would happen in production: mid-run.
+     */
+    enableAiTranslation();
+
+    // No body, so every call is a plain-field call answering with a bare string —
+    // the fake below can then be a single side-effecting handler rather than having
+    // to distinguish the batch shape.
+    $content = Content::factory()->create([
+        'title' => ['fa' => 'عنوان فارسی'],
+        'body' => ['fa' => null],
+    ]);
+
+    Http::fake(function () use ($content) {
+        // A different instance, as a concurrent request would be.
+        Content::query()->findOrFail($content->getKey())->markTranslationReviewed('en');
+
+        return Http::response([
+            'choices' => [['message' => ['role' => 'assistant', 'content' => 'Machine English title']]],
+        ], 200);
+    });
+
+    expect(fn () => app(AiTranslator::class)->translate($content, 'en'))
+        ->toThrow(AiTranslationException::class, 'cms.ai_translation.error.already_reviewed');
+
+    $fresh = $content->fresh();
+
+    // The human's sign-off survives, and not one machine-translated field was
+    // written — the transaction rolled the whole attempt back.
+    expect($fresh->translationStatusFor('en'))->toBe(TranslationStatus::Reviewed)
+        ->and($fresh->getTranslation('title', 'en', useFallbackLocale: false))->toBeEmpty();
+});
+
+it('writes the translated content and its status row in one transaction', function (): void {
+    /*
+     * They used to be two independent writes. A failure in between left translated
+     * text on the record while the status row still said not_translated, so the
+     * review queue kept advertising work that was already done and the next
+     * translator paid for it again.
+     */
+    enableAiTranslation();
+    fakeOpenRouter();
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    // RefreshDatabase already holds a transaction, so the baseline is 1, not 0.
+    $baseline = DB::transactionLevel();
+    $writeLevels = [];
+
+    DB::listen(function (QueryExecuted $query) use (&$writeLevels): void {
+        $sql = strtolower(trim($query->sql));
+
+        if (! str_starts_with($sql, 'update') && ! str_starts_with($sql, 'insert')) {
+            return;
+        }
+
+        if (str_contains($sql, 'contents') || str_contains($sql, 'translation_states')) {
+            $writeLevels[] = DB::transactionLevel();
+        }
+    });
+
+    app(AiTranslator::class)->translate($content, 'en');
+
+    expect($writeLevels)->not->toBeEmpty()
+        ->and(min($writeLevels))->toBeGreaterThan($baseline);
 });
 
 it('hides the Translate with AI action when the feature is disabled', function (): void {

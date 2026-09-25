@@ -7,8 +7,8 @@ namespace App\Filament\Pages;
 use App\Contracts\TracksTranslationStatus;
 use App\Enums\TranslationStatus;
 use App\Filament\Schemas\TranslatableTabs;
+use App\Jobs\TranslateRecordJob;
 use App\Models\TranslationState;
-use App\Services\Translation\AiTranslationException;
 use App\Services\Translation\AiTranslator;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -253,6 +253,23 @@ class TranslationReview extends Page implements HasTable
         return null;
     }
 
+    /**
+     * Queue a machine translation for this row.
+     *
+     * The translation itself used to run HERE, inside the Livewire request: up to
+     * six sequential OpenRouter calls at 30s each, so nearly three minutes of wall
+     * clock against a PHP max_execution_time and an nginx read timeout that both
+     * fire first. The request died after the API calls had been paid for, the work
+     * was lost, and a PHP-FPM worker had been held the whole time. It is now a
+     * queued job (TranslateRecordJob) and this method only dispatches.
+     *
+     * The cheap guards stay SYNCHRONOUS on purpose. "The feature is off", "no API
+     * key" and "this locale is already reviewed" are all answerable in one query,
+     * and answering them here means the translator sees them immediately instead of
+     * receiving a notification later about work that was never going to run.
+     * Everything expensive — the source text, the model, the network — is the job's
+     * problem, and its outcome comes back as a database notification.
+     */
     protected function translateWithAi(TranslationState $state): void
     {
         $record = $state->translatable;
@@ -268,39 +285,82 @@ class TranslationReview extends Page implements HasTable
             return;
         }
 
-        try {
-            $result = app(AiTranslator::class)->translate($record, $state->locale);
-        } catch (AiTranslationException $exception) {
-            // The exception carries a localisation key, never the API key or a
-            // raw OpenRouter response, so surfacing it here cannot leak a secret.
-            //
-            // "Already reviewed" is a deliberate policy outcome, not a failure:
-            // the locale was signed off and the machine refused to overwrite it.
-            // Present it as a warning so a translator reads it as expected
-            // behaviour rather than a broken service.
-            $notification = Notification::make()->body(__($exception->translationKey));
-
-            if ($exception->translationKey === 'cms.ai_translation.error.already_reviewed') {
-                $notification
-                    ->title(__('cms.ai_translation.skipped'))
-                    ->warning();
-            } else {
-                $notification
-                    ->title(__('cms.ai_translation.failed'))
-                    ->danger();
-            }
-
-            $notification->send();
+        /*
+         * Fail fast on the three conditions the job could only repeat back. The
+         * messages are the SAME localisation keys the service throws, so a fast
+         * failure and a job failure read identically to the user.
+         */
+        if (! AiTranslator::isEnabled()) {
+            $this->notifyAiFailure('cms.ai_translation.error.disabled');
 
             return;
         }
 
+        if (! AiTranslator::hasApiKey()) {
+            $this->notifyAiFailure('cms.ai_translation.error.missing_key');
+
+            return;
+        }
+
+        /*
+         * Read the status from the database rather than from $state, whose status was
+         * loaded when the table rendered. Queueing a run the service is certain to
+         * refuse wastes a worker slot and delays the refusal by the length of the
+         * queue.
+         *
+         * Mostly defensive from this page: the table query is needingAttention(), so
+         * a reviewed row usually vanishes from it and Filament resolves the action
+         * against a record that no longer matches. It remains the right check for
+         * every other caller of this method's pattern, and it costs one query
+         * against a run that costs minutes and money. The service re-checks the same
+         * thing twice more — the window cannot be closed here, only narrowed.
+         */
+        if ($record->freshTranslationStatusFor($state->locale) === TranslationStatus::Reviewed) {
+            $this->notifyAiFailure('cms.ai_translation.error.already_reviewed');
+
+            return;
+        }
+
+        TranslateRecordJob::dispatch(
+            $record::class,
+            $record->getKey(),
+            $state->locale,
+            auth()->id(),
+        );
+
         Notification::make()
-            ->title(__('cms.ai_translation.success', [
-                'locale' => TranslatableTabs::localeLabel($result->locale),
+            ->title(__('cms.ai_translation.queued', [
+                'locale' => TranslatableTabs::localeLabel($state->locale),
             ]))
-            ->success()
+            ->body(__('cms.ai_translation.queued_hint'))
+            ->info()
             ->send();
+    }
+
+    /**
+     * Report a refusal using the same keys and the same warning/error split the
+     * queued job uses, so where the decision was taken is invisible to the user.
+     */
+    protected function notifyAiFailure(string $translationKey): void
+    {
+        $alreadyReviewed = $translationKey === 'cms.ai_translation.error.already_reviewed';
+
+        $notification = Notification::make()
+            // "Already reviewed" is a deliberate policy outcome, not a failure: the
+            // locale was signed off and the machine refused to overwrite it. A
+            // warning reads as expected behaviour; danger reads as a broken service.
+            ->title($alreadyReviewed ? __('cms.ai_translation.skipped') : __('cms.ai_translation.failed'))
+            // The keys carry no API key and no raw OpenRouter response, so surfacing
+            // them cannot leak a secret.
+            ->body(__($translationKey));
+
+        if ($alreadyReviewed) {
+            $notification->warning();
+        } else {
+            $notification->danger();
+        }
+
+        $notification->send();
     }
 
     protected function markReviewed(TranslationState $state): void

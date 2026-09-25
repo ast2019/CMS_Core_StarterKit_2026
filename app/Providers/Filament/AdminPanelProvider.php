@@ -94,6 +94,24 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->viteTheme('resources/css/filament/admin/theme.css')
 
+            /*
+             * Database notifications, for work that outlives the request.
+             *
+             * AI translation is queued (App\Jobs\TranslateRecordJob): up to six
+             * sequential model calls, minutes after the click. A flash notification
+             * cannot report that outcome because the request is long gone, so the
+             * job writes to the `notifications` table and the bell surfaces it the
+             * next time the translator looks at the panel.
+             *
+             * Polling is switched OFF explicitly (Filament's default is every 30s).
+             * A poll costs one query per open tab per interval for the whole team,
+             * forever, to shorten the wait on a job that takes minutes anyway. The
+             * bell updates on the next page load, which for this workflow — queue a
+             * translation, carry on translating something else — is soon enough.
+             */
+            ->databaseNotifications()
+            ->databaseNotificationsPolling(null)
+
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
