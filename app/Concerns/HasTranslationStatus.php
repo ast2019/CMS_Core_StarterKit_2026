@@ -216,6 +216,46 @@ trait HasTranslationStatus
     }
 
     /**
+     * The locale's status read straight from the database, ignoring any loaded
+     * relation.
+     *
+     * translationStatusFor() deliberately PREFERS the eager-loaded collection so a
+     * listing page does not issue a query per row per locale, and many call sites
+     * eager-load it (ContentsTable, ManagementContentController, the Delivery
+     * ContentController, SearchController, SeoController, SitemapGenerator,
+     * SyncSearchIndexes). That is right for rendering and wrong for a decision that
+     * must be authoritative at the moment it is taken: a queued AI translation is
+     * handed a record whose relation was loaded before ~3 minutes of HTTP calls, so
+     * a human sign-off that happened in between is invisible to it. Reading the row
+     * again is the only way to see the current state.
+     *
+     * $lockForUpdate takes a row lock so a concurrent review cannot commit between
+     * this read and the write that follows it inside the same transaction. SQLite's
+     * grammar compiles the lock clause to nothing (it serialises writes anyway), so
+     * this is a MySQL-only guarantee and harmless locally.
+     */
+    public function freshTranslationStatusFor(string $locale, bool $lockForUpdate = false): TranslationStatus
+    {
+        $query = $this->translationStates()->where('locale', $locale);
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        /** @var TranslationState|null $state */
+        $state = $query->first();
+
+        // A locale with no row has never been translated, which is the same answer
+        // translationStatusFor() gives — the two must not disagree about a record
+        // that predates the status row.
+        if ($state === null) {
+            return TranslationStatus::NotTranslated;
+        }
+
+        return $state->status;
+    }
+
+    /**
      * Whether this record may appear in a locale's sitemap (Decision D-5).
      */
     public function isSitemapEligibleFor(string $locale): bool

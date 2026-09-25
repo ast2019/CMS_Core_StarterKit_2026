@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Support\TipTap;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -78,6 +79,17 @@ use Throwable;
  * (no plain fields either) reports emptySource() instead of "succeeding" with
  * nothing, which is decided before any HTTP work because segment collection is
  * purely local.
+ *
+ * WHY this is never called from a web request:
+ *
+ * One run issues up to six sequential OpenRouter POSTs (one per plain field plus
+ * one batched call for the body), each with its own 30s timeout, so the worst case
+ * is around three minutes of wall clock. PHP's max_execution_time and nginx's
+ * fastcgi_read_timeout both fire long before that, killing the request AFTER the
+ * API calls were paid for and losing every translation — while pinning a PHP-FPM
+ * worker for the duration. App\Jobs\TranslateRecordJob is the only caller;
+ * everything here assumes it is running on a worker with a generous timeout, and
+ * the guard/write ordering below is written for the minutes-long gap that implies.
  */
 class AiTranslator
 {
@@ -136,7 +148,13 @@ class AiTranslator
          * action (the source has moved on), but it must land at ai_translated and
          * drop out of sitemap eligibility, which is what the trait now does.
          */
-        if ($record->translationStatusFor($targetLocale) === TranslationStatus::Reviewed) {
+        /*
+         * Read the status from the DATABASE, not from a possibly eager-loaded
+         * relation. This runs inside a queued job now, and the record it was handed
+         * may have been loaded by a table row that eager-loaded translationStates
+         * before the job was even dispatched.
+         */
+        if ($record->freshTranslationStatusFor($targetLocale) === TranslationStatus::Reviewed) {
             throw AiTranslationException::alreadyReviewed();
         }
 
@@ -199,16 +217,48 @@ class AiTranslator
             $translatedAttributes[] = 'body';
         }
 
-        $record->save();
-
         /*
-         * saved() ran HasTranslationStatus::syncTranslationStatuses(), which only
-         * assigns ai_translated to a BRAND-NEW locale row. The usual case is an
-         * existing not_translated row, which the trait leaves untouched, so mark
-         * the transition explicitly through the contract (which keeps all
-         * TranslationState manipulation inside the trait).
+         * One transaction for the content AND the bookkeeping.
+         *
+         * They used to be two independent writes. A failure between them (a deadlock,
+         * a worker killed mid-job, a connection dropped) left translated text on the
+         * record while the status row still said not_translated: the review queue
+         * kept advertising work that was already done, and a translator who acted on
+         * it paid for the same translation again. Either both land or neither does.
          */
-        $record->markTranslationAiTranslated($targetLocale);
+        DB::transaction(function () use ($record, $targetLocale): void {
+            /*
+             * Re-check the guard IMMEDIATELY before writing, authoritatively.
+             *
+             * The check at the top of this method ran up to ~3 minutes ago — six
+             * sequential model calls at 30s each — and a human can finish reviewing
+             * the locale inside that window. Writing anyway would silently revert a
+             * sign-off that happened after the machine started, which is the same
+             * harm the up-front guard exists to prevent, only harder to notice.
+             *
+             * Fresh read plus a row lock: the caller's eager-loaded relation is
+             * exactly the stale data that cannot be trusted here, and the lock stops
+             * a review committing between this read and the save below.
+             *
+             * Throwing rolls the transaction back, so the translated text is
+             * discarded rather than half-applied, and the caller gets the same
+             * alreadyReviewed outcome it would have got up front.
+             */
+            if ($record->freshTranslationStatusFor($targetLocale, lockForUpdate: true) === TranslationStatus::Reviewed) {
+                throw AiTranslationException::alreadyReviewed();
+            }
+
+            $record->save();
+
+            /*
+             * saved() ran HasTranslationStatus::syncTranslationStatuses(), which only
+             * assigns ai_translated to a BRAND-NEW locale row. The usual case is an
+             * existing not_translated row, which the trait leaves untouched, so mark
+             * the transition explicitly through the contract (which keeps all
+             * TranslationState manipulation inside the trait).
+             */
+            $record->markTranslationAiTranslated($targetLocale);
+        });
 
         return new AiTranslationResult($targetLocale, $translatedAttributes);
     }
@@ -219,6 +269,19 @@ class AiTranslator
     public static function isEnabled(): bool
     {
         return (bool) Setting::get(Setting::AI_TRANSLATION_ENABLED, false);
+    }
+
+    /**
+     * Whether an OpenRouter key is configured.
+     *
+     * Exposed so a caller can fail FAST — before queueing anything — on a
+     * misconfiguration that is certain to fail. A job that only reports "no API
+     * key" ten seconds later, in a notification, is a worse answer to a question
+     * that can be answered synchronously.
+     */
+    public static function hasApiKey(): bool
+    {
+        return Setting::getSecret(Setting::OPENROUTER_API_KEY) !== null;
     }
 
     /**

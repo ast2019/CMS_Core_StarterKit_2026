@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Categories\Schemas;
 
+use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Category;
 use Filament\Forms\Components\Select;
@@ -37,20 +38,9 @@ class CategoryForm
                     ->maxLength(1000)
                     ->extraInputAttributes(self::directionFor($locale)),
 
-                Section::make(__('cms.section.seo'))
-                    ->collapsed()
-                    ->schema([
-                        TextInput::make("meta_title.{$locale}")
-                            ->label(__('cms.field.meta_title'))
-                            ->maxLength(255)
-                            ->extraInputAttributes(self::directionFor($locale)),
-
-                        Textarea::make("meta_description.{$locale}")
-                            ->label(__('cms.field.meta_description'))
-                            ->rows(2)
-                            ->maxLength(320)
-                            ->extraInputAttributes(self::directionFor($locale)),
-                    ]),
+                // Category archives are sitemap entries too, so they get the same
+                // robots directive the other three resources now have.
+                SeoSection::make(Category::class, $locale),
             ]),
 
             Section::make(__('cms.section.publishing'))

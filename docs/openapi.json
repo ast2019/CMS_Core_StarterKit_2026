@@ -11,6 +11,43 @@
         }
     ],
     "paths": {
+        "/v1/categories/{slug}": {
+            "get": {
+                "operationId": "v1.categories.show",
+                "summary": "A category and its page of live articles",
+                "tags": [
+                    "Category"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/contact": {
             "post": {
                 "operationId": "v1.contact.store",
@@ -82,7 +119,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                            "description": "The cached value is the resource, matching how the news listing caches. The\n404 is thrown from INSIDE the callback, so a miss is never cached: a page\npublished a second after someone requested it must not stay missing for\nthe rest of the TTL."
                                         },
                                         "meta": {
                                             "type": "object",
@@ -190,20 +227,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "allOf": [
-                                                {
-                                                    "$ref": "#/components/schemas/ContentResource"
-                                                },
-                                                {
-                                                    "type": "object",
-                                                    "required": [
-                                                        "primary_category",
-                                                        "categories",
-                                                        "tags",
-                                                        "featured_image"
-                                                    ]
-                                                }
-                                            ]
+                                            "$ref": "#/components/schemas/ContentResource"
                                         }
                                     },
                                     "required": [
@@ -215,6 +239,45 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFoundHttpException"
+                    }
+                }
+            }
+        },
+        "/v1/galleries/{slug}": {
+            "get": {
+                "operationId": "v1.galleries.show",
+                "summary": "Fetch one published gallery, with its items, by its per-locale slug",
+                "tags": [
+                    "Gallery"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`GalleryResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/GalleryResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -899,6 +962,45 @@
                 }
             }
         },
+        "/v1/pages/{slug}": {
+            "get": {
+                "operationId": "v1.pages.show",
+                "summary": "Fetch one published page by its per-locale slug",
+                "tags": [
+                    "Page"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PageResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PageResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/search": {
             "get": {
                 "operationId": "v1.search",
@@ -1156,7 +1258,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                            "description": "The cached value is the resource, matching how the news listing caches. The\n404 is thrown from INSIDE the callback, so a miss is never cached: a page\npublished a second after someone requested it must not stay missing for\nthe rest of the TTL."
                                         },
                                         "meta": {
                                             "type": "object",
@@ -1201,7 +1303,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "description": "The cached value is the resource collection's rendered array rather than\nthe Eloquent models. Caching models would re-run every relation accessor\nand every translation lookup on each hit, which is most of the cost the\ncache exists to avoid."
+                                            "description": "The cached value is the resource, matching how the news listing caches. The\n404 is thrown from INSIDE the callback, so a miss is never cached: a page\npublished a second after someone requested it must not stay missing for\nthe rest of the TTL."
                                         },
                                         "meta": {
                                             "type": "object",
@@ -1825,6 +1927,107 @@
                 ],
                 "title": "ContentStatus"
             },
+            "GalleryResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "publish_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "cover": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/MediaAssetResource"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "item_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "seo": {
+                        "type": "object",
+                        "properties": {
+                            "meta_title": {
+                                "type": "string"
+                            },
+                            "meta_description": {
+                                "type": "string"
+                            },
+                            "robots": {
+                                "type": "string",
+                                "description": "Unreviewed translations are noindex automatically, so a frontend\nthat renders this verbatim cannot leak one to search."
+                            }
+                        },
+                        "required": [
+                            "meta_title",
+                            "meta_description",
+                            "robots"
+                        ]
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "locale": {
+                                "type": "string"
+                            },
+                            "is_fallback": {
+                                "type": "boolean"
+                            },
+                            "fallback_locale": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "translation_status": {
+                                "type": "null"
+                            }
+                        },
+                        "required": [
+                            "locale",
+                            "is_fallback",
+                            "fallback_locale",
+                            "translation_status"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "slug",
+                    "description",
+                    "publish_date",
+                    "status",
+                    "seo",
+                    "meta"
+                ],
+                "title": "GalleryResource"
+            },
             "MediaAssetResource": {
                 "type": "object",
                 "properties": {
@@ -1925,6 +2128,99 @@
                     "variants"
                 ],
                 "title": "MediaAssetResource"
+            },
+            "PageResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "blocks": {
+                        "type": "string",
+                        "description": "Named `blocks` to match the blueprint's \u00a73 vocabulary, though it holds\nthe same TipTap document shape as an article body."
+                    },
+                    "system_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "featured_image": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/MediaAssetResource"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "seo": {
+                        "type": "object",
+                        "properties": {
+                            "meta_title": {
+                                "type": "string"
+                            },
+                            "meta_description": {
+                                "type": "string"
+                            },
+                            "robots": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "meta_title",
+                            "meta_description",
+                            "robots"
+                        ]
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "locale": {
+                                "type": "string"
+                            },
+                            "is_fallback": {
+                                "type": "boolean"
+                            },
+                            "fallback_locale": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "translation_status": {
+                                "type": "null"
+                            }
+                        },
+                        "required": [
+                            "locale",
+                            "is_fallback",
+                            "fallback_locale",
+                            "translation_status"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "slug",
+                    "blocks",
+                    "system_key",
+                    "position",
+                    "seo",
+                    "meta"
+                ],
+                "title": "PageResource"
             },
             "StoreContactSubmissionRequest": {
                 "type": "object",

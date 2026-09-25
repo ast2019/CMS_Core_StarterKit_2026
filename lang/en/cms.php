@@ -117,6 +117,7 @@ return [
         'author' => 'Author',
         'featured_image' => 'Featured image',
         'featured_image_help' => 'Choose from the media library. A featured image is required.',
+        'gallery_items_help' => 'The order you choose is the order the images appear in the gallery.',
         'translation_status' => 'Translation status',
         'parent' => 'Parent',
         'position' => 'Order',
@@ -220,7 +221,27 @@ return [
         ],
     ],
 
+    'media' => [
+        'inline_upload' => 'Upload a new image',
+        'inline_upload_heading' => 'Upload an image to the media library',
+        'inline_upload_description' => 'The image is added to the media library and selected here, without leaving this page.',
+        'inline_upload_submit' => 'Upload and select',
+    ],
+
+    'seo' => [
+        'warnings' => 'SEO check',
+        'no_warnings' => 'No warnings.',
+        'character_count' => ':count of :limit characters',
+        'warning' => [
+            'missing_title' => 'The meta title is empty and no fallback was found for it.',
+            'title_too_long' => 'The meta title is longer than the recommended :title_limit characters and Google will truncate it.',
+            'missing_description' => 'The meta description is empty and no fallback was found for it.',
+            'description_too_long' => 'The meta description is longer than the recommended :description_limit characters and Google will truncate it.',
+        ],
+    ],
+
     'validation' => [
+        'media_file_required' => 'An image file is required.',
         'featured_image_required' => 'A featured image is required.',
         'slides_max' => 'You may have at most :max slides.',
         'slug_unique' => 'This slug is already in use for the :locale locale.',
@@ -340,6 +361,8 @@ return [
         'confirm' => 'This whole record, including the rich body, will be translated from Persian into this locale and saved as machine-translated. The document structure is preserved, but the result needs human review before publishing.',
         'confirm_outdated' => 'This locale was reviewed once and the Persian source has changed since. Re-translating overwrites the existing text, discards the previous reviewer sign-off, and removes this locale from its sitemap until a human reviews it again.',
         'success' => 'Machine-translated into :locale and awaiting review.',
+        'queued' => 'Machine translation into :locale has been queued.',
+        'queued_hint' => 'The translation runs in the background and may take a few minutes. The outcome — success or failure — will appear in the panel notification bell.',
         'skipped' => 'AI translation skipped',
         'failed' => 'AI translation failed',
         'error' => [

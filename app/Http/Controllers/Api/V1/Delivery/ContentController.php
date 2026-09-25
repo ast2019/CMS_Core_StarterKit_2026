@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Delivery;
 
+use App\Http\Controllers\Api\V1\Delivery\Concerns\ResolvesDeliveryRequest;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\ContentResource;
 use App\Models\Content;
@@ -20,6 +21,16 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class ContentController extends Controller
 {
+    /*
+     * Locale resolution, the per_page bound and the slug-with-fallback lookup moved
+     * into a shared concern when the page/category/gallery endpoints were added.
+     * They were about to exist in four copies, and these are exactly the rules that
+     * must not drift: a forgotten per_page bound is a denial-of-service vector, and
+     * a fallback lookup implemented differently per content type is a locale that
+     * 404s for pages while working for articles.
+     */
+    use ResolvesDeliveryRequest;
+
     public function __construct(private readonly DeliveryCache $cache) {}
 
     /**
@@ -49,7 +60,7 @@ class ContentController extends Controller
             $this->cache->key('content.index', $locale, $filters),
             [DeliveryCache::TAG_CONTENT, DeliveryCache::TAG_TAXONOMY],
             function () use ($request, $locale, $perPage): AnonymousResourceCollection {
-                $paginator = $this->baseQuery($locale)
+                $paginator = $this->baseQuery()
                     ->when(
                         $request->filled('category'),
                         fn (Builder $query) => $query->whereHas(
@@ -88,7 +99,7 @@ class ContentController extends Controller
     {
         $locale = $this->locale($request);
 
-        $content = $this->resolveBySlug($locale, $slug);
+        $content = $this->resolveBySlug(fn (): Builder => $this->baseQuery(), $locale, $slug);
 
         if ($content === null) {
             throw new NotFoundHttpException(
@@ -100,43 +111,6 @@ class ContentController extends Controller
     }
 
     /**
-     * Resolve an article by slug, in the requested locale or via the source locale.
-     *
-     * Blueprint §2 requires fallback display when a translation is missing, and an
-     * untranslated article has no slug in the target locale — so a
-     * requested-locale-only lookup would make fallback unreachable for exactly the
-     * records that need it.
-     *
-     * The source-locale attempt is a SECOND step, not a merged OR: a slug that
-     * exists in the requested locale must always win, or a Persian slug could
-     * shadow a different article that legitimately owns that slug in English.
-     *
-     * This does not create a duplicate-content problem, because the response marks
-     * `is_fallback` and names the real locale, and the hreflang/canonical data tells
-     * crawlers which URL is authoritative (Requirements 5.5, 7.2).
-     */
-    private function resolveBySlug(string $locale, string $slug): ?Content
-    {
-        $content = $this->baseQuery($locale)
-            ->whereJsonContainsLocale('slug', $locale, $slug)
-            ->first();
-
-        if ($content !== null) {
-            return $content;
-        }
-
-        $source = (string) config('cms.locales.source', 'fa');
-
-        if ($locale === $source) {
-            return null;
-        }
-
-        return $this->baseQuery($source)
-            ->whereJsonContainsLocale('slug', $source, $slug)
-            ->first();
-    }
-
-    /**
      * Base query for public reads.
      *
      * `live()` is the single gate: published status AND publish_date in the past
@@ -145,7 +119,7 @@ class ContentController extends Controller
      *
      * @return Builder<Content>
      */
-    private function baseQuery(string $locale): Builder
+    private function baseQuery(): Builder
     {
         return Content::query()
             ->live()
@@ -157,24 +131,5 @@ class ContentController extends Controller
                 'mediaAssets',
                 'translationStates',
             ]);
-    }
-
-    private function locale(Request $request): string
-    {
-        $locale = $request->attributes->get('cms_locale');
-
-        return is_string($locale) ? $locale : app()->getLocale();
-    }
-
-    /**
-     * Page size, bounded.
-     *
-     * An unbounded `per_page` is a denial-of-service vector on a public endpoint:
-     * `?per_page=100000` would serialise the entire archive, with every relation, on
-     * one request.
-     */
-    private function perPage(Request $request): int
-    {
-        return max(1, min($request->integer('per_page', 15), 100));
     }
 }

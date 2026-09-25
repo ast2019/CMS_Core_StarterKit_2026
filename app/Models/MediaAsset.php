@@ -156,6 +156,72 @@ class MediaAsset extends Model implements HasMedia
     }
 
     /**
+     * Copy the stored file's own facts onto the asset row.
+     *
+     * `mime_type`, `size`, `width` and `height` are columns on the asset, but
+     * nothing in the panel ever filled them — so every image uploaded through the
+     * admin reached the Delivery API with null dimensions, and a frontend that
+     * follows Requirement 7.6 ("reserve space before the image loads") had nothing
+     * to reserve it with. SchemaBuilder's ImageObject drops width/height for the
+     * same reason.
+     *
+     * Read from the ORIGINAL file, never from a conversion: conversions are queued
+     * (config/media-library.php), so at the moment an upload finishes the
+     * derivatives do not exist yet and asking one for its size would report null
+     * for every fresh upload.
+     */
+    public function syncFileMetadata(): void
+    {
+        $media = $this->getFirstMedia('file');
+
+        if ($media === null) {
+            return;
+        }
+
+        $this->mime_type = $media->mime_type;
+        $this->size = $media->size;
+
+        // Dimensions are meaningful for images only, and getimagesize() on a video
+        // or a PDF returns false rather than throwing, so the guard is about intent
+        // rather than safety.
+        if ($this->isImage()) {
+            $dimensions = @getimagesize($media->getPath());
+
+            if (is_array($dimensions)) {
+                $this->width = $dimensions[0];
+                $this->height = $dimensions[1];
+            }
+        }
+
+        if ($this->isDirty()) {
+            $this->save();
+        }
+    }
+
+    /**
+     * A URL safe to render in the panel immediately after an upload.
+     *
+     * Conversions are generated on the queue, so `getUrl('thumb')` resolves to a
+     * path that does not exist yet for a just-uploaded file — Media Library returns
+     * the URL regardless, and the panel would render a broken image. Hence the
+     * explicit hasGeneratedConversion() check with the original as the fallback.
+     */
+    public function previewUrl(string $conversion = 'thumb'): ?string
+    {
+        $media = $this->getFirstMedia('file');
+
+        if ($media === null) {
+            return null;
+        }
+
+        if ($media->hasGeneratedConversion($conversion)) {
+            return $media->getUrl($conversion);
+        }
+
+        return $media->getUrl();
+    }
+
+    /**
      * Assets missing alt text in the source locale.
      *
      * Surfaced in the panel because Requirement 2.7 blocks publishing without

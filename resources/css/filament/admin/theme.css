@@ -114,3 +114,47 @@
     border-radius: 9999px;
     background-color: currentColor;
 }
+
+
+/*
+ * SEO advisory block (App\Filament\Schemas\SeoSection).
+ *
+ * The warnings and the character counters come from HasSeoMeta's own rules, and
+ * they are advice rather than validation — hence amber rather than the danger
+ * colour, which in this panel means "the save was rejected".
+ *
+ * Logical properties throughout (padding-inline-start, not padding-left) so the
+ * bullets sit on the correct side in the RTL panel and still behave in the LTR
+ * English tab. No remote asset of any kind, per RULE #4.
+ */
+.cms-seo-warnings {
+    list-style: disc;
+    padding-inline-start: 1.25rem;
+    margin: 0;
+    color: var(--warning-600, #d97706);
+}
+
+.cms-seo-warnings li + li {
+    margin-block-start: 0.25rem;
+}
+
+.cms-seo-ok {
+    color: var(--success-600, #16a34a);
+}
+
+/*
+ * The counter is a Latin numeral pair ("34 / 60") inside Persian helper text, so
+ * it carries dir="ltr" in the markup; this only gives it tabular figures so the
+ * width does not jump as the editor types.
+ */
+.cms-seo-count,
+.cms-seo-over-limit {
+    display: inline-block;
+    font-feature-settings: var(--cms-numeric-font-feature);
+}
+
+/* Past the advisory limit: Google will truncate, but the save is still valid. */
+.cms-seo-over-limit {
+    color: var(--warning-600, #d97706);
+    font-weight: 600;
+}

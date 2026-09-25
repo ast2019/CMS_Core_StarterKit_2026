@@ -22,6 +22,17 @@ interface TracksTranslationStatus
     public function translationStatusFor(string $locale): TranslationStatus;
 
     /**
+     * The locale's status read from the database, ignoring a loaded relation.
+     *
+     * Part of the contract because translationStatusFor() is allowed to answer from
+     * an eager-loaded collection, which is correct for rendering and unsafe for a
+     * decision taken minutes later on a queued job's copy of the record. Anything
+     * that GUARDS a write on translation status needs the authoritative read, so it
+     * must be reachable through the interface rather than only on the trait.
+     */
+    public function freshTranslationStatusFor(string $locale, bool $lockForUpdate = false): TranslationStatus;
+
+    /**
      * Whether this record may appear in a locale's sitemap (Decision D-5).
      */
     public function isSitemapEligibleFor(string $locale): bool;
