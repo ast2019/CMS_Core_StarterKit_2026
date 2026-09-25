@@ -49,15 +49,44 @@
 
 /* Latin strings inside an RTL interface — slugs, URLs, version numbers, API
    keys — must not be bidi-reordered, or a URL like /fa/news/my-slug renders
-   with its segments visually shuffled and becomes impossible to proofread. */
+   with its segments visually shuffled and becomes impossible to proofread.
+
+   The two-factor screens add more Latin/numeric strings to this list:
+   the recovery-code login input (e.g. abc123XYZ-def456UVW) and the monospace
+   TOTP secret plus recovery codes shown during enrolment. Left un-isolated,
+   RTL bidi reordering shuffles their segments and they can no longer be read,
+   compared or typed reliably. */
 .cms-ltr,
 [dir='rtl'] input[type='url'],
 [dir='rtl'] input[name*='slug'],
+[dir='rtl'] input[name='recoveryCode'],
+[dir='rtl'] .fi-font-mono,
 [dir='rtl'] code,
 [dir='rtl'] pre {
     direction: ltr;
     text-align: left;
     unicode-bidi: isolate;
+}
+
+/*
+ * Two-factor / OTP layout corrections for RTL (Requirement: FEAT-004).
+ * ---------------------------------------------------------------------------
+ * Filament renders the one-time-code field as a horizontal flex row of single
+ * digit boxes (.fi-one-time-code-input-ctn > .fi-one-time-code-input-digit).
+ * Under [dir='rtl'] that flex row lays the boxes out right-to-left, so the
+ * first digit typed lands in the right-most box and a code like 123456 is
+ * displayed, and read back, as 654321. A one-time code is a Latin number that
+ * must always fill and read left-to-right, so the container is forced to LTR
+ * while the surrounding page stays RTL. This covers both the enrolment
+ * (setup modal) and the login challenge, which share this component.
+ */
+[dir='rtl'] .fi-one-time-code-input-ctn {
+    /* Fill and read the digit boxes left-to-right. */
+    direction: ltr;
+
+    /* The OTP row is a `w-fit` flex block; keep it anchored to the start
+       (right) edge of the RTL card rather than drifting to the visual left. */
+    margin-inline-end: auto;
 }
 
 /* Tabular numerals for table cells and badges. */
