@@ -337,14 +337,16 @@ return [
     ],
 
     'ai_translation' => [
-        'confirm' => 'This record\'s text fields will be translated from Persian into this locale and saved as machine-translated. The rich body is not translated and must be entered by hand. The result needs review before publishing.',
+        'confirm' => 'This whole record, including the rich body, will be translated from Persian into this locale and saved as machine-translated. The document structure is preserved, but the result needs human review before publishing.',
         'success' => 'Machine-translated into :locale and awaiting review.',
+        'skipped' => 'AI translation skipped',
         'failed' => 'AI translation failed',
         'error' => [
             'disabled' => 'AI translation is not enabled. Turn it on from the Settings page.',
             'missing_key' => 'The OpenRouter API key is not configured. Enter it on the Settings page.',
             'request_failed' => 'The translation service could not be reached. Please try again shortly.',
             'empty_source' => 'There is no source text to translate. Complete the Persian content first.',
+            'already_reviewed' => 'This locale has already been reviewed; automatic translation was skipped to avoid overwriting human work.',
         ],
     ],
 ];

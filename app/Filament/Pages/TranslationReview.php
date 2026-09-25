@@ -161,11 +161,16 @@ class TranslationReview extends Page implements HasTable
                     ->color('info')
                     ->requiresConfirmation()
                     ->modalDescription(__('cms.ai_translation.confirm'))
-                    // Visible only when the feature is switched on. Reviewers and
-                    // above may run it, matching who can act on the backlog; the
-                    // result still needs a human to sign off, so this does not
-                    // let an Author self-approve.
-                    ->visible(fn (): bool => AiTranslator::isEnabled())
+                    // Visible only when the feature is switched on AND the row is
+                    // not already human-reviewed. Re-running the machine over a
+                    // reviewed locale would overwrite signed-off text, so the
+                    // service refuses it (AiTranslationException::alreadyReviewed);
+                    // hiding the action here makes that policy visible in the UI.
+                    // Reviewers and above may run it, matching who can act on the
+                    // backlog; the result still needs a human to sign off, so this
+                    // does not let an Author self-approve.
+                    ->visible(fn (TranslationState $record): bool => AiTranslator::isEnabled()
+                        && $record->status !== TranslationStatus::Reviewed)
                     ->authorize(fn (): bool => auth()->user()?->can('translation.review') ?? false)
                     ->action(function (TranslationState $record): void {
                         $this->translateWithAi($record);
@@ -254,11 +259,24 @@ class TranslationReview extends Page implements HasTable
         } catch (AiTranslationException $exception) {
             // The exception carries a localisation key, never the API key or a
             // raw OpenRouter response, so surfacing it here cannot leak a secret.
-            Notification::make()
-                ->title(__('cms.ai_translation.failed'))
-                ->body(__($exception->translationKey))
-                ->danger()
-                ->send();
+            //
+            // "Already reviewed" is a deliberate policy outcome, not a failure:
+            // the locale was signed off and the machine refused to overwrite it.
+            // Present it as a warning so a translator reads it as expected
+            // behaviour rather than a broken service.
+            $notification = Notification::make()->body(__($exception->translationKey));
+
+            if ($exception->translationKey === 'cms.ai_translation.error.already_reviewed') {
+                $notification
+                    ->title(__('cms.ai_translation.skipped'))
+                    ->warning();
+            } else {
+                $notification
+                    ->title(__('cms.ai_translation.failed'))
+                    ->danger();
+            }
+
+            $notification->send();
 
             return;
         }

@@ -42,4 +42,15 @@ final class AiTranslationException extends RuntimeException
     {
         return new self('cms.ai_translation.error.empty_source');
     }
+
+    /**
+     * A human already signed off on this locale, so re-running the machine over
+     * it is refused: overwriting reviewed text would silently revert the
+     * sign-off and could re-translate/duplicate content the editor already
+     * finalised. The caller surfaces this as "skipped because already reviewed".
+     */
+    public static function alreadyReviewed(): self
+    {
+        return new self('cms.ai_translation.error.already_reviewed');
+    }
 }
