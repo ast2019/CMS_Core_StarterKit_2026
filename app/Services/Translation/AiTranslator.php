@@ -369,8 +369,11 @@ class AiTranslator
      * Translate a list of prose segments in one round trip, mapping 1:1 back to
      * their input positions. The model is instructed to return a JSON array of
      * the SAME length in the SAME order. A length mismatch (or any non-array /
-     * non-string element) is a HARD failure — never a best-effort merge — so a
-     * garbled or duplicated body can never be written.
+     * non-string / empty-after-trim element) is a HARD failure — never a
+     * best-effort merge — so a garbled, duplicated, or structurally-invalid body
+     * can never be written. Empty elements are rejected here for the same reason
+     * translateText() rejects empty single-field output: an empty string written
+     * into a text node's `text` is an invalid ProseMirror/TipTap leaf (RULE #6).
      *
      * @param  list<string>  $segments
      * @return list<string>
@@ -408,11 +411,16 @@ class AiTranslator
         $translations = [];
 
         foreach ($decoded as $item) {
-            if (! is_string($item)) {
+            // Reject a non-string OR empty-after-trim element. Mirrors
+            // translateText(), which throws when the single-field result trims
+            // to '': an empty text-node `text` is an invalid TipTap leaf (RULE
+            // #6), and trimming keeps the batch path's output consistent with
+            // the single-field path (which returns trim($content)).
+            if (! is_string($item) || trim($item) === '') {
                 throw AiTranslationException::requestFailed();
             }
 
-            $translations[] = $item;
+            $translations[] = trim($item);
         }
 
         return $translations;

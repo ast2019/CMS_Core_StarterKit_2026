@@ -326,6 +326,58 @@ it('handles an OpenRouter error response gracefully', function (): void {
     expect($content->fresh()->getTranslation('title', 'en', useFallbackLocale: false))->toBeEmpty();
 });
 
+it('rejects an empty-after-trim batch element rather than writing an invalid TipTap leaf', function (): void {
+    enableAiTranslation();
+
+    // The model returns a JSON array of the SAME length for the body batch, but
+    // one element is whitespace-only. An empty text-node `text` is an invalid
+    // ProseMirror/TipTap leaf (RULE #6), so the batch path must reject it the
+    // same way translateText() rejects empty single-field output — a hard
+    // request_failed, never a best-effort merge that writes the empty string.
+    Http::fake([
+        'openrouter.ai/*' => function (Request $request) {
+            $messages = $request->data()['messages'] ?? [];
+            $user = '';
+
+            foreach ($messages as $message) {
+                if (($message['role'] ?? null) === 'user') {
+                    $user = (string) ($message['content'] ?? '');
+                }
+            }
+
+            $decoded = json_decode($user, true);
+
+            // Body batch: answer with a same-length array whose first element is
+            // whitespace-only.
+            if (is_array($decoded) && array_is_list($decoded)) {
+                $translated = array_map(
+                    static fn ($element): string => 'EN: '.(string) $element,
+                    $decoded,
+                );
+                $translated[0] = '   ';
+
+                $content = (string) json_encode($translated, JSON_UNESCAPED_UNICODE);
+            } else {
+                $content = 'Machine title';
+            }
+
+            return Http::response([
+                'choices' => [
+                    ['message' => ['role' => 'assistant', 'content' => $content]],
+                ],
+            ], 200);
+        },
+    ]);
+
+    $content = Content::factory()->create(['title' => ['fa' => 'عنوان']]);
+
+    expect(fn () => app(AiTranslator::class)->translate($content, 'en'))
+        ->toThrow(AiTranslationException::class, 'cms.ai_translation.error.request_failed');
+
+    // No invalid body was written for the target locale.
+    expect($content->fresh()->getTranslation('body', 'en', useFallbackLocale: false))->toBeEmpty();
+});
+
 it('reports an empty source rather than calling the model', function (): void {
     enableAiTranslation();
     Http::fake();
