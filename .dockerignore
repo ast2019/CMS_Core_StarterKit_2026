@@ -25,7 +25,7 @@ public/storage
 public/fonts-manifest.dev.json
 
 # Secrets and host-local state. Configuration reaches the container through the
-# environment; see docker-compose.yaml.
+# environment; see docs/coolify.md.
 .env
 .env.*
 !.env.example
@@ -62,4 +62,3 @@ phpstan.neon
 Homestead.yaml
 Homestead.json
 auth.json
-docker-compose.override.yaml

@@ -4,10 +4,9 @@ Per-site deployment for a copy of the CMS Core Starter Kit. The Core itself is
 deliberately host-agnostic; everything here is a per-client operational decision.
 
 > **Deploying with Docker or Coolify?** Read **[docs/coolify.md](coolify.md)** instead
-> for the container path — `Dockerfile` and `docker-compose.yaml` cover the service
-> topology, and the media volume needs particular care. This file still applies for the
-> decisions that are not about hosting: queues, video, search, and the per-client
-> checklist at the end.
+> for the container path — the `Dockerfile` builds a single self-sufficient image, and
+> the media volume needs particular care. This file still applies for the decisions that
+> are not about hosting: queues, video, search, and the per-client checklist at the end.
 
 ## Required services
 
@@ -42,7 +41,7 @@ php artisan key:generate
 php artisan storage:link
 
 php artisan migrate --force
-php artisan db:seed --force        # first deploy only: creates the 404 page and settings
+php artisan db:seed --class=InstallSeeder --force   # first deploy only
 
 php artisan config:cache
 php artisan route:cache

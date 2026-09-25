@@ -13,9 +13,7 @@ use App\Models\Content;
 use App\Models\Gallery;
 use App\Models\MenuItem;
 use App\Models\Page;
-use App\Models\Setting;
 use App\Models\Slide;
-use App\Models\SystemInfo;
 use App\Models\Tag;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -24,15 +22,25 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->seedSystem();
+        /*
+         * Everything a production installation needs lives in InstallSeeder. This class
+         * adds DEMO CONTENT on top of it, and demo content comes from model factories,
+         * which need fakerphp/faker — a DEV dependency.
+         *
+         * So this seeder cannot run in a production image built with --no-dev: it dies
+         * with "Call to undefined function fake()" partway through, having written some
+         * rows and not others. Production runs InstallSeeder instead.
+         */
+        $this->call(InstallSeeder::class);
+
         $users = $this->seedUsers();
-        $this->seedSettings();
         $taxonomy = $this->seedTaxonomy();
         $this->seedContent($users, $taxonomy);
         $this->seedPages();
         $this->seedSlides();
         $this->seedNavigation();
         $this->seedContactSubmissions();
+        $this->seedContactDetails();
     }
 
     /**
@@ -47,14 +55,6 @@ class DatabaseSeeder extends Seeder
 
         ContactSubmission::factory()->count(3)->create();
         ContactSubmission::factory()->read()->count(2)->create();
-    }
-
-    /**
-     * RULES #1 and #2 — the version row must exist from install.
-     */
-    protected function seedSystem(): void
-    {
-        SystemInfo::current();
     }
 
     /**
@@ -98,21 +98,14 @@ class DatabaseSeeder extends Seeder
     }
 
     /**
-     * Requirement 1.2 — placeholder values only. A real deployment overwrites
-     * these from the panel; none of them name a client.
+     * Demo contact details, on top of the form labels InstallSeeder creates.
+     *
+     * Kept out of InstallSeeder deliberately: a client site must not inherit
+     * "info@example.test" as its published contact address.
      */
-    protected function seedSettings(): void
+    protected function seedContactDetails(): void
     {
-        Setting::put(Setting::SITE_NAME, ['fa' => 'سایت نمونه', 'en' => 'Sample Site', 'ar' => 'موقع نموذجي'], isTranslatable: true);
-        Setting::put(Setting::SOCIAL_LINKS, []);
-        Setting::put(Setting::MAINTENANCE_MODE, false);
-        Setting::put(Setting::GA_MEASUREMENT_ID, null);
-        Setting::put(Setting::GTM_CONTAINER_ID, null);
-        Setting::put(Setting::GSC_VERIFICATION, null);
-        Setting::put(Setting::BING_VERIFICATION, null);
-
         ContactSetting::current()->update([
-            'form_labels' => ['fa' => ['name' => 'نام', 'email' => 'ایمیل', 'message' => 'پیام']],
             'address' => ['fa' => 'نشانی نمونه'],
             'email' => 'info@example.test',
         ]);
@@ -233,30 +226,8 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        /*
-         * Requirement 3.8 — the brandable 404 page. Seeded because
-         * Page::notFoundPage() returning null makes the error handler fall back
-         * to an unbranded response, and a starter kit should ship with the
-         * branded path working.
-         */
-        Page::query()->firstOrCreate(
-            ['system_key' => Page::SYSTEM_NOT_FOUND],
-            [
-                'title' => ['fa' => 'صفحه مورد نظر پیدا نشد'],
-                'blocks' => ['fa' => [
-                    'type' => 'doc',
-                    'content' => [[
-                        'type' => 'paragraph',
-                        'content' => [[
-                            'type' => 'text',
-                            'text' => 'نشانی وارد شده وجود ندارد یا حذف شده است.',
-                        ]],
-                    ]],
-                ]],
-                'status' => ContentStatus::Published,
-                'publish_date' => now()->subDay(),
-            ],
-        );
+        // The branded 404 page is created by InstallSeeder, because a production site
+        // needs it and this seeder cannot run in production.
     }
 
     /**

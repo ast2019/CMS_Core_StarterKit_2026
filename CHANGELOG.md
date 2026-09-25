@@ -9,6 +9,22 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.6.0] - 2026-09-25
+
+### Added
+
+- WITH_FFMPEG build argument, off by default, keeping the image at 750 MB for sites that do not host video locally.
+
+### Changed
+
+- Deployment is now a single Dockerfile image: docker-compose.yaml is removed, Redis and Meilisearch are no longer implied, and the image carries its own PHP defaults so a deployment needs ten environment variables.
+
+### Fixed
+
+- Production installs could not be seeded at all: db:seed runs DatabaseSeeder, whose demo content needs fakerphp/faker, a dev dependency absent from a --no-dev image. Added InstallSeeder with only what a live site needs, and an architecture test so the install path cannot acquire a dev dependency again.
+- A container with no APP_LOCALE ran this Persian-first CMS in English with RTL off, because config/app.php still carried Laravel's 'en' defaults. The test suite could not catch it: phpunit.xml sets APP_LOCALE=fa, so the real default was never exercised.
+- A fresh install reported RULES #1 and #3 as violated, because system_info started at a hardcoded 0.1.0 while the changelog and published spec named the deployed release. The initial version is now read from CHANGELOG.md, and CHANGELOG.md is imported into the changelogs table on install so the panel shows real history.
+
 ## [0.5.0] - 2026-09-23
 
 ### Added

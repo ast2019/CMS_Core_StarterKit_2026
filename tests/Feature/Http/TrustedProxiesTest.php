@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 /**
  * The application runs behind a reverse proxy in every containerised deployment
- * (docker-compose.yaml, Coolify, any ingress). These assert the consequences of
+ * (Coolify, or any reverse proxy or ingress). These assert the consequences of
  * trusting it, rather than the configuration value itself — a test that read the config
  * back would pass even if the middleware were never applied.
  *

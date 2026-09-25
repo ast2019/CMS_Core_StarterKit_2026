@@ -1,25 +1,30 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
-# CMS Core Starter Kit — production images
+# CMS Core Starter Kit — production image
+#
+# ONE image, and one deployment unit: the `web` stage serves the panel and both APIs,
+# and can also run the queue worker and the scheduler. A single container plus MySQL is
+# a complete, working deployment — nothing else has to be provisioned.
 #
 # Built on serversideup/php, which supplies nginx + PHP-FPM supervised by S6 Overlay,
-# sensible production defaults, and configuration through environment variables. That
-# replaces a hand-rolled nginx.conf, php.ini, FPM pool and supervisord.conf — roughly
-# 300 lines of infrastructure this project no longer owns, maintains, or gets wrong.
+# production defaults, and configuration through environment variables. That replaces a
+# hand-rolled nginx.conf, php.ini, FPM pool and supervisord.conf — roughly 300 lines of
+# infrastructure this project no longer owns, maintains, or gets wrong.
 #
-# It also runs UNPRIVILEGED (www-data, uid/gid 33) rather than root, which matters for
-# the media volume; see docs/coolify.md.
+# It runs UNPRIVILEGED (www-data, uid/gid 33) and listens on 8080, because a non-root
+# process cannot bind 80. Both facts matter when configuring the deployment; see
+# docs/coolify.md.
 #
-# TWO images, from one source tree:
+# The earlier stages exist only to build it:
 #
-#   web  — nginx + PHP-FPM. Serves the panel and both APIs. Listens on 8080.
-#   cli  — no web server. Runs the queue worker, the scheduler and migrations.
+#   php-base  PHP with the extensions this application needs
+#   vendor    Composer dependencies
+#   assets    the Vite build
+#   app       the assembled /var/www/html
+#   web       the image you deploy
 #
-# Two rather than one because these images are supervised differently: S6 starts nginx
-# and FPM in the web image, so using it for a queue worker would run a web server
-# alongside the worker and let the health check pass on a container whose worker had
-# died. The cli variant has no supervisor and runs the given command directly.
+# Build it with no --target; `web` is last, so it is the default.
 # =============================================================================
 
 ARG PHP_VERSION=8.4
@@ -112,26 +117,14 @@ RUN mkdir -p storage/framework/views
 RUN npm run build
 
 # -----------------------------------------------------------------------------
-# Stage 3 — cli: the assembled application, and the image that runs every
-# non-web process.
+# Stage 3 — app: the assembled application.
+#
+# Not a runnable image by itself — it holds the finished /var/www/html for the stages
+# below, so the application payload is built exactly once no matter how many images use
+# it. That is what guarantees a worker cannot be running different code from the web
+# process, which is the usual cause of "the job worked yesterday" after a partial deploy.
 # -----------------------------------------------------------------------------
-FROM php-base AS cli
-
-USER root
-
-# ffprobe (Decision D-6), for reading a video's duration and dimensions.
-#
-# Installed ONLY in this image, not in web, because App\Listeners\ExtractVideoMetadata
-# is queued — so the process that shells out to ffprobe is always a worker. That keeps
-# roughly 250 MB out of the image that serves requests.
-#
-# ffmpeg is a soft dependency: without it the panel asks an editor for the duration, and
-# that path is deliberate and tested. Remove this layer to shrink the image.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-USER www-data
+FROM php-base AS app
 
 WORKDIR /var/www/html
 
@@ -147,15 +140,6 @@ COPY --from=assets --chown=www-data:www-data /app/public/build ./public/build
 # filament:upgrade runs filament:assets, which publishes Filament's own CSS/JS into
 # public/ — gitignored, so it exists only because this step runs.
 RUN composer dump-autoload --no-dev --optimize
-
-# Refuse to start on a missing or malformed APP_KEY. Runs before the image's own Laravel
-# automations (50-*), so a bad key is reported as itself rather than as a confusing
-# failure inside `php artisan config:cache`.
-COPY --chown=www-data:www-data docker/entrypoint.d/15-validate-app-key.sh /etc/entrypoint.d/15-validate-app-key.sh
-
-USER root
-RUN chmod +x /etc/entrypoint.d/15-validate-app-key.sh
-USER www-data
 
 # Directories Laravel writes to at runtime. Ownership matters more than it looks: the
 # container is unprivileged, so it cannot fix this later — and a fresh Docker named
@@ -175,20 +159,55 @@ RUN mkdir -p \
 # makes losing media a visible mistake rather than a silent default.
 
 # -----------------------------------------------------------------------------
-# Stage 4 — web: nginx + PHP-FPM.
+# Stage 4 — web: THE deployment image.
+#
+# nginx + PHP-FPM, and self-sufficient: it can also run the queue worker and the
+# scheduler, so a single container is a complete deployment. That is why ffmpeg lives
+# here rather than in a separate worker image.
+#
+# Listens on 8080, not 80, because it runs unprivileged (www-data, uid 33).
 # -----------------------------------------------------------------------------
 FROM serversideup/php:${PHP_VERSION}-fpm-nginx-${SSU_VERSION} AS web
 
 USER root
+
 RUN install-php-extensions gd intl bcmath exif
+
+# ffprobe (Decision D-6), for reading an uploaded video's duration and dimensions.
+#
+# OFF by default, because it costs ~410 MB and most sites do not need it: an EMBEDDED
+# video (YouTube and friends) supplies its own thumbnail and duration, so ffprobe is only
+# useful for video files hosted on this server.
+#
+# Turn it on for a site that does host video:
+#
+#     WITH_FFMPEG=true
+#
+# as a build variable in Coolify, or `docker build --build-arg WITH_FFMPEG=true`.
+#
+# Without it, the panel asks an editor for the duration instead. That is a deliberate and
+# tested path, not a degraded one — App\Listeners\ExtractVideoMetadata checks for the
+# binary and stays quiet when it is absent.
+ARG WITH_FFMPEG=false
+
+RUN if [ "${WITH_FFMPEG}" = "true" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends ffmpeg \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "ffmpeg omitted (WITH_FFMPEG=false); video duration will be entered manually"; \
+    fi
+
 USER www-data
 
 WORKDIR /var/www/html
 
-# The application is taken wholesale from the cli stage, so the two images cannot
-# contain different code — the usual cause of "the job worked yesterday" after a
-# partial deploy.
-COPY --from=cli --chown=www-data:www-data /var/www/html /var/www/html
+COPY --from=app --chown=www-data:www-data /var/www/html /var/www/html
+
+# Refuse to start on a missing or malformed APP_KEY. Numbered 15 so it runs after the
+# web server configuration (10-*) and before the image's Laravel automations (50-*) —
+# otherwise a bad key surfaces as a confusing failure inside `php artisan config:cache`.
+COPY docker/entrypoint.d/15-validate-app-key.sh /etc/entrypoint.d/15-validate-app-key.sh
 
 # Additions to the image's own nginx server configuration. Named zz- so it is included
 # last from server-opts.d/.
@@ -213,3 +232,22 @@ ENV PHP_OPCACHE_ENABLE=1 \
     PHP_OPCACHE_MAX_ACCELERATED_FILES=20000 \
     PHP_OPCACHE_MEMORY_CONSUMPTION=192 \
     PHP_OPCACHE_INTERNED_STRINGS_BUFFER=16
+
+# Raised from the image's 256M default because Media Library decodes an upload into a
+# bitmap to build the thumbnail and WebP variants, and a large photograph exhausts 256M.
+# Set as an image default rather than left to the deployment, because an out-of-memory
+# conversion fails the job rather than the request — so it is invisible until someone
+# notices a missing thumbnail.
+ENV PHP_MEMORY_LIMIT=512M
+
+# A form with many translatable fields across three locales exceeds the 1000 default,
+# and PHP silently DISCARDS the excess rather than erroring — so the failure looks like
+# the panel dropping the last few fields of a long article.
+ENV PHP_MAX_INPUT_VARS=5000
+
+# Editors upload video; both limits must be raised together, and whichever is lower
+# wins. nginx rejects an oversized body before PHP sees it, producing a bare 413 with no
+# Laravel validation message.
+ENV PHP_UPLOAD_MAX_FILE_SIZE=64M \
+    PHP_POST_MAX_SIZE=68M \
+    NGINX_CLIENT_MAX_BODY_SIZE=68M
