@@ -81,6 +81,8 @@ return [
         'redirects' => 'تغییر مسیرها',
         'contact_submission' => 'پیام تماس',
         'contact_submissions' => 'پیام‌های تماس',
+        'user' => 'کاربر',
+        'users' => 'کاربران',
     ],
 
     'section' => [
@@ -151,6 +153,8 @@ return [
         'phone' => 'تلفن',
         'subject' => 'موضوع',
         'system_key' => 'کلید سیستمی',
+        'password' => 'گذرواژه',
+        'role' => 'نقش',
     ],
 
     'table' => [
@@ -270,6 +274,37 @@ return [
 
     'contact' => [
         'received' => 'پیام شما دریافت شد. سپاس از تماس شما.',
+    ],
+
+    'user' => [
+        'password_help' => 'هنگام ویرایش، برای حفظ گذرواژهٔ فعلی این کادر را خالی بگذارید.',
+        'role_guidance' => 'دسترسی هر نقش',
+        // Human-readable labels for the abilities in App\Enums\UserRole. The role
+        // guidance in the form is built from the enum matrix and mapped through
+        // these keys, so a change to the matrix is reflected without touching prose.
+        'ability' => [
+            'content.view' => 'مشاهدهٔ محتوا',
+            'content.create' => 'ایجاد محتوا',
+            'content.update.own' => 'ویرایش محتوای خود',
+            'content.update.any' => 'ویرایش محتوای دیگران',
+            'content.delete' => 'حذف محتوا',
+            'content.publish' => 'انتشار محتوا',
+            'content.restore' => 'بازگردانی نسخه‌های محتوا',
+            'media.view' => 'مشاهدهٔ رسانه',
+            'media.upload' => 'بارگذاری رسانه',
+            'media.update.own' => 'ویرایش رسانهٔ خود',
+            'media.update.any' => 'ویرایش رسانهٔ دیگران',
+            'media.delete' => 'حذف رسانه',
+            'translation.view' => 'مشاهدهٔ ترجمه‌ها',
+            'translation.review' => 'بازبینی و تأیید ترجمه‌ها',
+            'redirect.manage' => 'مدیریت تغییر مسیرها',
+            'menu.manage' => 'مدیریت منوها',
+            'settings.manage' => 'مدیریت تنظیمات سایت',
+            'contact.view' => 'مشاهدهٔ پیام‌های تماس',
+            'user.manage' => 'مدیریت کاربران',
+            'audit.view' => 'مشاهدهٔ گزارش فعالیت‌ها',
+            'release.manage' => 'مدیریت انتشار نسخه',
+        ],
     ],
 
     'translation_review' => [

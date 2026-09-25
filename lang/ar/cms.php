@@ -81,6 +81,8 @@ return [
         'redirects' => 'إعادة التوجيه',
         'contact_submission' => 'رسالة تواصل',
         'contact_submissions' => 'رسائل التواصل',
+        'user' => 'مستخدم',
+        'users' => 'المستخدمون',
     ],
 
     'section' => [
@@ -151,6 +153,8 @@ return [
         'phone' => 'الهاتف',
         'subject' => 'الموضوع',
         'system_key' => 'المفتاح النظامي',
+        'password' => 'كلمة المرور',
+        'role' => 'الدور',
     ],
 
     'table' => [
@@ -270,6 +274,37 @@ return [
 
     'contact' => [
         'received' => 'تم استلام رسالتك. شكرًا لتواصلك.',
+    ],
+
+    'user' => [
+        'password_help' => 'عند التحرير، اترك هذا الحقل فارغًا للإبقاء على كلمة المرور الحالية.',
+        'role_guidance' => 'صلاحيات كل دور',
+        // Human-readable labels for the abilities in App\Enums\UserRole. The role
+        // guidance in the form is built from the enum matrix and mapped through
+        // these keys, so a change to the matrix is reflected without touching prose.
+        'ability' => [
+            'content.view' => 'عرض المحتوى',
+            'content.create' => 'إنشاء المحتوى',
+            'content.update.own' => 'تحرير محتواه الخاص',
+            'content.update.any' => 'تحرير محتوى الآخرين',
+            'content.delete' => 'حذف المحتوى',
+            'content.publish' => 'نشر المحتوى',
+            'content.restore' => 'استعادة نسخ المحتوى',
+            'media.view' => 'عرض الوسائط',
+            'media.upload' => 'رفع الوسائط',
+            'media.update.own' => 'تحرير وسائطه الخاصة',
+            'media.update.any' => 'تحرير وسائط الآخرين',
+            'media.delete' => 'حذف الوسائط',
+            'translation.view' => 'عرض الترجمات',
+            'translation.review' => 'مراجعة الترجمات واعتمادها',
+            'redirect.manage' => 'إدارة إعادة التوجيه',
+            'menu.manage' => 'إدارة القوائم',
+            'settings.manage' => 'إدارة إعدادات الموقع',
+            'contact.view' => 'عرض رسائل التواصل',
+            'user.manage' => 'إدارة المستخدمين',
+            'audit.view' => 'عرض سجل النشاط',
+            'release.manage' => 'إدارة الإصدارات',
+        ],
     ],
 
     'translation_review' => [

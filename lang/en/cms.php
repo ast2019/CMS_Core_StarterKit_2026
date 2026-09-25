@@ -75,6 +75,8 @@ return [
         'redirects' => 'Redirects',
         'contact_submission' => 'Contact message',
         'contact_submissions' => 'Contact messages',
+        'user' => 'User',
+        'users' => 'Users',
     ],
 
     'section' => [
@@ -145,6 +147,8 @@ return [
         'phone' => 'Phone',
         'subject' => 'Subject',
         'system_key' => 'System key',
+        'password' => 'Password',
+        'role' => 'Role',
     ],
 
     'table' => [
@@ -264,6 +268,37 @@ return [
 
     'contact' => [
         'received' => 'Your message has been received. Thank you for getting in touch.',
+    ],
+
+    'user' => [
+        'password_help' => 'When editing, leave this blank to keep the current password.',
+        'role_guidance' => 'What each role can do',
+        // Human-readable labels for the abilities in App\Enums\UserRole. The role
+        // guidance in the form is built from the enum matrix and mapped through
+        // these keys, so a change to the matrix is reflected without touching prose.
+        'ability' => [
+            'content.view' => 'View content',
+            'content.create' => 'Create content',
+            'content.update.own' => 'Edit their own content',
+            'content.update.any' => 'Edit anyone\'s content',
+            'content.delete' => 'Delete content',
+            'content.publish' => 'Publish content',
+            'content.restore' => 'Restore content versions',
+            'media.view' => 'View media',
+            'media.upload' => 'Upload media',
+            'media.update.own' => 'Edit their own media',
+            'media.update.any' => 'Edit anyone\'s media',
+            'media.delete' => 'Delete media',
+            'translation.view' => 'View translations',
+            'translation.review' => 'Review and approve translations',
+            'redirect.manage' => 'Manage redirects',
+            'menu.manage' => 'Manage navigation menus',
+            'settings.manage' => 'Manage site settings',
+            'contact.view' => 'View contact messages',
+            'user.manage' => 'Manage users',
+            'audit.view' => 'View the audit log',
+            'release.manage' => 'Manage releases',
+        ],
     ],
 
     'translation_review' => [
