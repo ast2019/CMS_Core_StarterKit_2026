@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Users\Schemas;
 
 use App\Enums\UserRole;
+use App\Models\User;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -53,7 +54,18 @@ class UserForm
                         ->all())
                     ->default(UserRole::Viewer->value)
                     ->required()
-                    ->live(),
+                    ->live()
+                    // Assigning a role is admin-only and never to your own account
+                    // (UserPolicy::assignRole). UserPolicy::update() lets a user open
+                    // their OWN edit page, so without this guard a non-admin could
+                    // navigate to /admin/users/{self}/edit and raise their own role.
+                    // A disabled field is dehydrated=false by default in Filament, so
+                    // it is not written even if the value is forged into the payload.
+                    ->disabled(fn (?User $record): bool => ! self::canAssignRole($record))
+                    ->dehydrated(fn (?User $record): bool => self::canAssignRole($record))
+                    ->helperText(fn (?User $record): ?string => self::canAssignRole($record)
+                        ? null
+                        : __('cms.user.role_locked')),
 
                 Placeholder::make('role_guidance')
                     ->label(__('cms.user.role_guidance'))
@@ -76,8 +88,54 @@ class UserForm
 
                 Toggle::make('is_active')
                     ->label(__('cms.field.is_active'))
-                    ->default(true),
+                    ->default(true)
+                    // Deactivating an account is admin-only and never your own
+                    // (UserPolicy::deactivate). Same self-edit reachability as the
+                    // role field, so it is guarded identically.
+                    ->disabled(fn (?User $record): bool => ! self::canDeactivate($record))
+                    ->dehydrated(fn (?User $record): bool => self::canDeactivate($record)),
             ]);
+    }
+
+    /**
+     * Whether the current user may set the role on the record being edited.
+     *
+     * On create ($record is null) only an admin (user.manage) reaches this form
+     * at all, so role assignment is allowed. On edit it defers to the
+     * assignRole policy, which forbids editing your own role.
+     */
+    private static function canAssignRole(?User $record): bool
+    {
+        $actor = auth()->user();
+
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        if ($record === null) {
+            return $actor->can('create', User::class);
+        }
+
+        return $actor->can('assignRole', $record);
+    }
+
+    /**
+     * Whether the current user may toggle is_active on the record being edited.
+     * Mirrors canAssignRole but defers to the deactivate policy.
+     */
+    private static function canDeactivate(?User $record): bool
+    {
+        $actor = auth()->user();
+
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        if ($record === null) {
+            return $actor->can('create', User::class);
+        }
+
+        return $actor->can('deactivate', $record);
     }
 
     /**

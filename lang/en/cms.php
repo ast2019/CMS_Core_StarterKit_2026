@@ -273,6 +273,7 @@ return [
 
     'user' => [
         'password_help' => 'When editing, leave this blank to keep the current password.',
+        'role_locked' => 'You cannot change your own role; only an administrator may assign roles to others.',
         'role_guidance' => 'What each role can do',
         // Human-readable labels for the abilities in App\Enums\UserRole. The role
         // guidance in the form is built from the enum matrix and mapped through

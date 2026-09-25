@@ -279,6 +279,7 @@ return [
 
     'user' => [
         'password_help' => 'هنگام ویرایش، برای حفظ گذرواژهٔ فعلی این کادر را خالی بگذارید.',
+        'role_locked' => 'تغییر نقش خود امکان‌پذیر نیست؛ فقط مدیر می‌تواند نقش دیگران را تعیین کند.',
         'role_guidance' => 'دسترسی هر نقش',
         // Human-readable labels for the abilities in App\Enums\UserRole. The role
         // guidance in the form is built from the enum matrix and mapped through

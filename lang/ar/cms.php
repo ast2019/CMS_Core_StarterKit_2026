@@ -279,6 +279,7 @@ return [
 
     'user' => [
         'password_help' => 'عند التحرير، اترك هذا الحقل فارغًا للإبقاء على كلمة المرور الحالية.',
+        'role_locked' => 'لا يمكنك تغيير دورك؛ يستطيع المسؤول وحده إسناد الأدوار للآخرين.',
         'role_guidance' => 'صلاحيات كل دور',
         // Human-readable labels for the abilities in App\Enums\UserRole. The role
         // guidance in the form is built from the enum matrix and mapped through

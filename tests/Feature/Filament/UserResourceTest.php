@@ -92,6 +92,47 @@ it('keeps the existing password when the field is left blank on edit', function 
         ->and(Hash::check('original-password', $target->password))->toBeTrue();
 });
 
+it('blocks a non-admin from opening any user edit page, including their own', function (): void {
+    // Primary defence: the resource is gated on canViewAny() (user.manage), so a
+    // non-admin cannot mount the edit page at all — not even for their own record,
+    // which UserPolicy::update() would otherwise allow. This is what makes the
+    // self-role-escalation URL (/admin/users/{self}/edit) unreachable.
+    $editor = User::factory()->editor()->withMfaEnrolled()->create();
+
+    actingAs($editor);
+
+    Livewire::test(EditUser::class, ['record' => $editor->getRouteKey()])
+        ->assertForbidden();
+});
+
+it('denies a non-admin the assignRole and deactivate abilities on their own record', function (): void {
+    // Defence in depth behind the UserForm gate: the role field is disabled and
+    // dehydrated=false whenever assignRole is denied, and is_active likewise when
+    // deactivate is denied. For a non-admin acting on their own account both are
+    // false (UserPolicy::assignRole / ::deactivate forbid self-action for anyone
+    // without user.manage), so neither field could be written even if the page
+    // were reachable or the value were forged into the request payload.
+    $editor = User::factory()->editor()->create();
+
+    expect($editor->can('assignRole', $editor))->toBeFalse()
+        ->and($editor->can('deactivate', $editor))->toBeFalse()
+        ->and($editor->can('update', $editor))->toBeTrue();
+});
+
+it('lets an admin change another user role on the edit page', function (): void {
+    actingAs($this->admin);
+
+    $target = User::factory()->viewer()->create();
+
+    Livewire::test(EditUser::class, ['record' => $target->getRouteKey()])
+        ->assertFormFieldIsEnabled('role')
+        ->fillForm(['role' => UserRole::Editor->value])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($target->refresh()->role)->toBe(UserRole::Editor);
+});
+
 it('forbids a non-admin from managing users', function (): void {
     // The policy denies viewAny for any role without user.manage, which Filament
     // consults through the resource's default authorization.
