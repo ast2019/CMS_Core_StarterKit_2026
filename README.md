@@ -94,18 +94,42 @@ php artisan serve
 ```
 
 `--seed` runs `DatabaseSeeder`, which creates Persian demo content and four accounts, one
-per role (`admin@example.test` and so on). The panel is at `/admin`.
+per role. Each uses the password `password`, and the admin signs in as
+`admin@example.test`. The panel is at `/admin`.
 
 That seeder is **development only**: it builds demo content with model factories, and
-factories need `fakerphp/faker`, a dev dependency. A production install runs
-`php artisan db:seed --class=InstallSeeder --force` instead, which creates only what a live
-site cannot work without — the version row, the settings records and the branded 404 page.
+factories need `fakerphp/faker`, a dev dependency. Production uses `InstallSeeder` instead;
+see [Production install & first admin](#production-install--first-admin) below.
 
 A queue worker is needed for image conversions and search indexing:
 
 ```bash
 php artisan queue:work
 ```
+
+## Production install & first admin
+
+Production runs `php artisan db:seed --class=InstallSeeder --force`, which creates **no
+users** — only the version row, the settings singletons and the branded 404 page. Demo
+content and the `@example.test` accounts belong to `DatabaseSeeder` and never reach a live
+site.
+
+Create the first account, then promote it:
+
+```bash
+php artisan make:filament-user
+php artisan tinker --execute="App\Models\User::where('email','you@example.com')->update(['role'=>'admin'])"
+```
+
+`make:filament-user` sets the least-privileged role on purpose, so a new account is a viewer
+until the tinker command promotes it to admin.
+
+Media must live on the persistent storage path `/var/www/html/storage/app/public`. Without
+a volume mounted there every upload is lost on redeploy, silently, because the panel keeps
+working with an empty library.
+
+For the full container walk-through, see **[docs/coolify.md](docs/coolify.md)** — its
+Step 5 documents this same first-admin flow.
 
 ## Deployment
 

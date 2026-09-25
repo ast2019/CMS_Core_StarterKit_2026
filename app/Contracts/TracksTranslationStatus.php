@@ -43,5 +43,11 @@ interface TracksTranslationStatus
      */
     public function markTranslationReviewed(string $locale, ?int $userId = null): TranslationState;
 
+    /**
+     * Record that a locale now holds machine-translated text awaiting review
+     * (Requirement 5.3). Called by the AI translator after writing translations.
+     */
+    public function markTranslationAiTranslated(string $locale): TranslationState;
+
     public function sourceLocale(): string;
 }

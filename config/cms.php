@@ -123,6 +123,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | AI Translation
+    |--------------------------------------------------------------------------
+    |
+    | Machine translation of a record's source-locale fields into a target locale
+    | via OpenRouter (Requirement 5.3 — the ai_translated stage of the lifecycle).
+    |
+    | Only DEFAULTS live here. The three operational values — whether the feature
+    | is enabled, which model to use, and the API key — are edited by an
+    | administrator on the Settings page and stored in the `settings` table, not
+    | in code or .env, so one Core can be copied per client without a redeploy
+    | (Requirement 1.2). The key in particular must never live in a committed
+    | file. `default_model` is used only as the fallback when the admin has not
+    | overridden it; the admin can change the model afterwards.
+    |
+    */
+
+    'ai' => [
+        'translation' => [
+            // Fallback model. The admin can override this on the Settings page.
+            'default_model' => 'openai/gpt-4o-mini',
+
+            // OpenRouter's OpenAI-compatible chat-completions endpoint. Not a
+            // client-specific value, so it is safe to keep in code.
+            'endpoint' => 'https://openrouter.ai/api/v1/chat/completions',
+
+            // Seconds to wait on the outbound call before failing gracefully.
+            'timeout' => 30,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Media
     |--------------------------------------------------------------------------
     |
