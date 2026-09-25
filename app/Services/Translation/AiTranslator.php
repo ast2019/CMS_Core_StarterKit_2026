@@ -6,7 +6,9 @@ namespace App\Services\Translation;
 
 use App\Contracts\TracksTranslationStatus;
 use App\Enums\TranslationStatus;
+use App\Filament\Schemas\CmsRichEditor;
 use App\Models\Setting;
+use App\Support\TipTap;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -34,13 +36,24 @@ use Throwable;
  * body included — is machine-translated in one go, then a human edits afterward.
  * To keep the node tree valid, the translator never sends the raw JSON to the
  * model: it walks the tree, collects only the human-readable prose leaves (text
- * nodes' `text`, plus the prose attrs of the custom blocks), translates those
- * strings, and writes them back into the SAME node positions. Node types, marks,
- * and every structural attr (URLs, IDs, media_asset_id, gallery_id, tone, level,
- * layout, cta_url, max_items, ...) stay byte-identical, so the structure cannot
- * be corrupted. `slug` is still skipped because it is per-locale and editorially
- * owned (matching HasTranslationStatus::sourceContentHash, which also skips it),
- * and `robots_meta` is a directive token ("index, follow"), not prose.
+ * nodes' `text`, plus the prose values inside a custom block's `attrs.config`),
+ * translates those strings, and writes them back into the SAME node positions.
+ * Node types, marks, and every structural attr (URLs, IDs, media_asset_id,
+ * gallery_id, tone, level, layout, cta_url, max_items, ...) stay byte-identical,
+ * so the structure cannot be corrupted. `slug` is still skipped because it is
+ * per-locale and editorially owned (matching HasTranslationStatus::
+ * sourceContentHash, which also skips it), and `robots_meta` is a directive token
+ * ("index, follow"), not prose.
+ *
+ * Custom blocks are addressed through App\Support\TipTap rather than with a local
+ * copy of the layout. Filament stores EVERY block as node type `customBlock` and
+ * hides the block id and its field values inside `attrs`; this class previously
+ * kept its own map keyed by node type, which matched nothing a real editor ever
+ * saved, so block prose was silently left in Persian. One shared accessor now
+ * serves both this translator and search indexing, so they cannot drift apart.
+ * After a block's config is translated, the attrs Filament DERIVES from it
+ * (`label`, `preview`, `shouldApplyProseStylingToPreview`) are rebuilt through the
+ * block class — see refreshCachedBlockAttrs().
  *
  * WHY re-translation cannot duplicate work:
  *
@@ -63,20 +76,6 @@ class AiTranslator
      * @var list<string>
      */
     private const SKIP_ATTRIBUTES = ['slug', 'body', 'robots_meta'];
-
-    /**
-     * TipTap custom-block prose attrs to translate, keyed by block node `type`.
-     * Every other attr on these nodes (tone, level, cta_url, media_asset_id,
-     * gallery_id, layout, max_items, ...) is structural and left untouched.
-     * gallery_embed is intentionally absent: it carries no prose.
-     *
-     * @var array<string, list<string>>
-     */
-    private const BLOCK_PROSE_ATTRS = [
-        'callout' => ['title', 'body'],
-        'hero' => ['heading', 'lead', 'cta_label'],
-        'quote' => ['quote', 'attribution', 'attribution_role'],
-    ];
 
     /**
      * Translate a record's source-locale text into $targetLocale and persist it.
@@ -110,7 +109,17 @@ class AiTranslator
          * re-translate content the editor already finalised. This closes the gap
          * where translate() overwrote field values regardless of status while
          * markTranslationAiTranslated() only protected the status row afterward.
-         * not_translated / ai_translated / outdated locales may be re-translated.
+         *
+         * not_translated / ai_translated / outdated locales may be re-translated,
+         * and markTranslationAiTranslated() refuses exactly the same one status, so
+         * the guard here and the guard on the state row cannot disagree. That
+         * symmetry is load-bearing: while the trait guarded on wasReviewed() (true
+         * for `outdated` as well), an AI run over an outdated locale rewrote the
+         * text but left the row at `outdated` — which is sitemap-eligible under
+         * Decision D-5 — so unreviewed machine output went straight into the
+         * locale's sitemap. Re-translating an outdated locale is a legitimate
+         * action (the source has moved on), but it must land at ai_translated and
+         * drop out of sitemap eligibility, which is what the trait now does.
          */
         if ($record->translationStatusFor($targetLocale) === TranslationStatus::Reviewed) {
             throw AiTranslationException::alreadyReviewed();
@@ -275,13 +284,17 @@ class AiTranslator
             $segments[] = $text;
         }
 
-        if ($type !== null && isset(self::BLOCK_PROSE_ATTRS[$type]) && isset($node['attrs']) && is_array($node['attrs'])) {
-            foreach (self::BLOCK_PROSE_ATTRS[$type] as $attr) {
-                if ($this->isTranslatableString($node['attrs'][$attr] ?? null)) {
-                    /** @var string $value */
-                    $value = $node['attrs'][$attr];
-                    $segments[] = $value;
-                }
+        // A custom block: Filament stores it as type `customBlock` with the block
+        // id and its field values inside attrs (see TipTap's class docblock), so
+        // the prose is addressed through the shared accessors — the same ones
+        // search indexing uses, which is what keeps the two in step.
+        $config = TipTap::customBlockConfig($node);
+
+        foreach (TipTap::customBlockProseAttrs($node, forTranslation: true) as $attr) {
+            if ($this->isTranslatableString($config[$attr] ?? null)) {
+                /** @var string $value */
+                $value = $config[$attr];
+                $segments[] = $value;
             }
         }
 
@@ -312,12 +325,20 @@ class AiTranslator
             $node['text'] = $translations[$cursor++];
         }
 
-        if ($type !== null && isset(self::BLOCK_PROSE_ATTRS[$type]) && isset($node['attrs']) && is_array($node['attrs'])) {
-            foreach (self::BLOCK_PROSE_ATTRS[$type] as $attr) {
-                if ($this->isTranslatableString($node['attrs'][$attr] ?? null)) {
-                    $node['attrs'][$attr] = $translations[$cursor++];
-                }
+        $blockId = TipTap::customBlockId($node);
+        $config = TipTap::customBlockConfig($node);
+        $configChanged = false;
+
+        foreach (TipTap::customBlockProseAttrs($node, forTranslation: true) as $attr) {
+            if ($this->isTranslatableString($config[$attr] ?? null)) {
+                $config[$attr] = $translations[$cursor++];
+                $configChanged = true;
             }
+        }
+
+        if ($configChanged && $blockId !== null && isset($node['attrs']) && is_array($node['attrs'])) {
+            $node['attrs']['config'] = $config;
+            $node['attrs'] = $this->refreshCachedBlockAttrs($node['attrs'], $blockId, $config);
         }
 
         if (isset($node['content']) && is_array($node['content'])) {
@@ -329,6 +350,58 @@ class AiTranslator
         }
 
         return $node;
+    }
+
+    /**
+     * Regenerate the attrs Filament DERIVES from a custom block's config.
+     *
+     * Alongside `config`, Filament caches `label` (the collapsed title an editor
+     * sees in the document outline), `preview` (base64-encoded HTML of the block,
+     * rendered at save time) and `shouldApplyProseStylingToPreview`. They are
+     * snapshots of the config, so translating the config without rebuilding them
+     * leaves the editor looking at Persian previews above English content — and,
+     * worse, an editor who re-saves the English document would write that stale
+     * Persian preview back as if it were current.
+     *
+     * Rebuilding goes through the block class itself rather than re-implementing
+     * the label/preview format, so the output matches exactly what
+     * CustomBlockAction writes when a human edits the block.
+     *
+     * Only keys the node ALREADY carries are rebuilt: a document saved by an older
+     * Filament version, or a hand-built one, should not gain attrs it never had.
+     * An unregistered block id (a block removed since the article was written) is
+     * left completely alone — the config is still translated, but nothing is
+     * invented for a class that no longer exists.
+     *
+     * @param  array<string, mixed>  $attrs
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function refreshCachedBlockAttrs(array $attrs, string $blockId, array $config): array
+    {
+        $block = CmsRichEditor::block($blockId);
+
+        if ($block === null) {
+            return $attrs;
+        }
+
+        if (array_key_exists('label', $attrs)) {
+            $attrs['label'] = $block::getPreviewLabel($config);
+        }
+
+        if (array_key_exists('preview', $attrs)) {
+            $preview = $block::toPreviewHtml($config);
+
+            // toPreviewHtml() is allowed to return null (the base class default).
+            // Filament's own base64_encode() call would fail on that, so guard it.
+            $attrs['preview'] = is_string($preview) ? base64_encode($preview) : null;
+        }
+
+        if (array_key_exists('shouldApplyProseStylingToPreview', $attrs)) {
+            $attrs['shouldApplyProseStylingToPreview'] = $block::shouldApplyProseStylingToPreview($config);
+        }
+
+        return $attrs;
     }
 
     /**

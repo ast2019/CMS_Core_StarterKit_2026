@@ -37,6 +37,30 @@ class CmsRichEditor
         ];
     }
 
+    /**
+     * Resolve a registered block class by the id stored in a node's `attrs.id`.
+     *
+     * WHY here rather than through the RichEditor component: the component's own
+     * getCustomBlock() needs a live, container-bound Filament component, which
+     * only exists inside a Livewire request. Code that post-processes STORED
+     * documents — the AI translator regenerating a block's cached preview after
+     * translating its config — runs outside any form, so it resolves against this
+     * registry instead. blocks() is already the single source of truth for which
+     * blocks exist, so the two cannot disagree.
+     *
+     * @return class-string<RichContentCustomBlock>|null
+     */
+    public static function block(string $id): ?string
+    {
+        foreach (self::blocks() as $block) {
+            if ($block::getId() === $id) {
+                return $block;
+            }
+        }
+
+        return null;
+    }
+
     public static function make(string $name, string $locale): RichEditor
     {
         return RichEditor::make($name)

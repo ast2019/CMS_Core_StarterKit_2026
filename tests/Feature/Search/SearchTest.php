@@ -43,14 +43,35 @@ it('indexes body as plain text rather than TipTap JSON', function (): void {
 });
 
 it('includes prose from custom blocks in the indexed body', function (): void {
-    // A callout's text lives in attrs, not in child text nodes, so a naive walk would
-    // index the article while silently omitting its callouts.
+    /*
+     * A callout's text lives in attrs, not in child text nodes, so a naive walk
+     * would index the article while silently omitting its callouts.
+     *
+     * The node below is the shape Filament ACTUALLY saves: type `customBlock`,
+     * with the block id in attrs.id and the field values in attrs.config. This
+     * test used to assert against `{"type":"callout","attrs":{...}}`, which no
+     * editor produces — it passed only because the indexer made the same mistake,
+     * so real callouts were never searchable.
+     */
     $content = Content::factory()->create([
         'body' => ['fa' => [
             'type' => 'doc',
             'content' => [
                 ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'متن اصلی']]],
-                ['type' => 'callout', 'attrs' => ['tone' => 'info', 'body' => 'نکتهٔ مهم درون بلوک']],
+                [
+                    'type' => 'customBlock',
+                    'attrs' => [
+                        'config' => [
+                            'tone' => 'info',
+                            'title' => 'عنوان بلوک',
+                            'body' => 'نکتهٔ مهم درون بلوک',
+                        ],
+                        'id' => 'callout',
+                        'label' => 'هشدار: عنوان بلوک',
+                        'preview' => base64_encode('<div>نکتهٔ مهم درون بلوک</div>'),
+                        'shouldApplyProseStylingToPreview' => false,
+                    ],
+                ],
             ],
         ]],
     ]);
@@ -58,7 +79,11 @@ it('includes prose from custom blocks in the indexed body', function (): void {
     $document = $content->forSearchLocale('fa')->toSearchableArray();
 
     expect($document['body'])->toContain('متن اصلی')
-        ->and($document['body'])->toContain('نکتهٔ مهم درون بلوک');
+        ->and($document['body'])->toContain('عنوان بلوک')
+        ->and($document['body'])->toContain('نکتهٔ مهم درون بلوک')
+        // The cached base64 preview is structural, never prose: indexing it would
+        // put a blob of encoded HTML into the search document.
+        ->and($document['body'])->not->toContain(base64_encode('<div>نکتهٔ مهم درون بلوک</div>'));
 });
 
 it('indexes tag and category names alongside the text', function (): void {

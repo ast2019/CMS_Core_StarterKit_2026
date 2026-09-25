@@ -117,9 +117,31 @@ trait HasTranslationStatus
      * Used by the AI translator after it writes translations. syncTranslationStatuses()
      * only assigns ai_translated to a brand-new locale row; an existing
      * not_translated row is left untouched, so this makes the transition explicit.
-     * A locale a human already reviewed is left alone rather than downgraded —
-     * re-running the machine over signed-off work must not silently revert the
-     * sign-off; genuine staleness is handled by the source-hash outdated path.
+     *
+     * Only `reviewed` is refused. Re-running the machine over signed-off work
+     * must not silently revert the sign-off, and AiTranslator::translate() refuses
+     * that locale before it makes any request, so the two layers agree.
+     *
+     * `outdated` IS accepted, and that is the whole point of this method. An
+     * outdated locale is the natural case for re-translating: the Persian source
+     * moved on and the old English text no longer matches it. But the row must
+     * genuinely LEAVE the reviewed world when it does, because `outdated` is
+     * sitemap-eligible under Decision D-5 while `ai_translated` is not. An earlier
+     * version guarded on wasReviewed(), which is true for `outdated` too, so an AI
+     * run over an outdated locale rewrote the text and left the status alone —
+     * publishing raw machine output to that locale's sitemap, the exact thing
+     * D-5 exists to prevent. Three columns are therefore cleared alongside the
+     * status:
+     *
+     *  - source_hash: pinned at the moment of a human review, to detect staleness
+     *    against. The text it described has just been overwritten, so it now
+     *    describes nothing.
+     *  - reviewed_by / reviewed_at: they credited a named person for text that a
+     *    machine has since replaced. Leaving them makes the review queue attribute
+     *    machine output to that person.
+     *
+     * A human re-reviewing the locale re-pins all three through
+     * markTranslationReviewed().
      */
     public function markTranslationAiTranslated(string $locale): TranslationState
     {
@@ -127,10 +149,15 @@ trait HasTranslationStatus
         $state = $this->translationStates()->firstWhere('locale', $locale)
             ?? $this->translationStates()->make(['locale' => $locale]);
 
-        if (! $state->exists || ! $state->status->wasReviewed()) {
+        if (! $state->exists || $state->status !== TranslationStatus::Reviewed) {
             $state = $this->translationStates()->updateOrCreate(
                 ['locale' => $locale],
-                ['status' => TranslationStatus::AiTranslated],
+                [
+                    'status' => TranslationStatus::AiTranslated,
+                    'source_hash' => null,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                ],
             );
         }
 
