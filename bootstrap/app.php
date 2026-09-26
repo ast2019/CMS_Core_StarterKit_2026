@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\HandleRedirects;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -80,6 +81,67 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(
             at: $proxies === '*' || $proxies === '' ? '*' : array_map('trim', explode(',', $proxies)),
         );
+    })
+    ->withSchedule(function (Schedule $schedule): void {
+        /*
+         * SCHEDULED PUBLISHING.
+         *
+         * The only task here that is load-bearing for correctness. A record with
+         * status `published` and a future publish_date is already excluded by
+         * HasPublishStatus::live() and already included once the clock passes it — but
+         * the Delivery cache is invalidated by model WRITES (DeliveryCacheObserver),
+         * and nothing is written at the moment an embargo elapses. Without this, "goes
+         * live at 8am" meant "goes live whenever the cached payload happens to expire".
+         *
+         * Note what it does NOT fix: the sitemaps are regenerated per request and served
+         * with `Cache-Control: max-age=3600`, so a crawler can hold a sitemap without
+         * the new URL for up to an hour regardless. That is an HTTP cache, not a
+         * server-side one, and no tag purge reaches it.
+         *
+         * Every minute, because the panel lets an editor pick a publish time to the
+         * minute and a scheduler that ran hourly would make that precision a lie. The
+         * task is three COUNT queries — `contents` and `galleries` carry a
+         * (status, publish_date) index; `pages` does not, and is small enough not to
+         * care — and it returns without touching the cache when nothing is due, which
+         * is the overwhelmingly common case.
+         *
+         * withoutOverlapping(2): if a run is ever slow, a second must not start beside
+         * it and invalidate the same tags again. The EXPIRY is the important argument.
+         * Laravel's default is 1440 minutes, and the mutex is released on SIGTERM but
+         * NOT on a SIGKILL, an OOM kill or a host failure — so one hard-killed run
+         * would silence scheduled publishing for a whole day while `schedule:list`
+         * still reported the task as registered. Two minutes bounds that to a single
+         * skipped tick.
+         *
+         * onOneServer is deliberately NOT set: it needs a lock-capable cache driver and
+         * the default store here is the database. A multi-server deployment should add
+         * it.
+         */
+        $schedule->command('cms:publish-due')
+            ->everyMinute()
+            ->withoutOverlapping(2);
+
+        /*
+         * QUEUE HYGIENE. Both tables grow without bound otherwise: job_batches on
+         * every batch, failed_jobs on every failure. Neither is content, and losing
+         * old rows costs nothing once the failures in them have been read.
+         */
+        $schedule->command('queue:prune-batches --hours=48')->daily();
+        $schedule->command('queue:prune-failed --hours=336')->weekly();
+
+        /*
+         * DELIBERATELY NOT SCHEDULED, so the absences are not mistaken for oversights:
+         *
+         *  - The AUDIT LOG is never pruned. RULE #8 makes it append-only with no
+         *    opt-out, and a retention policy is exactly the opt-out it forbids. It
+         *    grows, and that is the intended trade.
+         *  - CONTENT VERSIONS need no task. HasContentVersions::pruneVersions() already
+         *    runs inside the write that creates a version, so the cms.versions.keep
+         *    ceiling is enforced continuously rather than nightly.
+         *  - SITEMAPS are generated on demand and cached, not written to disk (RULE #9
+         *    means local storage is not shared between containers), so there is nothing
+         *    to regenerate on a timer.
+         */
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
