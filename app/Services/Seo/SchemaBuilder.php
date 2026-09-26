@@ -9,7 +9,7 @@ use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
 use App\Models\MediaAsset;
-use App\Models\Setting;
+use App\Support\SiteIdentity;
 use App\Support\TipTap;
 use Spatie\SchemaOrg\BaseType;
 use Spatie\SchemaOrg\Contracts\ArticleContract;
@@ -197,14 +197,13 @@ class SchemaBuilder
      */
     public function organization(string $locale): ?array
     {
-        $siteName = Setting::get(Setting::SITE_NAME);
+        $name = SiteIdentity::translatedName($locale);
 
-        $name = is_array($siteName)
-            ? ($siteName[$locale] ?? $siteName[config('cms.locales.source')] ?? null)
-            : $siteName;
-
-        if (blank($name)) {
-            // `name` is required; without it the object is invalid.
+        if ($name === null) {
+            // `name` is required; without it the object is invalid. translatedName()
+            // returns null rather than falling back to app.name precisely so an
+            // unconfigured install omits the Organization instead of telling Google
+            // the publisher is called "Laravel".
             return null;
         }
 
@@ -222,19 +221,13 @@ class SchemaBuilder
             ->setProperty('@id', $this->urls->withFragment($home, self::ID_ORGANIZATION));
 
         /*
-         * Not annotated as array<int, string>: the value comes from a JSON settings
-         * column an editor filled in, so an entry could be anything. Filtering on
-         * is_string() first is what makes the rest of this safe, and asserting the type
-         * instead would just move the failure somewhere less obvious.
-         *
-         * @var array<array-key, mixed> $social
+         * Read through SiteIdentity, which owns the two awkward unwrapping rules the
+         * `settings.value` array cast imposes — including the one that turns a
+         * single-element list back into a bare string. The filtering to http(s) values
+         * lives there too, so the `sameAs` emitted here and the `social_links` the
+         * Delivery API returns cannot disagree about which entries count.
          */
-        $social = (array) Setting::get(Setting::SOCIAL_LINKS, []);
-
-        $urls = array_values(array_filter(
-            $social,
-            fn (mixed $url): bool => is_string($url) && str_starts_with($url, 'http'),
-        ));
+        $urls = SiteIdentity::socialLinks();
 
         if ($urls !== []) {
             // sameAs is how a search engine links a site to its social profiles.
@@ -633,12 +626,8 @@ class SchemaBuilder
 
     private function homeName(string $locale): string
     {
-        $siteName = Setting::get(Setting::SITE_NAME);
-
-        if (is_array($siteName)) {
-            return (string) ($siteName[$locale] ?? $siteName[config('cms.locales.source')] ?? 'Home');
-        }
-
-        return (string) ($siteName ?? 'Home');
+        // 'Home' rather than app.name here: this is a BreadcrumbList crumb label, so
+        // a generic word is a better fallback than the framework's default app name.
+        return SiteIdentity::translatedName($locale) ?? 'Home';
     }
 }

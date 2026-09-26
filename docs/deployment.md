@@ -140,6 +140,51 @@ php artisan horizon
 * * * * * cd /var/www/cms && php artisan schedule:run >> /dev/null 2>&1
 ```
 
+This is **not optional if you use scheduled publishing.** What is registered (see
+`bootstrap/app.php`):
+
+| Task | When | Why |
+|---|---|---|
+| `cms:publish-due` | every minute | Refreshes the Delivery content and sitemap caches when a record's embargo elapses |
+| `queue:prune-batches --hours=48` | daily | `job_batches` grows on every batch |
+| `queue:prune-failed --hours=336` | weekly | `failed_jobs` grows on every failure |
+
+`cms:publish-due` is the one that matters for correctness. Scheduling works at the
+database level without it — a record with status *published* and a future
+`publish_date` is excluded by the `live()` scope and included once the clock passes it,
+with no status transition involved. But Delivery responses are cached and invalidated on
+model **writes**, and at the instant an embargo elapses nothing is written: no save, no
+event, no observer. Without this tick a scheduled article stays behind a cached payload
+until its TTL expires, and the cached sitemap can stay stale considerably longer, so
+"publish at 8am" is not a promise the system keeps.
+
+It runs every minute because the panel lets an editor choose a publish time to the
+minute. The task is three `COUNT`s — `contents` and `galleries` carry a
+`(status, publish_date)` index, `pages` does not and is small enough not to care — and it
+returns without touching the cache when nothing is due, which is almost always.
+
+If you change the interval, raise `CMS_PUBLISH_LOOKBACK` with it: the lookback window
+must exceed the interval, or a publish landing between two runs is never noticed.
+
+There is no catch-up, because the check is a window rather than a stored watermark. An
+embargo that elapses while the scheduler is **not** running — a deploy, a paused cron, a
+killed container — is outside the window by the time it resumes, and that record waits out
+the Delivery TTL. After a deployment, sweep it:
+
+```bash
+php artisan cms:publish-due --lookback=86400
+```
+
+What this does **not** fix: the sitemaps are regenerated per request and served with
+`Cache-Control: public, max-age=3600`, so a crawler can hold a sitemap without the new URL
+for up to an hour whatever the application cache does. Shorten that `max-age` in
+`SitemapController` if an hour matters for a given site.
+
+Two things are deliberately **not** scheduled. The audit log is never pruned — RULE #8
+makes it append-only with no opt-out, and a retention policy is that opt-out. Content
+versions need no task either: `cms.versions.keep` is enforced inside the write that
+creates a version, not nightly.
+
 ## Frontend URL
 
 Set `CMS_FRONTEND_URL` when the public site is a separate deployment, which is the
@@ -321,10 +366,20 @@ Everything below is data, not code — the Core ships no client-specific values
 (Requirement 1.2).
 
 - [ ] `APP_NAME`, `APP_URL`, `CMS_FRONTEND_URL`
-- [ ] Site name, logo, favicon and social links in **Settings**
-- [ ] Analytics and Search Console verification codes in **Settings**
-- [ ] Contact address, phone and map coordinates in **Contact**
-- [ ] `CMS_BRAND_PRIMARY` for the panel accent colour
+- [ ] **Site name (per locale) and social links** — Settings → *General*. The name is
+      published to the frontend, used as the Organization name in the JSON-LD, and shown
+      in this panel's own header, so an admin can tell which client's backoffice they are
+      in. `InstallSeeder` writes the placeholder «سایت نمونه»; a site that skips this
+      launches calling itself that.
+- [ ] **Analytics and verification codes** — Settings → *Analytics & verification*.
+      Stored here and handed to the frontend to render; this panel never loads them
+      (RULE #4 — the backoffice makes no external requests).
+- [ ] **Contact address, phone, office hours, form labels and map coordinates** —
+      Settings → *Contact*. Latitude and longitude are both-or-neither; with both, the
+      LocalBusiness JSON-LD is emitted.
+- [ ] `CMS_BRAND_PRIMARY` for the panel accent colour. Note that the logo and favicon are
+      **not** configurable yet — the accent colour and the site name are the whole of the
+      panel's branding today.
 - [ ] Disable unused modules in `config/cms.php`
 - [ ] **Designate a homepage.** Open the page that belongs at `/fa` and set its *Page
       role* to *Homepage*. Optional — a site that skips this behaves exactly as before,

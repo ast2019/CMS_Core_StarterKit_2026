@@ -15,6 +15,7 @@ use App\Models\Page;
 use App\Models\Setting;
 use App\Models\Slide;
 use App\Services\Api\DeliveryCache;
+use App\Support\SiteIdentity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -173,13 +174,17 @@ class SiteController extends Controller
             $this->cache->key('site.settings', $locale),
             [DeliveryCache::TAG_SETTINGS],
             function () use ($locale): array {
-                $siteName = Setting::get(Setting::SITE_NAME);
-
                 return [
-                    'site_name' => is_array($siteName)
-                        ? ($siteName[$locale] ?? $siteName[config('cms.locales.source')] ?? null)
-                        : $siteName,
-                    'social_links' => Setting::get(Setting::SOCIAL_LINKS, []),
+                    'site_name' => SiteIdentity::translatedName($locale),
+
+                    /*
+                     * Always a LIST. Read straight from Setting, one configured profile
+                     * came back as a bare string — the `settings.value` array cast
+                     * unwraps a single-element list — so the shape of this field
+                     * depended on how many links an editor had added. SiteIdentity owns
+                     * that rule now.
+                     */
+                    'social_links' => SiteIdentity::socialLinks(),
 
                     /*
                      * Analytics and verification tokens are emitted for the FRONTEND

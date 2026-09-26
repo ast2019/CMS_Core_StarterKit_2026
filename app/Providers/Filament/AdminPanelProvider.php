@@ -10,6 +10,8 @@ use App\Filament\Widgets\PublishingActivityWidget;
 use App\Filament\Widgets\RecentActivityWidget;
 use App\Filament\Widgets\TranslationProgressWidget;
 use App\Filament\Widgets\VersionWidget;
+use App\Http\Middleware\PreventPanelIndexing;
+use App\Support\SiteIdentity;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\Pages\EditProfile;
 use Filament\FontProviders\LocalFontProvider;
@@ -90,6 +92,25 @@ class AdminPanelProvider extends PanelProvider
                 provider: LocalFontProvider::class,
             )
 
+            /*
+             * The panel is named after the SITE, read from Settings.
+             *
+             * This Core is copied per client and an administrator may have several
+             * backoffices open; "Laravel" in the header on all of them answers the one
+             * question the header is there to answer. The site name is already the
+             * Organization's name in the JSON-LD and already published to the frontend
+             * over the Delivery API, so this is the same value the public site shows,
+             * read from the same place rather than duplicated into config or .env.
+             *
+             * A Closure, not a string: this method runs while the panel is being
+             * registered, and resolving the name here would query the database on every
+             * boot — including during `migrate` on a database that has no `settings`
+             * table yet. Deferred, it runs when a page renders, against the cached
+             * settings map, and SiteIdentity falls back to config('app.name') when
+             * nothing is configured.
+             */
+            ->brandName(fn (): string => SiteIdentity::name())
+
             // Custom branded theme. Brand colour is configurable per site so
             // the Core carries no client-specific value (Requirement 1.2).
             ->colors([
@@ -153,6 +174,14 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+
+                /*
+                 * Keep the backoffice out of search results. robots.txt already
+                 * disallows this path, but robots.txt is a request and the login page
+                 * is public; this header applies to every panel response, including
+                 * the non-HTML ones a meta tag could not cover.
+                 */
+                PreventPanelIndexing::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

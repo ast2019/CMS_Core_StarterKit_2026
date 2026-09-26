@@ -682,4 +682,28 @@ return [
         'panel_path' => env('CMS_PANEL_PATH', 'admin'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduling
+    |--------------------------------------------------------------------------
+    |
+    | The scheduled tasks are registered in bootstrap/app.php; this is the one
+    | value worth tuning per deployment.
+    |
+    | `publish_lookback` is how far back cms:publish-due looks for a record whose
+    | scheduled publish time has just passed. It MUST be larger than the interval
+    | the command runs at, or a publish landing between two runs is never noticed
+    | and the article stays behind a cached response until its TTL expires. The
+    | default has a 30-second margin over the one-minute schedule.
+    |
+    | Raising it is safe and cheap: the command only counts rows, and invalidating
+    | a cache tag twice costs nothing. Lowering it below the interval is the one
+    | mistake to avoid.
+    |
+    */
+
+    'scheduling' => [
+        'publish_lookback' => (int) env('CMS_PUBLISH_LOOKBACK', 90),
+    ],
+
 ];
