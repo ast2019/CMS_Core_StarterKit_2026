@@ -10,6 +10,7 @@ use App\Filament\Schemas\TranslatableTabs;
 use App\Jobs\TranslateRecordJob;
 use App\Models\TranslationState;
 use App\Services\Translation\AiTranslator;
+use App\Support\Dates\LocalizedDate;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -127,7 +128,10 @@ class TranslationReview extends Page implements HasTable
                 TextColumn::make('reviewer.name')
                     ->label(__('cms.translation_review.last_reviewed_by'))
                     ->placeholder('—')
-                    ->description(fn (TranslationState $record): ?string => $record->reviewed_at?->format('Y-m-d'))
+                    ->description(fn (TranslationState $record): ?string => LocalizedDate::format(
+                        $record->reviewed_at,
+                        'date',
+                    ))
                     ->toggleable(),
             ])
             ->filters([

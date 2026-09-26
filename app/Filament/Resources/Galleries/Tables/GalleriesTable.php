@@ -6,6 +6,8 @@ namespace App\Filament\Resources\Galleries\Tables;
 
 use App\Enums\ContentStatus;
 use App\Models\Gallery;
+use App\Support\Dates\LocalizedDate;
+use Carbon\CarbonInterface;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -38,7 +40,7 @@ class GalleriesTable
 
                 TextColumn::make('publish_date')
                     ->label(__('cms.field.publish_date'))
-                    ->dateTime('Y-m-d')
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state, 'date'))
                     ->sortable()
                     ->toggleable(),
             ])

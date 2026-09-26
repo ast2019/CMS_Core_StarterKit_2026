@@ -49,6 +49,8 @@ class GalleryResource extends JsonResource
             'description' => $this->translated($this->resource, 'description', $locale),
 
             'publish_date' => $this->publish_date?->toIso8601String(),
+            'publish_date_display' => $this->displayDate($this->publish_date, $locale),
+
             'status' => $this->status->value,
 
             'cover' => $this->whenLoaded('mediaAssets', function (): ?MediaAssetResource {

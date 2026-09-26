@@ -98,6 +98,161 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dates & Calendars
+    |--------------------------------------------------------------------------
+    |
+    | Which calendar, which digits and which timezone a date is DISPLAYED in,
+    | per locale. Storage is untouched by everything here: the database keeps UTC
+    | Gregorian timestamps and the Delivery API keeps emitting ISO-8601, because a
+    | machine-readable instant must stay machine-readable (see `api` below).
+    |
+    | Implemented with ext-intl / ICU rather than a Jalali PHP package. ICU is
+    | already a hard requirement of this image (the Dockerfile installs it for
+    | "locale-aware formatting for fa/en/ar"), it ships the month names, weekday
+    | names and digit shapes for all three locales, and its Persian calendar is
+    | the astronomical one — so 1403 correctly has a 30th of Esfand, which the
+    | common 33-year-cycle approximations get wrong.
+    |
+    */
+
+    'dates' => [
+        /*
+         * The timezone dates are rendered in, and that the admin's date pickers
+         * read and write.
+         *
+         * SEPARATE FROM config('app.timezone'), which stays UTC — storing local
+         * time is how a site ends up with ambiguous rows across a DST change.
+         * This is a display concern only.
+         *
+         * It matters more than it looks for Jalali: Tehran is UTC+3:30, so
+         * anything published after 20:30 UTC already belongs to the NEXT Persian
+         * day. Formatting a UTC instant without shifting it first shows editors
+         * the wrong date for every evening publication.
+         */
+        'timezone' => env('CMS_DISPLAY_TIMEZONE', 'Asia/Tehran'),
+
+        /*
+         * ICU calendar per locale.
+         *
+         * `ar` is GREGORIAN on purpose. Arabic is a language, not a calendar:
+         * news and civil dates across the Arab world are overwhelmingly
+         * Gregorian, written with Arabic month names and Arabic-Indic digits —
+         * which is exactly what `gregorian` + the `arab` numbering system below
+         * produces. A site that genuinely wants the Hijri calendar sets
+         * 'islamic-umalqura' here; that is a per-site editorial decision, not a
+         * default the Core should impose.
+         *
+         * DISPLAY accepts any ICU calendar keyword — gregorian, persian,
+         * islamic-umalqura, islamic-civil, buddhist, hebrew, japanese — because
+         * formatting is ICU's job either way.
+         *
+         * The admin's date PICKER is narrower, and knowingly so. It draws its grid
+         * from a precomputed table addressed as (year * 12 + month), so it supports
+         * calendars with twelve months of a fixed length per year: persian,
+         * islamic-*, buddhist. For anything else — Hebrew, whose years have twelve
+         * or thirteen months, or an era-relative calendar like japanese —
+         * LocalizedDate::calendarTable() returns null and the field falls back to
+         * Filament's stock Gregorian picker. Dates still DISPLAY in the configured
+         * calendar everywhere; only the picker grid reverts.
+         */
+        'calendars' => [
+            'fa' => 'persian',
+            'en' => 'gregorian',
+            'ar' => 'gregorian',
+        ],
+
+        /*
+         * ICU numbering system per locale — which digit GLYPHS are used.
+         * `arabext` is the Persian (Eastern Arabic-Indic) set ۰۱۲۳۴۵۶۷۸۹,
+         * `arab` the Arabic-Indic set ٠١٢٣٤٥٦٧٨٩, `latn` the ASCII set.
+         */
+        'numbers' => [
+            'fa' => 'arabext',
+            'en' => 'latn',
+            'ar' => 'arab',
+        ],
+
+        /*
+         * Named ICU date patterns.
+         *
+         * Explicit patterns rather than ICU skeletons (`yMMMMd` and friends).
+         * Skeletons resolve to whatever the installed ICU version considers the
+         * locale's preferred form, which means the panel's date format would
+         * change under an ICU upgrade and the tests asserting it would break for
+         * no reason in the application. These are stable.
+         *
+         * Every separator here (`/`, `-`, `:`, space) is bidi-neutral, so one
+         * pattern set renders correctly in all three locales. Avoid adding a
+         * literal comma: `،` is right for fa/ar and wrong for en.
+         *
+         * Any call site may also pass a raw ICU pattern instead of a name.
+         */
+        'patterns' => [
+            'date' => 'yyyy/MM/dd',
+            'date_time' => 'yyyy/MM/dd HH:mm',
+            'date_time_seconds' => 'yyyy/MM/dd HH:mm:ss',
+            'long' => 'd MMMM yyyy',
+            'long_time' => 'd MMMM yyyy - HH:mm',
+            'weekday' => 'EEEE d MMMM yyyy',
+            'month_year' => 'MMMM yyyy',
+            // Chart axis labels. `yyyy` not `yy`: a two-digit Persian year reads
+            // as «تیر ۰۵», which is not a year anyone recognises.
+            'month_short' => 'MMM yyyy',
+            'time' => 'HH:mm',
+        ],
+
+        /*
+         * Delivery API date output.
+         *
+         * Every ISO-8601 date in a Delivery payload is accompanied by a
+         * pre-rendered `*_display` string in the calendar of the locale the
+         * request resolved to. The ISO value is never replaced — a consumer that
+         * needs to sort, diff or re-format reads that one and ignores the other.
+         *
+         * This is the headless-frontend half of the feature. The frontend is "not
+         * part of this repo, any technology" (steering/product.md), so it cannot
+         * be assumed to own a Persian calendar: in JavaScript the correct answer
+         * is Intl with `fa-IR-u-ca-persian`, which is both non-obvious and
+         * routinely got wrong by reaching for a date library instead. The CMS
+         * already knows the request locale and already owns ICU, so it formats
+         * once, server-side, and every frontend prints a string that agrees with
+         * what the editor saw in the panel.
+         *
+         * `pattern` names the format from `patterns` above — a display date is
+         * prose, so the default is the long form («۵ مهر ۱۴۰۵») rather than the
+         * numeric one. Both `meta.calendar` and `meta.timezone` are reported
+         * alongside it so a consumer can tell what it is looking at.
+         *
+         * Deliberately NOT behind an on/off switch: the response SHAPE has to be
+         * stable, because RULE #3 pins it in docs/openapi.json and a key that
+         * comes and goes with an env var would make the committed spec wrong for
+         * half the installations.
+         */
+        'api' => [
+            'pattern' => 'long',
+        ],
+
+        /*
+         * How many years of calendar the admin's date picker can reach.
+         *
+         * The picker is handed a precomputed table of month lengths rather than
+         * calendar arithmetic (see App\Support\Dates\LocalizedDate::calendarTable),
+         * so the span is finite and costs roughly 12 bytes per year of payload.
+         *
+         * The default reaches back far enough to date an archive — 120 Persian
+         * years is about 1907 — because a news site importing historical material
+         * is a normal case, and 30 years forward is well past any editorial
+         * schedule. A date outside the span still displays (in Gregorian) and
+         * cannot be corrupted; it simply cannot be picked from the grid.
+         */
+        'picker' => [
+            'years_before' => 120,
+            'years_after' => 30,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Translation Lifecycle
     |--------------------------------------------------------------------------
     |

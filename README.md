@@ -28,6 +28,10 @@ Pint clean.
 
 **Three locales (fa / en / ar)**
 - Per-locale fields, slugs and URLs, with RTL handled properly for both Persian and Arabic
+- Dates in the reader's own calendar: Jalali throughout the Persian admin panel — including
+  a Persian date picker — and, for the frontend, every API date carried both as ISO-8601 and
+  pre-rendered in the locale's calendar. Storage stays UTC Gregorian. Any ICU calendar is a
+  config key; see [docs/dates.md](docs/dates.md)
 - A translation lifecycle — `not_translated → ai_translated → reviewed → outdated` — with a
   review screen, and an `outdated` flag raised automatically when the source changes
 - Only `reviewed` and `outdated` content is eligible for sitemaps, hreflang and search.
@@ -88,7 +92,9 @@ Adding any of these is a defect, not an enhancement, and tests assert their abse
 | Extensions | `mbstring`, `intl`, `gd`, `exif`, `pdo_mysql`, `zip`, `bcmath`, `openssl`, `fileinfo` |
 
 `gd` is not optional in practice: Media Library generates thumbnail and WebP conversions
-with it.
+with it. `intl` is not optional either, and is declared in `composer.json` for that reason:
+ICU provides the Persian calendar, month names and digit shapes the panel and API render
+dates with.
 
 **Optional:** Redis (faster cache, and the only store supporting cache tags), Meilisearch
 (typo tolerance and relevance ranking), ffmpeg (fills a video's duration and dimensions
@@ -191,10 +197,11 @@ the other sees, and the audit has already caught a real defect the tests could n
 ```
 app/
   Concerns/        shared model behaviour (featured image, slugs, SEO, auditing)
-  Filament/        the admin panel: resources, pages, custom blocks
+  Filament/        the admin panel: resources, pages, widgets, fields, custom blocks
   Http/            controllers (Delivery + Management), middleware, resources
   Services/        SEO, sitemaps, search, media, content
-docs/              deployment guides, blueprint, committed OpenAPI spec
+  Support/         stateless helpers (TipTap, script folding, dates/calendars)
+docs/              deployment guides, blueprint, date system, committed OpenAPI spec
 .kiro/             the spec this was built from: requirements, design, tasks
 tests/
   Architecture/    the nine hard rules, enforced as tests

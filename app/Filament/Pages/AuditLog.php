@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Support\Dates\LocalizedDate;
 use BackedEnum;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
@@ -65,7 +67,12 @@ class AuditLog extends Page implements HasTable
             ->columns([
                 TextColumn::make('created_at')
                     ->label(__('cms.audit.when'))
-                    ->dateTime('Y-m-d H:i:s')
+                    // Seconds are kept: this is the forensic view, and two writes
+                    // in the same minute have to be orderable by eye.
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format(
+                        $state,
+                        'date_time_seconds',
+                    ))
                     ->sortable(),
 
                 TextColumn::make('causer.name')

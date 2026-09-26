@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Pages\Schemas;
 
 use App\Enums\ContentStatus;
+use App\Filament\Forms\Components\LocalizedDateTimePicker;
 use App\Filament\Schemas\CmsRichEditor;
 use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Page;
 use Closure;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
@@ -67,7 +67,7 @@ class PageForm
                         ->default(ContentStatus::Draft->value)
                         ->required(),
 
-                    DateTimePicker::make('publish_date')
+                    LocalizedDateTimePicker::make('publish_date')
                         ->label(__('cms.field.publish_date'))
                         ->seconds(false),
 

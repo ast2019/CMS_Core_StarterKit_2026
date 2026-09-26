@@ -7,13 +7,13 @@ namespace App\Filament\Resources\Contents\Schemas;
 use App\Enums\ArticleSchemaType;
 use App\Enums\ContentStatus;
 use App\Enums\MediaRole;
+use App\Filament\Forms\Components\LocalizedDateTimePicker;
 use App\Filament\Schemas\CmsRichEditor;
 use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Category;
 use App\Models\Content;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -80,7 +80,7 @@ class ContentForm
                         ->required()
                         ->live(),
 
-                    DateTimePicker::make('publish_date')
+                    LocalizedDateTimePicker::make('publish_date')
                         ->label(__('cms.field.publish_date'))
                         ->seconds(false)
                         // Requirement 3.6 — a published record with a future date is

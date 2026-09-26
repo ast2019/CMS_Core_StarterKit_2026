@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Changelog;
 use App\Models\SystemInfo;
+use App\Support\Dates\LocalizedDate;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Collection;
 
@@ -33,7 +34,18 @@ class VersionWidget extends Widget
 
     public function getInstalledAt(): ?string
     {
-        return SystemInfo::current()->installed_at?->format('Y-m-d');
+        return LocalizedDate::format(SystemInfo::current()->installed_at, 'date');
+    }
+
+    /**
+     * A release date in the panel locale's calendar.
+     *
+     * Formatted here rather than in the Blade view so the widget can be asserted
+     * against directly, and so the view has no formatting logic in it.
+     */
+    public function getReleaseDate(Changelog $release): ?string
+    {
+        return LocalizedDate::format($release->released_at, 'date');
     }
 
     /**

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Redirects\Tables;
 
 use App\Enums\RedirectType;
+use App\Models\Redirect;
+use App\Support\Dates\LocalizedDate;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -38,7 +40,12 @@ class RedirectsTable
                     ->sortable()
                     // Makes dead redirects visible so the table can be pruned on
                     // evidence rather than guesswork.
-                    ->description(fn ($record): ?string => $record->last_hit_at?->diffForHumans()),
+                    //
+                    // Relative time rather than a date, so it stays readable next
+                    // to the hit count. LocalizedDate::human() routes through
+                    // Carbon's own Persian phrasing and then converts the digits,
+                    // which Carbon leaves in ASCII whatever the locale.
+                    ->description(fn (Redirect $record): ?string => LocalizedDate::human($record->last_hit_at)),
 
                 TextColumn::make('source_type')
                     ->label(__('cms.field.author'))

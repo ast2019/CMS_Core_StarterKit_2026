@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\ContactSubmissions\Schemas;
 
+use App\Support\Dates\LocalizedDate;
+use Carbon\CarbonInterface;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -27,10 +29,10 @@ class ContactSubmissionForm
                     TextEntry::make('subject')->label(__('cms.field.subject')),
                     TextEntry::make('created_at')
                         ->label(__('cms.field.publish_date'))
-                        ->dateTime('Y-m-d H:i'),
+                        ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state)),
                     TextEntry::make('read_at')
                         ->label(__('cms.field.read_at'))
-                        ->dateTime('Y-m-d H:i')
+                        ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state))
                         ->placeholder(__('cms.table.unread')),
                 ]),
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Resources\V1\Concerns;
 
 use App\Contracts\TracksTranslationStatus;
+use App\Support\Dates\LocalizedDate;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
@@ -68,6 +70,23 @@ trait ResolvesLocale
     }
 
     /**
+     * A date rendered for a human, in the calendar of the resolved locale.
+     *
+     * Always emitted NEXT TO the ISO-8601 value, never instead of it. The ISO
+     * string is the contract — sortable, diffable, unambiguous — and this is the
+     * presentation of it, so a frontend in any technology can print a Persian
+     * date without owning a Persian calendar. See `cms.dates.api`.
+     */
+    protected function displayDate(DateTimeInterface|string|null $value, string $locale): ?string
+    {
+        return LocalizedDate::format(
+            $value,
+            (string) config('cms.dates.api.pattern', 'long'),
+            $locale,
+        );
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function localeMeta(Model $model, string $locale): array
@@ -81,6 +100,18 @@ trait ResolvesLocale
             'translation_status' => $model instanceof TracksTranslationStatus
                 ? $model->translationStatusFor($locale)->value
                 : null,
+
+            /*
+             * How to read the `*_display` strings in this payload.
+             *
+             * Reported rather than assumed, because both are configurable per
+             * site (`cms.dates`) and a frontend that renders a date the CMS
+             * already formatted still needs to know which calendar it is in — to
+             * label it, to pick a font, or to decide whether its own relative-time
+             * ("3 days ago") rendering is consistent with it.
+             */
+            'calendar' => LocalizedDate::calendar($locale),
+            'timezone' => LocalizedDate::timezone()->getName(),
         ];
     }
 

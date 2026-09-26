@@ -13,7 +13,10 @@
 
             @if ($this->getInstalledAt())
                 — {{ __('cms.system.installed_at') }}:
-                <span class="cms-ltr">{{ $this->getInstalledAt() }}</span>
+                {{-- No .cms-ltr here, unlike the version number above. A Persian
+                     date is Persian text in Persian digits; forcing it LTR would
+                     pull it out of the sentence it belongs to. --}}
+                <span>{{ $this->getInstalledAt() }}</span>
             @endif
         </x-slot>
 
@@ -28,8 +31,10 @@
                 @foreach ($releases as $release)
                     <div class="text-sm">
                         <p>
+                            {{-- The SemVer stays LTR/monospace: it is a Latin token
+                                 and reverses visually inside an RTL line. --}}
                             <span class="cms-ltr font-mono font-semibold">{{ $release->version }}</span>
-                            <span class="cms-ltr">{{ $release->released_at->format('Y-m-d') }}</span>
+                            <span>{{ $this->getReleaseDate($release) }}</span>
                         </p>
 
                         <ul class="mt-1 list-inside list-disc">

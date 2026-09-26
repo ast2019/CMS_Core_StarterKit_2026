@@ -187,6 +187,41 @@ return [
         'role' => 'الدور',
     ],
 
+    'dashboard' => [
+        'title' => 'لوحة التحكم',
+        'today' => 'اليوم، :date',
+
+        'live' => 'منشور',
+        'live_this_month' => ':count هذا الشهر',
+        'in_progress' => 'قيد الإعداد',
+        'in_progress_breakdown' => 'مسودات: :drafts — قيد المراجعة: :review',
+        'scheduled' => 'مُجدول',
+        'next_publish' => 'التالي: :date',
+        'nothing_scheduled' => 'لا شيء مُجدول',
+        'unread_messages' => 'رسائل غير مقروءة',
+        'inbox_clear' => 'تمت قراءة جميع الرسائل',
+
+        'publishing_activity' => 'نشاط النشر',
+        'publishing_activity_description' => 'عدد المواد المنشورة شهريًا',
+        'published_count' => 'منشور',
+
+        'translation_progress' => 'حالة الترجمة',
+        'reviewed_ratio' => ':reviewed من :total مُراجَع',
+        'no_translation_records' => 'لا توجد سجلات لهذه اللغة بعد',
+
+        'recent_activity' => 'أحدث الأحداث',
+    ],
+
+    /*
+     * Date picker chrome. Month and weekday names come from ICU, not from here.
+     */
+    'date' => [
+        'today' => 'اليوم',
+        'clear' => 'مسح',
+        'previous_month' => 'الشهر السابق',
+        'next_month' => 'الشهر التالي',
+    ],
+
     'table' => [
         'scheduled' => 'مُجدول',
         'unread' => 'غير مقروء',

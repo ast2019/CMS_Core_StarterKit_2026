@@ -515,6 +515,13 @@
                                                 "null"
                                             ]
                                         },
+                                        "publish_date_display": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "description": "The same instant, already rendered in the calendar and digits of\nthe resolved locale \u2014 \u00ab\u06f5 \u0645\u0647\u0631 \u06f1\u06f4\u06f0\u06f5\u00bb for fa, \u00ab26 September 2026\u00bb for\nen. `meta.calendar` and `meta.timezone` say how it was produced."
+                                        },
                                         "status": {
                                             "type": "string"
                                         },
@@ -621,13 +628,22 @@
                                                 },
                                                 "translation_status": {
                                                     "type": "null"
+                                                },
+                                                "calendar": {
+                                                    "type": "string",
+                                                    "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                                                },
+                                                "timezone": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
                                                 "locale",
                                                 "is_fallback",
                                                 "fallback_locale",
-                                                "translation_status"
+                                                "translation_status",
+                                                "calendar",
+                                                "timezone"
                                             ]
                                         }
                                     },
@@ -640,6 +656,7 @@
                                         "answer",
                                         "headings",
                                         "publish_date",
+                                        "publish_date_display",
                                         "status",
                                         "author",
                                         "primary_category",
@@ -1662,13 +1679,22 @@
                                                         },
                                                         "translation_status": {
                                                             "type": "null"
+                                                        },
+                                                        "calendar": {
+                                                            "type": "string",
+                                                            "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                                                        },
+                                                        "timezone": {
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
                                                         "locale",
                                                         "is_fallback",
                                                         "fallback_locale",
-                                                        "translation_status"
+                                                        "translation_status",
+                                                        "calendar",
+                                                        "timezone"
                                                     ]
                                                 }
                                             },
@@ -1821,13 +1847,22 @@
                                                         },
                                                         "translation_status": {
                                                             "type": "null"
+                                                        },
+                                                        "calendar": {
+                                                            "type": "string",
+                                                            "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                                                        },
+                                                        "timezone": {
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
                                                         "locale",
                                                         "is_fallback",
                                                         "fallback_locale",
-                                                        "translation_status"
+                                                        "translation_status",
+                                                        "calendar",
+                                                        "timezone"
                                                     ]
                                                 }
                                             },
@@ -2148,13 +2183,22 @@
                             },
                             "translation_status": {
                                 "type": "null"
+                            },
+                            "calendar": {
+                                "type": "string",
+                                "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                            },
+                            "timezone": {
+                                "type": "string"
                             }
                         },
                         "required": [
                             "locale",
                             "is_fallback",
                             "fallback_locale",
-                            "translation_status"
+                            "translation_status",
+                            "calendar",
+                            "timezone"
                         ]
                     }
                 },
@@ -2205,6 +2249,13 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "publish_date_display": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The same instant, already rendered in the calendar and digits of\nthe resolved locale \u2014 \u00ab\u06f5 \u0645\u0647\u0631 \u06f1\u06f4\u06f0\u06f5\u00bb for fa, \u00ab26 September 2026\u00bb for\nen. `meta.calendar` and `meta.timezone` say how it was produced."
                     },
                     "status": {
                         "type": "string"
@@ -2296,13 +2347,22 @@
                             },
                             "translation_status": {
                                 "type": "null"
+                            },
+                            "calendar": {
+                                "type": "string",
+                                "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                            },
+                            "timezone": {
+                                "type": "string"
                             }
                         },
                         "required": [
                             "locale",
                             "is_fallback",
                             "fallback_locale",
-                            "translation_status"
+                            "translation_status",
+                            "calendar",
+                            "timezone"
                         ]
                     }
                 },
@@ -2315,6 +2375,7 @@
                     "answer",
                     "headings",
                     "publish_date",
+                    "publish_date_display",
                     "status",
                     "seo",
                     "meta"
@@ -2348,6 +2409,12 @@
                         "type": "string"
                     },
                     "publish_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "publish_date_display": {
                         "type": [
                             "string",
                             "null"
@@ -2411,13 +2478,22 @@
                             },
                             "translation_status": {
                                 "type": "null"
+                            },
+                            "calendar": {
+                                "type": "string",
+                                "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                            },
+                            "timezone": {
+                                "type": "string"
                             }
                         },
                         "required": [
                             "locale",
                             "is_fallback",
                             "fallback_locale",
-                            "translation_status"
+                            "translation_status",
+                            "calendar",
+                            "timezone"
                         ]
                     }
                 },
@@ -2427,6 +2503,7 @@
                     "slug",
                     "description",
                     "publish_date",
+                    "publish_date_display",
                     "status",
                     "seo",
                     "meta"
@@ -2609,13 +2686,22 @@
                             },
                             "translation_status": {
                                 "type": "null"
+                            },
+                            "calendar": {
+                                "type": "string",
+                                "description": "How to read the `*_display` strings in this payload. Reported rather than assumed, because both are configurable per\nsite (`cms.dates`) and a frontend that renders a date the CMS\nalready formatted still needs to know which calendar it is in \u2014 to\nlabel it, to pick a font, or to decide whether its own relative-time\n(\"3 days ago\") rendering is consistent with it."
+                            },
+                            "timezone": {
+                                "type": "string"
                             }
                         },
                         "required": [
                             "locale",
                             "is_fallback",
                             "fallback_locale",
-                            "translation_status"
+                            "translation_status",
+                            "calendar",
+                            "timezone"
                         ]
                     }
                 },
