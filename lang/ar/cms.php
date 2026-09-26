@@ -504,6 +504,20 @@ return [
             'social_add' => 'إضافة عنوان',
         ],
 
+        'organisation' => [
+            'section' => 'هوية المؤسسة (البيانات المنظّمة)',
+            'section_help' => 'تُعرّف هذه الحقول ناشر الموقع لمحرّكات البحث وتظهر كـ publisher في JSON-LD لكل مقال. كلّها اختيارية، وما يُترك فارغًا لا يُنشَر إطلاقًا.',
+            'type' => 'نوع المؤسسة',
+            'type_help' => 'الوكالة الخبرية والشركة والجهة الحكومية والجامعة كيانات مختلفة لمحرّك البحث. اتركه «مؤسسة (عام)» إن لم تكن متأكدًا.',
+            'logo' => 'شعار المؤسسة',
+            'logo_help' => 'أهم حقل هنا. تستخدم Google شعار الناشر في النتائج الغنية للمقالات وفي لوحة المعرفة.',
+            'legal_name' => 'الاسم القانوني (المسجَّل)',
+            'legal_name_help' => 'إن كان مختلفًا عن الاسم التجاري للموقع.',
+            'founding_date' => 'تاريخ التأسيس',
+            'founding_date_help' => 'بالصيغة YYYY-MM-DD، لأن schema.org يتوقّع تاريخًا بمعيار ISO.',
+            'alternate_name' => 'اسم بديل (:locale)',
+            'description' => 'وصف المؤسسة (:locale)',
+        ],
         'discovery' => [
             'tab' => 'الإحصاءات والتحقّق',
             'analytics' => 'إحصاءات الزيارات',
@@ -574,6 +588,16 @@ return [
      * make the choice meaningful to an administrator, so each one says what the
      * service is rather than just naming it.
      */
+    'organisation_type' => [
+        'Organization' => 'مؤسسة (عام)',
+        'NewsMediaOrganization' => 'مؤسسة إعلامية خبرية',
+        'Corporation' => 'شركة',
+        'GovernmentOrganization' => 'جهة حكومية',
+        'EducationalOrganization' => 'مؤسسة تعليمية',
+        'NGO' => 'منظمة غير حكومية',
+        'LocalBusiness' => 'نشاط تجاري محلي',
+    ],
+
     'ai_provider' => [
         'openrouter' => 'OpenRouter',
         'openrouter_help' => 'بوّابة دولية بأوسع قائمة نماذج. الدفع بعملة أجنبية، والوصول إليها من إيران يحتاج عادةً إلى إعدادات شبكة.',

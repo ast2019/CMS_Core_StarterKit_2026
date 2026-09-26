@@ -219,6 +219,51 @@ Sitemap: https://api.example.com/sitemap.xml
 Do not copy this host's `robots.txt` to the frontend. It disallows `/api/` and the panel
 path, neither of which exists there, and it says nothing about the frontend's own routes.
 
+## Media, crawlers and `CMS_MEDIA_URL`
+
+Every media URL this application emits — the image and video sitemaps, the JSON-LD
+`image` and publisher `logo`, `og:image`, `twitter:image` and the `url` on every
+MediaAsset in the API — comes from one place: the `public` disk's `url` in
+`config/filesystems.php`.
+
+**Unset (the default).** Media is served from this host under `/storage`, and
+`robots.txt` deliberately leaves that path **crawlable**. It must: `Disallow` does not
+demote an image to a lesser kind of result, it stops the crawler fetching the file, so
+disallowing it silently breaks the `<image:loc>` entries in `sitemap-images.xml`, the
+article JSON-LD image Google needs for rich results, the share cards, the video
+thumbnails and the publisher logo. This works, and it is the safe default.
+
+**Set (recommended for a Next.js frontend).** Point it at a path on the frontend that
+rewrites back to this host:
+
+```bash
+CMS_MEDIA_URL=https://www.example.com/media
+```
+
+```js
+// next.config.js — on the frontend
+module.exports = {
+  async rewrites() {
+    return [{
+      source: '/media/:path*',
+      destination: 'https://api.example.com/storage/:path*',
+    }]
+  },
+}
+```
+
+Three things this buys: images are same-host as the pages that embed them (which the
+sitemaps protocol asks for and Bing enforces more strictly than Google), the frontend's
+CDN edge caches them so this application stops serving image bandwidth, and `/storage/`
+here goes back to being disallowed — `RobotsController` switches on this setting, so
+robots.txt describes whichever configuration is actually active.
+
+One caveat with `next/image`: it serves optimised images from `/_next/image?url=…`. That
+is fine for `<img>` tags, but **do not put it in `og:image` or JSON-LD** — those need the
+plain, stable URL the API gives you, because social scrapers do not follow a transform
+endpoint. Add this host (or the `/media` path) to `images.remotePatterns` and let the API
+URL stand as the canonical one.
+
 ## Video (Decision D-6)
 
 Google's video sitemap format requires a thumbnail. A thumbnail cannot be derived from

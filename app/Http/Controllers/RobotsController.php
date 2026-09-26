@@ -82,7 +82,7 @@ class RobotsController extends Controller
     {
         $panel = trim((string) config('cms.brand.panel_path', 'admin'), '/');
 
-        return [
+        $paths = [
             // The panel and everything under it, at whatever path this client uses.
             '/'.$panel,
 
@@ -101,12 +101,62 @@ class RobotsController extends Controller
              */
             '/preview/',
 
-            // Locally stored media (RULE #9). Images belong in the image sitemap
-            // associated with the page that uses them, not crawled as bare files.
-            '/storage/',
-
             // Livewire's internal update endpoint: panel plumbing, not content.
             '/livewire/',
         ];
+
+        /*
+         * LOCALLY STORED MEDIA (RULE #9) — disallowed ONLY when it is not served from
+         * here.
+         *
+         * This used to be an unconditional `Disallow: /storage/`, on the reasoning that
+         * images "belong in the image sitemap associated with the page that uses them,
+         * not crawled as bare files". That reasoning does not survive contact with what
+         * Disallow actually does: it does not demote an image to a lesser kind of
+         * result, it stops the crawler FETCHING the file at all. So the rule silently
+         * broke the four things that depend on an image being fetchable, every one of
+         * which this application goes to some trouble to emit:
+         *
+         *   - sitemap-images.xml advertised <image:loc> URLs that the same host's
+         *     robots.txt forbade — a sitemap arguing with itself;
+         *   - the Article JSON-LD `image`, which Google must fetch for article rich
+         *     results and Top Stories eligibility;
+         *   - og:image and twitter:image, which the major social scrapers fetch while
+         *     honouring robots.txt, so share cards came out blank;
+         *   - sitemap-videos.xml thumbnails, and the publisher `logo`.
+         *
+         * So the path is now disallowed only when the deployment has moved media
+         * somewhere else (CMS_MEDIA_URL), in which case nothing here needs crawling and
+         * closing it is free. When media IS served from this host, the files have to be
+         * reachable or every image signal above is a lie.
+         *
+         * Note what this permits: a crawler may index a non-image upload — a PDF, say —
+         * as a bare document. That is the trade for having images work at all. A
+         * deployment that cannot accept it should set CMS_MEDIA_URL and serve media
+         * through the frontend, where it controls the rules.
+         */
+        if (! $this->mediaIsServedFromThisHost()) {
+            $paths[] = '/storage/';
+        }
+
+        return $paths;
+    }
+
+    /**
+     * Whether media URLs point at this host.
+     *
+     * Compares the media disk's public base URL with the application's own, because
+     * that disk URL is the single source every emitted media URL comes from (see
+     * config/filesystems.php). Comparing hosts rather than whole strings so that a
+     * path prefix, a port or a scheme difference does not read as a different host.
+     */
+    private function mediaIsServedFromThisHost(): bool
+    {
+        $mediaHost = parse_url((string) config('filesystems.disks.public.url'), PHP_URL_HOST);
+        $appHost = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        // An unparseable media URL is treated as local: keeping the path crawlable is
+        // the safe failure, since the alternative silently breaks every image.
+        return ! is_string($mediaHost) || ! is_string($appHost) || $mediaHost === $appHost;
     }
 }

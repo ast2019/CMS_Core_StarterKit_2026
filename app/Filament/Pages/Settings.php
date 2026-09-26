@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Enums\AiProvider;
+use App\Enums\OrganisationType;
+use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\ContactSetting;
 use App\Models\Setting as SettingModel;
+use App\Support\OrganisationProfile;
 use App\Support\SiteIdentity;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -118,6 +122,15 @@ class Settings extends Page
 
             'maintenance_mode' => SettingModel::isMaintenanceMode(),
 
+            'organisation' => [
+                'type' => OrganisationProfile::type()->value,
+                'logo_media_asset_id' => OrganisationProfile::logo()?->getKey(),
+                'legal_name' => OrganisationProfile::legalName() ?? '',
+                'founding_date' => OrganisationProfile::foundingDate() ?? '',
+                'alternate_name' => $this->organisationTranslations('alternate_name'),
+                'description' => $this->organisationTranslations('description'),
+            ],
+
             'contact' => [
                 'address' => $contact->getTranslations('address'),
                 'office_hours' => $contact->getTranslations('office_hours'),
@@ -181,6 +194,7 @@ class Settings extends Page
         $data = $this->form->getState();
 
         $this->saveGeneral($data);
+        $this->saveOrganisation($data);
         $this->saveDiscovery($data);
         $this->saveContact($data);
         $this->saveAi($data);
@@ -234,6 +248,87 @@ class Settings extends Page
                                 ]))
                                 ->required($locale === $this->sourceLocale())
                                 ->maxLength(255)
+                                ->extraInputAttributes([
+                                    'dir' => TranslatableTabs::isRtl($locale) ? 'rtl' : 'ltr',
+                                    'lang' => $locale,
+                                ]),
+                            $this->locales(),
+                        ),
+                    ]),
+
+                Section::make(__('cms.settings.organisation.section'))
+                    ->description(__('cms.settings.organisation.section_help'))
+                    ->columns(2)
+                    ->schema([
+                        /*
+                         * The type an administrator PICKS. A Select rather than a Radio
+                         * despite the precedent elsewhere: seven options with
+                         * descriptions would be a very tall block on a settings page,
+                         * and unlike the AI provider these labels are self-explanatory
+                         * once translated.
+                         */
+                        Select::make('organisation.type')
+                            ->label(__('cms.settings.organisation.type'))
+                            ->options(fn (): array => collect(OrganisationType::cases())
+                                ->mapWithKeys(fn (OrganisationType $t): array => [$t->value => $t->label()])
+                                ->all())
+                            ->default(OrganisationType::default()->value)
+                            ->selectablePlaceholder(false)
+                            ->helperText(__('cms.settings.organisation.type_help')),
+
+                        /*
+                         * The logo, and the property that does the most work: it is what
+                         * turns the `publisher` on every article from a name into an
+                         * identified organisation.
+                         */
+                        MediaAssetPicker::image('organisation.logo_media_asset_id')
+                            ->label(__('cms.settings.organisation.logo'))
+                            ->helperText(__('cms.settings.organisation.logo_help'))
+                            /*
+                             * MediaAssetPicker defaults to dehydrated(false) because on a
+                             * CONTENT form the attachment is a media_attachments row
+                             * applied after the save, not a column on the record. Here it
+                             * is neither: the chosen id is stored inside the
+                             * organisation_schema setting, so this field does have to
+                             * reach the submitted state.
+                             */
+                            ->dehydrated(),
+
+                        TextInput::make('organisation.legal_name')
+                            ->label(__('cms.settings.organisation.legal_name'))
+                            ->maxLength(255)
+                            ->helperText(__('cms.settings.organisation.legal_name_help')),
+
+                        TextInput::make('organisation.founding_date')
+                            ->label(__('cms.settings.organisation.founding_date'))
+                            // ISO, because schema.org's foundingDate is a Date and a
+                            // Jalali string would be emitted verbatim as an invalid one.
+                            ->placeholder('2014-03-21')
+                            ->rule('date_format:Y-m-d')
+                            ->helperText(__('cms.settings.organisation.founding_date_help'))
+                            ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
+
+                        ...array_map(
+                            fn (string $locale): TextInput => TextInput::make("organisation.alternate_name.{$locale}")
+                                ->label(__('cms.settings.organisation.alternate_name', [
+                                    'locale' => TranslatableTabs::localeLabel($locale),
+                                ]))
+                                ->maxLength(255)
+                                ->extraInputAttributes([
+                                    'dir' => TranslatableTabs::isRtl($locale) ? 'rtl' : 'ltr',
+                                    'lang' => $locale,
+                                ]),
+                            $this->locales(),
+                        ),
+
+                        ...array_map(
+                            fn (string $locale): Textarea => Textarea::make("organisation.description.{$locale}")
+                                ->label(__('cms.settings.organisation.description', [
+                                    'locale' => TranslatableTabs::localeLabel($locale),
+                                ]))
+                                ->rows(2)
+                                ->maxLength(500)
+                                ->columnSpanFull()
                                 ->extraInputAttributes([
                                     'dir' => TranslatableTabs::isRtl($locale) ? 'rtl' : 'ltr',
                                     'lang' => $locale,
@@ -552,6 +647,61 @@ class Settings extends Page
     /**
      * @param  array<string, mixed>  $data
      */
+    private function saveOrganisation(array $data): void
+    {
+        /** @var array<string, mixed> $input */
+        $input = is_array($data['organisation'] ?? null) ? $data['organisation'] : [];
+
+        $profile = [
+            'type' => OrganisationType::fromValue($input['type'] ?? null)->value,
+        ];
+
+        $logoId = $input['logo_media_asset_id'] ?? null;
+
+        if (is_numeric($logoId)) {
+            $profile['logo_media_asset_id'] = (int) $logoId;
+        }
+
+        foreach (['legal_name', 'founding_date'] as $key) {
+            $value = trim((string) ($input[$key] ?? ''));
+
+            if ($value !== '') {
+                $profile[$key] = $value;
+            }
+        }
+
+        /*
+         * Blank locales are dropped rather than stored as empty strings. Everything the
+         * profile feeds is schema.org markup, where an empty property is worse than an
+         * absent one — SchemaBuilder's "omit rather than guess" rule — and
+         * OrganisationProfile reads absence as "not configured".
+         */
+        foreach (['alternate_name', 'description'] as $key) {
+            /** @var array<string, mixed> $translations */
+            $translations = is_array($input[$key] ?? null) ? $input[$key] : [];
+
+            $values = [];
+
+            foreach ($this->locales() as $locale) {
+                $value = $translations[$locale] ?? null;
+                $value = is_string($value) ? trim($value) : '';
+
+                if ($value !== '') {
+                    $values[$locale] = $value;
+                }
+            }
+
+            if ($values !== []) {
+                $profile[$key] = $values;
+            }
+        }
+
+        SettingModel::put(SettingModel::ORGANISATION_SCHEMA, $profile);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
     private function saveDiscovery(array $data): void
     {
         foreach ([
@@ -849,6 +999,32 @@ class Settings extends Page
             static fn (string $url): array => ['url' => $url],
             SiteIdentity::socialLinks(),
         );
+    }
+
+    /**
+     * A per-locale organisation field, as a map the form can fill.
+     *
+     * @return array<string, string>
+     */
+    private function organisationTranslations(string $key): array
+    {
+        $stored = OrganisationProfile::all()[$key] ?? null;
+
+        if (! is_array($stored)) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach ($this->locales() as $locale) {
+            $value = $stored[$locale] ?? null;
+
+            if (is_string($value)) {
+                $values[$locale] = $value;
+            }
+        }
+
+        return $values;
     }
 
     private function nullableFloat(mixed $value): ?float
