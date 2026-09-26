@@ -97,6 +97,14 @@ class ContentResource extends JsonResource
             'headings' => TipTap::headings($this->translated($this->resource, 'body', $locale)),
 
             'publish_date' => $this->publish_date?->toIso8601String(),
+
+            /*
+             * The same instant, already rendered in the calendar and digits of
+             * the resolved locale — «۵ مهر ۱۴۰۵» for fa, «26 September 2026» for
+             * en. `meta.calendar` and `meta.timezone` say how it was produced.
+             */
+            'publish_date_display' => $this->displayDate($this->publish_date, $locale),
+
             'status' => $this->status->value,
 
             'author' => $this->whenLoaded('author', fn (): ?array => $this->author === null ? null : [

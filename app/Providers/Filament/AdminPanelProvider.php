@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\ContentOverviewWidget;
+use App\Filament\Widgets\PublishingActivityWidget;
+use App\Filament\Widgets\RecentActivityWidget;
+use App\Filament\Widgets\TranslationProgressWidget;
 use App\Filament\Widgets\VersionWidget;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\Pages\EditProfile;
@@ -12,7 +17,6 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -115,10 +119,25 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
+                // App\Filament\Pages\Dashboard, not Filament's: the stock one
+                // registers no widgets of its own, so the panel's landing page used
+                // to be a version card and nothing else.
                 Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
+                /*
+                 * Listed explicitly as well as discovered, so the dashboard's
+                 * composition is readable in one place and its ORDER is a decision
+                 * rather than a side effect of $sort values scattered across five
+                 * files. Each widget still answers canView() from the D-10 ability
+                 * matrix, so what a given role sees is decided by the widget.
+                 */
+                ContentOverviewWidget::class,
+                PublishingActivityWidget::class,
+                TranslationProgressWidget::class,
+                RecentActivityWidget::class,
+
                 // RULE #2 — the version is shown in the panel, to every role: it is the
                 // first thing anyone needs when reporting a problem.
                 VersionWidget::class,

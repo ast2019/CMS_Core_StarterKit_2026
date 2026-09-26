@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Resources\ContactSubmissions\Tables;
 
 use App\Models\ContactSubmission;
+use App\Support\Dates\LocalizedDate;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -45,7 +47,7 @@ class ContactSubmissionsTable
 
                 TextColumn::make('created_at')
                     ->label(__('cms.field.publish_date'))
-                    ->dateTime('Y-m-d H:i')
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state))
                     ->sortable(),
             ])
             ->filters([

@@ -29,8 +29,8 @@
                     @endphp
 
                     <tr>
-                        <td>{{ $version->version_number }}</td>
-                        <td>{{ $version->created_at?->format('Y-m-d H:i') }}</td>
+                        <td>{{ \App\Support\Dates\LocalizedDate::number($version->version_number) }}</td>
+                        <td>{{ \App\Support\Dates\LocalizedDate::format($version->created_at) }}</td>
                         <td>{{ $version->author?->name ?? __('cms.audit.system') }}</td>
                         <td>{{ $title }}</td>
                     </tr>

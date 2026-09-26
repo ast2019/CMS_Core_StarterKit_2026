@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Enums\UserRole;
+use App\Filament\Forms\Components\LocalizedDateTimePicker;
 use App\Listeners\ExtractVideoMetadata;
 use App\Models;
 use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
 use App\Observers\SearchIndexObserver;
 use App\Policies;
+use App\Support\Dates\LocalizedDate;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
+use Filament\Support\Assets\AlpineComponent;
+use Filament\Support\Facades\FilamentAsset;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -74,6 +79,51 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerSearchIndexing();
         $this->registerSpecVersion();
         $this->registerVideoMetadataExtraction();
+        $this->registerDisplayTimezone();
+        $this->registerPanelAssets();
+    }
+
+    /**
+     * Tell Filament which timezone the panel reads and writes dates in.
+     *
+     * config('app.timezone') stays UTC — storage must not drift with a site's
+     * locality — so without this every date component in the panel would treat a
+     * time an editor typed as UTC. For Tehran that is a three-and-a-half hour lie:
+     * an article scheduled for «۰۹:۰۰» would go live at half past noon.
+     *
+     * Set here, once, rather than per component: this is the same value
+     * App\Support\Dates\LocalizedDate renders with, and two sources for it is how
+     * the input and the table listing it feeds end up disagreeing.
+     */
+    protected function registerDisplayTimezone(): void
+    {
+        FilamentTimezone::set(LocalizedDate::timezone()->getName());
+    }
+
+    /**
+     * The Alpine component behind App\Filament\Forms\Components\LocalizedDateTimePicker.
+     *
+     * Registered as an AlpineComponent rather than bundled through Vite, because
+     * Filament's x-load mechanism fetches it only on a page that actually renders a
+     * date field, and because it must not race Alpine's own initialisation — which
+     * a module injected into the panel's <head> would.
+     *
+     * `filament:assets` publishes it, and that already runs on every deploy:
+     * composer's post-autoload-dump calls filament:upgrade, which calls
+     * filament:assets. RULE #4 is unaffected — the file is local and has no
+     * imports.
+     */
+    protected function registerPanelAssets(): void
+    {
+        FilamentAsset::register(
+            [
+                AlpineComponent::make(
+                    LocalizedDateTimePicker::ASSET_ID,
+                    resource_path('js/filament/localized-date-time-picker.js'),
+                ),
+            ],
+            package: LocalizedDateTimePicker::ASSET_PACKAGE,
+        );
     }
 
     /**

@@ -19,6 +19,7 @@
 /public/fonts-manifest.dev.json
 /public/fonts/filament
 /public/hot
+/public/js/cms
 /public/js/filament
 /public/storage
 /storage/*.key

@@ -12,6 +12,7 @@ silently upgrade a major version as part of an unrelated task.
 | Component | Version | Note |
 |---|---|---|
 | PHP | `^8.4` | Required floor — `spatie/laravel-activitylog` 5.x, `laravel-sitemap` 8.x and `schema-org` 5.x all require `^8.4` |
+| ext-intl | any | **Hard requirement**, declared in `composer.json`. ICU supplies the Persian calendar, month/weekday names and digit shapes for fa/en/ar. Note ICU carries its own tzdata and it is usually stale — see the split in `docs/dates.md` |
 | Laravel | `^13.0` | 13.33 current |
 | MySQL | 8.0+ | Production. Needed for JSON functions + generated columns used by per-locale slug uniqueness |
 | SQLite | 3.x | Local dev only |
@@ -36,7 +37,16 @@ silently upgrade a major version as part of an unrelated task.
 | API docs | `dedoc/scramble` | `^0.13` |
 | Queues | `laravel/horizon` | `^5.50` |
 
+| Calendars / dates | **ext-intl (ICU)** | no package |
+
 ### Package decisions that are already settled
+
+- **Jalali dates**: ICU via `ext-intl`, wrapped in `App\Support\Dates\LocalizedDate`. Do
+  **not** add `morilog/jalali`, `hekmatinasser/verta` or similar. ICU is already a platform
+  requirement, its Persian calendar is astronomical (so 1403 correctly has a 30th of Esfand,
+  which the common 33-year-cycle implementations drop), and it covers en/ar as well —
+  whereas a Jalali package covers Persian only. Switching a locale to any other calendar is
+  then a key in `cms.dates.calendars` rather than a new dependency.
 
 - **2FA**: Filament's built-in multi-factor authentication. `backstagephp/filament-2fa` is
   abandoned as of v4 precisely because this became native. Adding Breezy or similar is

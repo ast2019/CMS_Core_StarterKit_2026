@@ -182,6 +182,41 @@ return [
         'role' => 'Role',
     ],
 
+    'dashboard' => [
+        'title' => 'Dashboard',
+        'today' => 'Today, :date',
+
+        'live' => 'Published',
+        'live_this_month' => ':count this month',
+        'in_progress' => 'In progress',
+        'in_progress_breakdown' => 'Drafts: :drafts — in review: :review',
+        'scheduled' => 'Scheduled',
+        'next_publish' => 'Next: :date',
+        'nothing_scheduled' => 'Nothing scheduled',
+        'unread_messages' => 'Unread messages',
+        'inbox_clear' => 'All messages read',
+
+        'publishing_activity' => 'Publishing activity',
+        'publishing_activity_description' => 'Articles published per month',
+        'published_count' => 'Published',
+
+        'translation_progress' => 'Translation progress',
+        'reviewed_ratio' => ':reviewed of :total reviewed',
+        'no_translation_records' => 'Nothing tracked for this locale yet',
+
+        'recent_activity' => 'Recent activity',
+    ],
+
+    /*
+     * Date picker chrome. Month and weekday names come from ICU, not from here.
+     */
+    'date' => [
+        'today' => 'Today',
+        'clear' => 'Clear',
+        'previous_month' => 'Previous month',
+        'next_month' => 'Next month',
+    ],
+
     'table' => [
         'scheduled' => 'Scheduled',
         'unread' => 'Unread',

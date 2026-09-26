@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Galleries\Schemas;
 
 use App\Enums\ContentStatus;
+use App\Filament\Forms\Components\LocalizedDateTimePicker;
 use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\SeoSection;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Gallery;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -61,7 +61,7 @@ class GalleryForm
                         ->default(ContentStatus::Draft->value)
                         ->required(),
 
-                    DateTimePicker::make('publish_date')
+                    LocalizedDateTimePicker::make('publish_date')
                         ->label(__('cms.field.publish_date'))
                         ->seconds(false),
                 ]),

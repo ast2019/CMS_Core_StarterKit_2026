@@ -316,3 +316,117 @@
     font-size: 0.75rem;
     color: var(--gray-500, #6b7280);
 }
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * Localised date picker (App\Filament\Forms\Components\LocalizedDateTimePicker)
+ * ---------------------------------------------------------------------------
+ *
+ * The component deliberately reuses Filament's own .fi-fo-date-time-picker-*
+ * class names, so the panel, the day grid, the selected/today states and the
+ * time inputs are styled by Filament's stylesheet and stay in step with it
+ * through an upgrade. Only the parts Filament's picker does not have need rules
+ * here: the month-step buttons, the year select, and the today/clear footer.
+ *
+ * No remote asset of any kind — the chevrons are inline SVG in the component's
+ * markup rather than an icon font, per RULE #4.
+ */
+.cms-localized-date-time-picker {
+    /* A Persian date is Persian text in Persian digits, so the field is NOT
+       forced LTR the way slugs and version numbers are. Tabular figures only,
+       so the width does not jump between ۱۱ and ۰۱. */
+    & .fi-fo-date-time-picker-display-text-input {
+        font-feature-settings: var(--cms-numeric-font-feature);
+    }
+
+    & .fi-fo-date-time-picker-panel-header {
+        gap: 0.25rem;
+    }
+
+    /* Month and year sit between the two step buttons, so neither select may
+       claim the whole row the way Filament's lone month select does. */
+    & .fi-fo-date-time-picker-month-select {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    & .cms-calendar-year-select {
+        font-feature-settings: var(--cms-numeric-font-feature);
+    }
+
+    & .cms-calendar-nav {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-radius: 0.375rem;
+        color: var(--gray-500, #6b7280);
+        cursor: pointer;
+        transition: background-color 75ms, color 75ms;
+    }
+
+    & .cms-calendar-nav:hover {
+        background-color: var(--gray-100, #f3f4f6);
+        color: var(--gray-950, #030712);
+    }
+
+    & .cms-calendar-nav svg {
+        width: 1.25rem;
+        height: 1.25rem;
+    }
+
+    & .fi-fo-date-time-picker-calendar-day {
+        font-feature-settings: var(--cms-numeric-font-feature);
+    }
+
+    & .cms-calendar-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: space-between;
+        padding-block-start: 0.5rem;
+        border-block-start: 1px solid var(--gray-200, #e5e7eb);
+    }
+
+    & .cms-calendar-action {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--primary-600, #0f766e);
+        cursor: pointer;
+    }
+
+    & .cms-calendar-action:hover {
+        text-decoration: underline;
+    }
+}
+
+/* "Previous" is first in the DOM so that an RTL panel places it on the right
+   with no direction-aware markup. Only the glyph has to be mirrored: a chevron
+   pointing left means "back" in an LTR interface and "forward" in an RTL one. */
+[dir='rtl'] .cms-localized-date-time-picker .cms-calendar-nav svg {
+    transform: scaleX(-1);
+}
+
+/* Filament renders its panel on a dark surface in dark mode; the borrowed
+   neutrals above are light-mode values, so they are restated here rather than
+   left to inherit and wash out.
+
+   `@variant dark`, not `@media (prefers-color-scheme: dark)`. Filament's dark
+   mode is a CLASS on the document — its theme defines
+   `@variant dark (&:where(.dark, .dark *))` — and it is user-switchable, so a
+   media query would style by the operating system's preference and miss the
+   panel's own toggle entirely. */
+.cms-localized-date-time-picker {
+    @variant dark {
+        & .cms-calendar-nav:hover {
+            background-color: rgb(255 255 255 / 0.1);
+            color: #fff;
+        }
+
+        & .cms-calendar-actions {
+            border-block-start-color: rgb(255 255 255 / 0.1);
+        }
+    }
+}

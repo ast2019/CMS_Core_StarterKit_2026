@@ -6,6 +6,7 @@ namespace App\Filament\Concerns;
 
 use App\Contracts\Versionable;
 use App\Models\ContentVersion;
+use App\Support\Dates\LocalizedDate;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -66,9 +67,13 @@ trait ManagesContentVersions
                     ->options(fn (): array => $this->versionOptions()
                         ->mapWithKeys(fn (ContentVersion $version): array => [
                             $version->getKey() => sprintf(
-                                '#%d — %s — %s',
-                                $version->version_number,
-                                $version->created_at?->format('Y-m-d H:i') ?? '',
+                                '#%s — %s — %s',
+                                // The version number is a count an editor reads
+                                // alongside a Persian date, so it gets the same
+                                // digits; mixing «#12» with «۱۴۰۵/۰۷/۰۵» in one
+                                // label looks like two different systems.
+                                LocalizedDate::number($version->version_number),
+                                LocalizedDate::format($version->created_at) ?? '',
                                 $version->author->name ?? __('cms.audit.system'),
                             ),
                         ])

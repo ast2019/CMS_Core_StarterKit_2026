@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Users\Tables;
 
 use App\Enums\UserRole;
+use App\Support\Dates\LocalizedDate;
+use Carbon\CarbonInterface;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -38,7 +40,7 @@ class UsersTable
 
                 TextColumn::make('created_at')
                     ->label(__('cms.audit.when'))
-                    ->dateTime()
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state))
                     ->sortable()
                     ->toggleable(),
             ])

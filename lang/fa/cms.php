@@ -188,6 +188,43 @@ return [
         'role' => 'نقش',
     ],
 
+    'dashboard' => [
+        'title' => 'پیشخوان',
+        'today' => 'امروز، :date',
+
+        'live' => 'منتشرشده',
+        'live_this_month' => ':count مورد در این ماه',
+        'in_progress' => 'در جریان تولید',
+        'in_progress_breakdown' => 'پیش‌نویس: :drafts — در بازبینی: :review',
+        'scheduled' => 'زمان‌بندی‌شده',
+        'next_publish' => 'بعدی: :date',
+        'nothing_scheduled' => 'چیزی زمان‌بندی نشده',
+        'unread_messages' => 'پیام‌های خوانده‌نشده',
+        'inbox_clear' => 'همهٔ پیام‌ها خوانده شده',
+
+        'publishing_activity' => 'روند انتشار',
+        'publishing_activity_description' => 'شمار مطالب منتشرشده در هر ماه',
+        'published_count' => 'منتشرشده',
+
+        'translation_progress' => 'وضعیت ترجمه',
+        'reviewed_ratio' => ':reviewed از :total بازبینی‌شده',
+        'no_translation_records' => 'هنوز رکوردی برای این زبان ثبت نشده',
+
+        'recent_activity' => 'آخرین رخدادها',
+    ],
+
+    /*
+     * Date picker chrome. The month and weekday NAMES are not here on purpose:
+     * they come from ICU via App\Support\Dates\LocalizedDate, because «مهر» is a
+     * property of the Persian calendar rather than a string this CMS translates.
+     */
+    'date' => [
+        'today' => 'امروز',
+        'clear' => 'پاک کردن',
+        'previous_month' => 'ماه قبل',
+        'next_month' => 'ماه بعد',
+    ],
+
     'table' => [
         'scheduled' => 'زمان‌بندی‌شده',
         'unread' => 'خوانده‌نشده',

@@ -8,6 +8,8 @@ use App\Enums\ContentStatus;
 use App\Enums\TranslationStatus;
 use App\Models\Content;
 use App\Models\TranslationState;
+use App\Support\Dates\LocalizedDate;
+use Carbon\CarbonInterface;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -42,7 +44,11 @@ class ContentsTable
 
                 TextColumn::make('publish_date')
                     ->label(__('cms.field.publish_date'))
-                    ->dateTime('Y-m-d H:i')
+                    // Rendered in the panel locale's calendar, not ->dateTime():
+                    // Filament formats through Carbon, which has no Persian
+                    // calendar. ->sortable() still orders by the raw UTC column,
+                    // which is what keeps chronological order correct.
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state))
                     ->sortable()
                     // Requirement 3.6 — a published row with a future date is
                     // scheduled. Without this the table shows "published" for
