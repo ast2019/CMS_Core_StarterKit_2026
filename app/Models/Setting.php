@@ -51,9 +51,44 @@ class Setting extends Model
      */
     public const AI_TRANSLATION_ENABLED = 'ai_translation_enabled';
 
+    /**
+     * The LEGACY shared model key.
+     *
+     * The model is now stored per provider — `ai_translation_model_openrouter` and
+     * so on, see App\Enums\AiProvider::modelSettingKey() — because a model id is
+     * not portable between services. This key is still read, for OpenRouter only,
+     * so an install upgraded from the single-provider version keeps using the model
+     * it had: the old Settings page pre-filled this field with `openai/gpt-4o-mini`
+     * whether the admin chose it or not, and that value describes OpenRouter's
+     * catalogue and nothing else.
+     */
     public const AI_TRANSLATION_MODEL = 'ai_translation_model';
 
+    /**
+     * Which service translates (an App\Enums\AiProvider value). Absent on an
+     * install that predates the provider choice, which resolves to the enum's
+     * default — OpenRouter, the provider the feature shipped with.
+     */
+    public const AI_TRANSLATION_PROVIDER = 'ai_translation_provider';
+
+    /**
+     * One encrypted credential PER provider, because each service issues its own.
+     *
+     * A single shared key field would be destroyed the moment an admin tried a
+     * second provider, and switching back would mean retrieving the first key from
+     * a third-party dashboard again. Keeping them separate is what makes the
+     * provider choice a switch rather than a migration.
+     *
+     * All three are written through putSecret() and so stored as ciphertext, which
+     * is what keeps plaintext credentials out of the append-only audit trail
+     * (RULE #8). App\Enums\AiProvider::apiKeySettingKey() maps a provider to its
+     * key, so the mapping lives in exactly one place.
+     */
     public const OPENROUTER_API_KEY = 'openrouter_api_key';
+
+    public const GAPGPT_API_KEY = 'gapgpt_api_key';
+
+    public const CHATQT_API_KEY = 'chatqt_api_key';
 
     protected $fillable = ['key', 'value', 'is_translatable'];
 

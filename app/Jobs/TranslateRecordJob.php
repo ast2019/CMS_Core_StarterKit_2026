@@ -25,7 +25,7 @@ use Throwable;
  *
  * WHY QUEUED:
  *
- * AiTranslator::translate() makes SEQUENTIAL OpenRouter calls: one batched request
+ * AiTranslator::translate() makes SEQUENTIAL provider calls: one batched request
  * for every plain field, plus one per chunk of the TipTap body. Batching brought the
  * floor down from six requests to two, but a long article is several body chunks,
  * each with its own timeout and its own retry budget, so the worst case the
@@ -186,7 +186,7 @@ class TranslateRecordJob implements ShouldBeUnique, ShouldQueue
             /*
              * A domain outcome, not a crash: the feature is off, the key is missing,
              * the locale was signed off while this job waited, there was nothing to
-             * translate, or OpenRouter refused. Reporting it and returning keeps the
+             * translate, or the provider refused. Reporting it and returning keeps the
              * queue from retrying — a retry would re-issue every paid call to reach
              * the same answer.
              *

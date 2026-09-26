@@ -109,11 +109,18 @@ get their thumbnails, search results never update, and a translator who clicks
 notification.
 
 AI translation is the longest job in the system. Every field and every prose leaf is
-batched, so a typical record costs **two** sequential OpenRouter calls at
+batched, so a typical record costs **two** sequential provider calls at
 `cms.ai.translation.timeout` seconds each (30 by default): one for the plain fields, one
 for the body. A long body is split into bounded chunks, at most
 `cms.ai.translation.max_requests_per_record` (12) of them, and a record needing more is
 refused up front with an actionable message rather than translated half way.
+
+The provider is chosen per install on the Settings page — OpenRouter, GapGPT or ChatQT,
+all of which speak the same OpenAI-compatible protocol. Each one stores its own API key,
+so a client can be configured once and switched later without re-entering credentials;
+the endpoints and per-provider default models live in `cms.ai.providers`, which is where
+to point a provider at a regional mirror or proxy. Nothing about the queue sizing above
+changes with the provider.
 
 The job derives its timeout from those same values — including the retry budget
 (`max_attempts`, `max_retry_delay`) — so it is a generous **kill-switch sized to the
