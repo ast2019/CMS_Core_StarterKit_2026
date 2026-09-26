@@ -77,6 +77,18 @@ it('renders the same instant differently for each locale', function (
     'Arabic, Gregorian in Arabic' => ['ar', 'ar', '٢٦ سبتمبر ٢٠٢٦', 'gregorian'],
 ]);
 
+it('keeps the ISO value machine-readable whatever the locale', function (): void {
+    // The display string is a rendering; this is the contract. A consumer must be
+    // able to parse it back to the same instant from any locale's payload.
+    foreach (['fa', 'en', 'ar'] as $locale) {
+        $slug = urlencode($this->content->getTranslation('slug', $locale));
+
+        $iso = getJson("/api/v1/news/{$slug}?locale={$locale}")->json('data.publish_date');
+
+        expect(CarbonImmutable::parse($iso)->equalTo($this->publishedAt))->toBeTrue();
+    }
+});
+
 it('reports a Hijri calendar when a site configures one', function (): void {
     config()->set('cms.dates.calendars.ar', 'islamic-umalqura');
 
@@ -84,7 +96,11 @@ it('reports a Hijri calendar when a site configures one', function (): void {
 
     $payload = getJson("/api/v1/news/{$slug}?locale=ar")->assertOk()->json('data');
 
-    expect($payload['publish_date_display'])->toBe('١٥ ربيع الآخر ١٤٤٨')
+    // Asserted on the Hijri year and day rather than the month name, which CLDR has
+    // renamed between ICU releases (ربيع الآخر / ربيع الثاني).
+    expect($payload['publish_date_display'])
+        ->toContain('١٤٤٨')
+        ->toContain('١٥')
         // The frontend is told which calendar it got, so it can label it.
         ->and($payload['meta']['calendar'])->toBe('islamic-umalqura');
 });
