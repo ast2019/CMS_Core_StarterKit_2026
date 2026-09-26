@@ -282,26 +282,78 @@ return [
     |--------------------------------------------------------------------------
     |
     | Machine translation of a record's source-locale fields into a target locale
-    | via OpenRouter (Requirement 5.3 — the ai_translated stage of the lifecycle).
+    | (Requirement 5.3 — the ai_translated stage of the lifecycle), through one of
+    | the OpenAI-compatible providers listed below.
     |
-    | Only DEFAULTS live here. The three operational values — whether the feature
-    | is enabled, which model to use, and the API key — are edited by an
-    | administrator on the Settings page and stored in the `settings` table, not
-    | in code or .env, so one Core can be copied per client without a redeploy
-    | (Requirement 1.2). The key in particular must never live in a committed
-    | file. `default_model` is used only as the fallback when the admin has not
-    | overridden it; the admin can change the model afterwards.
+    | Only DEFAULTS live here. The operational values — whether the feature is
+    | enabled, WHICH PROVIDER to use, which model, and the per-provider API keys —
+    | are edited by an administrator on the Settings page and stored in the
+    | `settings` table, not in code or .env, so one Core can be copied per client
+    | without a redeploy (Requirement 1.2). The keys in particular must never live
+    | in a committed file. The defaults here apply only until an administrator
+    | overrides them.
     |
     */
 
     'ai' => [
-        'translation' => [
-            // Fallback model. The admin can override this on the Settings page.
-            'default_model' => 'openai/gpt-4o-mini',
+        /*
+         * The provider used when the admin has not chosen one on the Settings
+         * page. OpenRouter because that is what this feature shipped with: an
+         * install upgrading to the multi-provider version must keep translating
+         * through the same service, with the key it already has stored, without
+         * anyone touching a setting.
+         */
+        'provider' => 'openrouter',
 
-            // OpenRouter's OpenAI-compatible chat-completions endpoint. Not a
-            // client-specific value, so it is safe to keep in code.
-            'endpoint' => 'https://openrouter.ai/api/v1/chat/completions',
+        /*
+         * The translation providers an admin may choose between
+         * (App\Enums\AiProvider). All three speak OpenAI's chat-completions
+         * protocol with a Bearer key, which is why one client serves all of them —
+         * see the enum's docblock.
+         *
+         * Endpoints are configuration rather than constants so a deployment can
+         * point a provider at a regional mirror or a corporate proxy without
+         * editing code. `default_model` is per provider because a model id is NOT
+         * portable between them: the catalogues overlap but are not identical, and
+         * a default that is valid on one service answers 404 on another.
+         *
+         * `attribution_headers` sends OpenRouter's documented HTTP-Referer/X-Title
+         * pair. It is off for the others deliberately — a header a provider never
+         * asked for discloses the deployment's URL and client name to a third
+         * party for no benefit.
+         */
+        'providers' => [
+            'openrouter' => [
+                'endpoint' => 'https://openrouter.ai/api/v1/chat/completions',
+                'default_model' => 'openai/gpt-4o-mini',
+                'attribution_headers' => true,
+                'docs_url' => 'https://openrouter.ai/docs/api-reference/overview',
+            ],
+
+            'gapgpt' => [
+                'endpoint' => 'https://api.gapgpt.app/v1/chat/completions',
+                'default_model' => 'openai/gpt-4o-mini',
+                'attribution_headers' => false,
+                'docs_url' => 'https://gapgpt.app/platform-v2/docs/quickstart',
+            ],
+
+            'chatqt' => [
+                'endpoint' => 'https://api.chatqt.com/api/v1/chat/completions',
+                // ChatQT's own quickstart uses openai/gpt-4.1 as its worked
+                // example, so it is the safest default to ship for that service.
+                'default_model' => 'openai/gpt-4.1',
+                'attribution_headers' => false,
+                'docs_url' => 'https://chatqt.com/api.html#quickstart',
+            ],
+        ],
+
+        'translation' => [
+            /*
+             * Global fallback model, used only when the SELECTED provider's entry
+             * above names none. The admin can override the model per install on
+             * the Settings page.
+             */
+            'default_model' => 'openai/gpt-4o-mini',
 
             // Seconds to wait for the whole outbound call before failing
             // gracefully.

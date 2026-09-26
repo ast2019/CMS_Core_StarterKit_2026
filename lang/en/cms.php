@@ -493,15 +493,34 @@ return [
         'saved' => 'Settings saved.',
         'ai' => [
             'section' => 'AI translation',
-            'section_help' => 'Machine-translate text fields from the source locale (Persian) into other locales via OpenRouter. The result still needs a human review before it is published.',
+            'section_help' => 'Machine-translate text fields from the source locale (Persian) into other locales. The result still needs a human review before it is published.',
             'enabled' => 'Enable AI translation',
             'enabled_help' => 'When off, the "Translate with AI" action is hidden from the translation workflow.',
+            'provider' => 'Translation service',
+            'provider_help' => 'All three speak the same (OpenAI) protocol. Each service stores its own key and model, so switching between them does not mean entering a key again.',
             'model' => 'Model',
-            'model_help' => 'Defaults to openai/gpt-4o-mini and you can change it. Any valid OpenRouter model id is accepted.',
-            'api_key' => 'OpenRouter API key',
+            'model_help' => 'Leave blank to use :provider’s default, :model. Note that model ids are not portable between services — copy the id from that service’s own console.',
+            'api_key' => ':provider API key',
             'api_key_help' => 'Stored in the database, not in the env file. Required to enable AI translation.',
             'api_key_help_set' => 'A key is stored. Enter a new one to replace it; leaving it blank keeps the current key.',
+            'api_key_docs' => 'Get a key: :url',
+            'api_key_clear' => 'Remove the stored key',
+            'api_key_cleared' => 'The stored key was removed.',
         ],
+    ],
+
+    /*
+     * The translation providers (App\Enums\AiProvider). The descriptions are what
+     * make the choice meaningful to an administrator, so each one says what the
+     * service is rather than just naming it.
+     */
+    'ai_provider' => [
+        'openrouter' => 'OpenRouter',
+        'openrouter_help' => 'International gateway with the widest model catalogue. Billed in foreign currency, and reaching it from Iran usually needs network configuration.',
+        'gapgpt' => 'GapGPT',
+        'gapgpt_help' => 'Iranian OpenAI-compatible gateway. Take the key and the model list from GapGPT’s own console.',
+        'chatqt' => 'ChatQT',
+        'chatqt_help' => 'Iranian OpenAI-compatible gateway with a rial wallet and a developer console. Its documentation states it is reachable from Iran without a VPN.',
     ],
 
     'ai_translation' => [
@@ -514,7 +533,7 @@ return [
         'failed' => 'AI translation failed',
         'error' => [
             'disabled' => 'AI translation is not enabled. Turn it on from the Settings page.',
-            'missing_key' => 'The OpenRouter API key is not configured. Enter it on the Settings page.',
+            'missing_key' => 'No API key is configured for the selected translation service. Enter it on the Settings page.',
             'request_failed' => 'The translation service could not be reached. Please try again shortly.',
             'empty_source' => 'There is no source text to translate. Complete the Persian content first.',
             'already_reviewed' => 'This locale has already been reviewed; automatic translation was skipped to avoid overwriting human work.',

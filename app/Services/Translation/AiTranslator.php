@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Translation;
 
 use App\Contracts\TracksTranslationStatus;
+use App\Enums\AiProvider;
 use App\Enums\TranslationStatus;
 use App\Filament\Schemas\CmsRichEditor;
 use App\Filament\Schemas\TranslatableTabs;
@@ -19,8 +20,21 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
 /**
- * Machine-translate a record's source-locale fields into a target locale via
- * OpenRouter (Requirement 5.3 — the ai_translated stage of the lifecycle).
+ * Machine-translate a record's source-locale fields into a target locale
+ * (Requirement 5.3 — the ai_translated stage of the lifecycle) through the
+ * administrator's chosen provider: OpenRouter, GapGPT or ChatQT.
+ *
+ * WHY ONE CLIENT SERVES ALL THREE PROVIDERS:
+ *
+ * They speak the same protocol — OpenAI's chat-completions shape, a Bearer key,
+ * `{"choices":[{"message":{"content":...}}]}` back — so the only differences are
+ * the endpoint, the model catalogue, and whether the provider wants OpenRouter's
+ * attribution headers. All three are data, held by App\Enums\AiProvider and
+ * config('cms.ai.providers'). A client per provider would triple the code carrying
+ * the invariants below (the 1:1 segment contract, the chunk partition, the retry
+ * policy) and give them three places to drift apart; instead the provider is
+ * resolved ONCE per run in translate() and threaded down to chat(), so a provider
+ * cannot change under a run that is already paying for requests.
  *
  * WHY a thin Http client rather than moe-mizrak/laravel-openrouter:
  *
@@ -31,8 +45,10 @@ use Illuminate\Support\Sleep;
  * its config from Setting::get() before every call — fighting the package's
  * lifecycle to gain nothing here, since all this feature needs is one
  * chat-completions POST. A direct Http call reads the key at call time, is
- * trivially faked with Http::fake() in tests, and adds no dependency. The
- * decision is recorded in the feature findings.
+ * trivially faked with Http::fake() in tests, and adds no dependency. Being
+ * provider-agnostic, it is also what makes supporting three services a matter of
+ * changing a URL rather than adopting three vendor SDKs. The decision is recorded
+ * in the feature findings.
  *
  * WHY EVERYTHING IS BATCHED, INCLUDING THE PLAIN FIELDS:
  *
@@ -181,8 +197,8 @@ class AiTranslator
      *
      * @throws AiTranslationException on disabled feature, missing key, an
      *                                already-reviewed target locale, empty
-     *                                source, an over-long source, or an
-     *                                OpenRouter failure.
+     *                                source, an over-long source, or a
+     *                                provider failure.
      */
     public function translate(Model&TracksTranslationStatus $record, string $targetLocale): AiTranslationResult
     {
@@ -190,7 +206,15 @@ class AiTranslator
             throw AiTranslationException::disabled();
         }
 
-        $apiKey = Setting::getSecret(Setting::OPENROUTER_API_KEY);
+        /*
+         * Resolved once, here, and passed down rather than re-read per request.
+         * A run makes several sequential calls over minutes; re-reading the setting
+         * inside chat() would let an admin switching provider mid-run send the
+         * second half of one article to a different service, with the first
+         * provider's key. One provider per run, decided before anything is spent.
+         */
+        $provider = self::provider();
+        $apiKey = self::apiKeyFor($provider);
 
         if ($apiKey === null) {
             throw AiTranslationException::missingKey();
@@ -273,6 +297,7 @@ class AiTranslator
              * because translateSegments() has already hard-asserted the count.
              */
             $translations = $this->translateSegments(
+                $provider,
                 $apiKey,
                 array_values($fields),
                 $source,
@@ -301,7 +326,7 @@ class AiTranslator
             $record->setTranslation(
                 'body',
                 $targetLocale,
-                $this->translateBodyDocument($apiKey, $bodyDoc, $bodySegments, $source, $targetLocale),
+                $this->translateBodyDocument($provider, $apiKey, $bodyDoc, $bodySegments, $source, $targetLocale),
             );
             $translatedAttributes[] = 'body';
         }
@@ -362,30 +387,86 @@ class AiTranslator
     }
 
     /**
-     * Whether an OpenRouter key is configured.
+     * The provider the administrator selected, or the default when unset.
+     *
+     * Unset is the normal state on an install that predates the provider choice,
+     * and AiProvider::default() is OpenRouter — the service this feature shipped
+     * with — so such an install keeps translating exactly as it did, with the key
+     * it already has stored, without anyone touching a setting.
+     */
+    public static function provider(): AiProvider
+    {
+        return AiProvider::fromValue(Setting::get(Setting::AI_TRANSLATION_PROVIDER));
+    }
+
+    /**
+     * Whether the SELECTED provider has a key configured.
      *
      * Exposed so a caller can fail FAST — before queueing anything — on a
      * misconfiguration that is certain to fail. A job that only reports "no API
      * key" ten seconds later, in a notification, is a worse answer to a question
      * that can be answered synchronously.
+     *
+     * Per provider rather than "any key anywhere": an admin who has stored an
+     * OpenRouter key and then switched to ChatQT has a key, and still cannot
+     * translate. Reporting otherwise would queue a job guaranteed to fail.
      */
     public static function hasApiKey(): bool
     {
-        return Setting::getSecret(Setting::OPENROUTER_API_KEY) !== null;
+        return self::apiKeyFor(self::provider()) !== null;
     }
 
     /**
-     * The configured model, falling back to the config default when unset.
+     * The decrypted key for a provider, or null when it has none stored.
      */
-    public static function model(): string
+    private static function apiKeyFor(AiProvider $provider): ?string
     {
-        $model = Setting::get(Setting::AI_TRANSLATION_MODEL);
+        return Setting::getSecret($provider->apiKeySettingKey());
+    }
+
+    /**
+     * The model to use, resolved against the provider that will run the request.
+     *
+     * The provider is passed in by a run that has already resolved one, so the
+     * model and the endpoint a request uses can never come from different
+     * providers. Resolved fresh only when no provider is supplied (the panel
+     * rendering a placeholder, say).
+     *
+     * Three sources, in order:
+     *
+     *  1. the model the admin named FOR THIS PROVIDER;
+     *  2. for OpenRouter only, the legacy shared `ai_translation_model` — see
+     *     below;
+     *  3. the provider's own default.
+     *
+     * Step 2 is the upgrade path, and it is deliberately scoped to OpenRouter. The
+     * previous Settings page pre-filled one shared model field with
+     * `openai/gpt-4o-mini`, so every install that ever saved settings has that id
+     * stored explicitly whether or not anyone chose it. That value describes
+     * OpenRouter's catalogue and nothing else: honouring it for OpenRouter keeps an
+     * upgraded install byte-identical, while honouring it for GapGPT or ChatQT
+     * would send one service's id to another and answer 404 at the end of a paid
+     * run.
+     */
+    public static function model(?AiProvider $provider = null): string
+    {
+        $provider ??= self::provider();
+
+        $model = Setting::get($provider->modelSettingKey());
 
         if (is_string($model) && trim($model) !== '') {
             return trim($model);
         }
 
-        return (string) config('cms.ai.translation.default_model', 'openai/gpt-4o-mini');
+        if ($provider === AiProvider::OpenRouter) {
+            $legacy = Setting::get(Setting::AI_TRANSLATION_MODEL);
+
+            if (is_string($legacy) && trim($legacy) !== '') {
+                return trim($legacy);
+            }
+        }
+
+        return $provider->defaultModel();
     }
 
     /**
@@ -494,9 +575,9 @@ class AiTranslator
      * @param  non-empty-list<string>  $segments
      * @return array<string, mixed>
      */
-    private function translateBodyDocument(string $apiKey, array $doc, array $segments, string $source, string $target): array
+    private function translateBodyDocument(AiProvider $provider, string $apiKey, array $doc, array $segments, string $source, string $target): array
     {
-        $translations = $this->translateSegments($apiKey, $segments, $source, $target, self::KIND_PROSE);
+        $translations = $this->translateSegments($provider, $apiKey, $segments, $source, $target, self::KIND_PROSE);
 
         $cursor = 0;
 
@@ -700,12 +781,12 @@ class AiTranslator
      * @param  non-empty-list<string>  $segments
      * @return list<string>
      */
-    private function translateSegments(string $apiKey, array $segments, string $source, string $target, string $kind): array
+    private function translateSegments(AiProvider $provider, string $apiKey, array $segments, string $source, string $target, string $kind): array
     {
         $translations = [];
 
         foreach ($this->chunkSegments($segments) as $chunk) {
-            foreach ($this->translateBatch($apiKey, $chunk, $source, $target, $kind) as $translation) {
+            foreach ($this->translateBatch($provider, $apiKey, $chunk, $source, $target, $kind) as $translation) {
                 $translations[] = $translation;
             }
         }
@@ -787,7 +868,7 @@ class AiTranslator
      * a bare array, because that is the shape OpenAI-compatible JSON mode
      * (`response_format: json_object`) is defined over; a top-level array is not
      * valid in that mode. A bare array is still ACCEPTED on the way back: the model
-     * is administrator-chosen from OpenRouter's whole catalogue (Requirement 1.2),
+     * is administrator-chosen from the provider's whole catalogue (Requirement 1.2),
      * plenty of those models ignore response_format, and hard-failing on one that
      * answered correctly-but-unwrapped would make the feature unusable on it for no
      * gain. Unwrapping a container is not a best-effort merge — the contract below
@@ -802,7 +883,7 @@ class AiTranslator
      * @param  non-empty-list<string>  $segments
      * @return list<string>
      */
-    private function translateBatch(string $apiKey, array $segments, string $source, string $target, string $kind): array
+    private function translateBatch(AiProvider $provider, string $apiKey, array $segments, string $source, string $target, string $kind): array
     {
         $system = sprintf(
             'You are a professional translator. The user message is a JSON array of %d string(s) in %s. '
@@ -824,7 +905,7 @@ class AiTranslator
             throw AiTranslationException::requestFailed();
         }
 
-        $content = $this->chat($apiKey, $system, $payload);
+        $content = $this->chat($provider, $apiKey, $system, $payload);
 
         if (! is_string($content)) {
             throw AiTranslationException::requestFailed();
@@ -894,12 +975,9 @@ class AiTranslator
      * protection that did not exist. The real protection is the explicit is_string
      * check the callers make on what comes back.
      */
-    private function chat(string $apiKey, string $system, string $user): mixed
+    private function chat(AiProvider $provider, string $apiKey, string $system, string $user): mixed
     {
-        $endpoint = (string) config(
-            'cms.ai.translation.endpoint',
-            'https://openrouter.ai/api/v1/chat/completions',
-        );
+        $endpoint = $provider->endpoint();
 
         $attempts = self::maxAttemptsPerRequest();
 
@@ -907,26 +985,36 @@ class AiTranslator
             $isLastAttempt = $attempt === $attempts;
 
             try {
-                $response = Http::withToken($apiKey)
-                    /*
-                     * OpenRouter's recommended attribution headers. Both come from
-                     * per-deployment config rather than being hardcoded, because this
-                     * is a reusable Core and a client's name must never be baked into
-                     * it. Nothing is disclosed that the request body does not already
-                     * carry.
-                     */
-                    ->withHeaders([
-                        'HTTP-Referer' => (string) config('app.url'),
-                        'X-Title' => (string) config('app.name'),
-                    ])
+                $request = Http::withToken($apiKey)
                     // Separate from the total budget: an endpoint that accepts nothing
                     // at all should report that in a second, not after the full
                     // timeout — several times over, once per request in the run.
                     ->connectTimeout((int) config('cms.ai.translation.connect_timeout', 10))
                     ->timeout((int) config('cms.ai.translation.timeout', 30))
-                    ->asJson()
+                    ->asJson();
+
+                /*
+                 * OpenRouter's recommended attribution headers, sent ONLY to a
+                 * provider that documents them. Both come from per-deployment config
+                 * rather than being hardcoded, because this is a reusable Core and a
+                 * client's name must never be baked into it.
+                 *
+                 * Withheld from the other providers deliberately. Against OpenRouter
+                 * they disclose nothing the request body does not already carry, but
+                 * GapGPT and ChatQT never asked for them, and sending a deployment's
+                 * URL and the client's name to a third party that has no use for it
+                 * is a disclosure with no benefit on either side.
+                 */
+                if ($provider->sendsAttributionHeaders()) {
+                    $request = $request->withHeaders([
+                        'HTTP-Referer' => (string) config('app.url'),
+                        'X-Title' => (string) config('app.name'),
+                    ]);
+                }
+
+                $response = $request
                     ->post($endpoint, [
-                        'model' => self::model(),
+                        'model' => self::model($provider),
                         'messages' => [
                             ['role' => 'system', 'content' => $system],
                             ['role' => 'user', 'content' => $user],

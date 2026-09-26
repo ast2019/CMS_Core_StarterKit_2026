@@ -13,7 +13,7 @@ use RuntimeException;
  * Filament action) decides the presentation and every user-facing message stays
  * in lang/fa|en|ar. The message passed to the parent RuntimeException is the key
  * too, which keeps the exception useful in logs without ever embedding the API
- * key — no OpenRouter response body or credential is placed in the message.
+ * key — no provider response body or credential is placed in the message.
  */
 final class AiTranslationException extends RuntimeException
 {

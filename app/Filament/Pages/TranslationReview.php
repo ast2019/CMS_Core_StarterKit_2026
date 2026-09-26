@@ -261,7 +261,7 @@ class TranslationReview extends Page implements HasTable
      * Queue a machine translation for this row.
      *
      * The translation itself used to run HERE, inside the Livewire request: several
-     * sequential OpenRouter calls at 30s each — one batched request for the plain
+     * sequential provider calls at 30s each — one batched request for the plain
      * fields plus one per chunk of a long body — against a PHP max_execution_time and
      * an nginx read timeout that both fire first. The request died after the API calls
      * had been paid for, the work was lost, and a PHP-FPM worker had been held the
@@ -355,7 +355,7 @@ class TranslationReview extends Page implements HasTable
             // locale was signed off and the machine refused to overwrite it. A
             // warning reads as expected behaviour; danger reads as a broken service.
             ->title($alreadyReviewed ? __('cms.ai_translation.skipped') : __('cms.ai_translation.failed'))
-            // The keys carry no API key and no raw OpenRouter response, so surfacing
+            // The keys carry no API key and no raw provider response, so surfacing
             // them cannot leak a secret.
             ->body(__($translationKey));
 
