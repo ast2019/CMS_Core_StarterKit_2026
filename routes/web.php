@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\PreviewController;
+use App\Http\Controllers\RobotsController;
 use App\Http\Controllers\SitemapController;
 use Illuminate\Support\Facades\Route;
 
@@ -53,3 +54,18 @@ Route::get('/sitemap-videos.xml', [SitemapController::class, 'videos'])->name('c
 Route::get('/sitemap-{locale}.xml', [SitemapController::class, 'locale'])
     ->whereIn('locale', (array) config('cms.locales.supported', ['fa']))
     ->name('cms.sitemap.locale');
+
+/*
+ * robots.txt for THIS host — the API, the panel and the sitemaps above.
+ *
+ * A route rather than the static public/robots.txt stub (now deleted) because the two
+ * things it has to say are both configuration: the panel path is configurable, so a
+ * committed file would disallow a path that may not exist while leaving the real login
+ * page crawlable; and the Sitemap: directive needs an absolute URL on this host, which
+ * a file could only get by hardcoding a hostname — the client-specific value
+ * Requirement 1.2 keeps out of committed code.
+ *
+ * Note that a file in public/ is served by the web server before Laravel routes
+ * anything, so this route only works because that stub is gone.
+ */
+Route::get('/robots.txt', RobotsController::class)->name('cms.robots');

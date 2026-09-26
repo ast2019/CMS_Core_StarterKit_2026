@@ -12,12 +12,19 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class MenuItemsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            /*
+             * Both columns below reach off the row — the label shows its parent's
+             * label, and the link column resolves the morph — so without this the
+             * list costs two extra queries per item.
+             */
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['linkable', 'parent']))
             ->columns([
                 TextColumn::make('label')
                     ->label(__('cms.field.name'))
@@ -48,11 +55,9 @@ class MenuItemsTable
             ->filters([
                 SelectFilter::make('menu_key')
                     ->label(__('cms.field.menu_key'))
-                    ->options([
-                        'header' => 'header',
-                        'footer' => 'footer',
-                        'sidebar' => 'sidebar',
-                    ]),
+                    // The list lives on the model: it was already written out here
+                    // and in the form, and this was about to be a third copy.
+                    ->options(fn (): array => array_combine(MenuItem::menuKeys(), MenuItem::menuKeys())),
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([

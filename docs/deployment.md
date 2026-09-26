@@ -108,11 +108,18 @@ get their thumbnails, search results never update, and a translator who clicks
 "Translate with AI" is told the work was queued but never receives the outcome
 notification.
 
-AI translation is the longest job in the system: up to six sequential OpenRouter calls
-at `cms.ai.translation.timeout` seconds each (30 by default). The job derives its own
-timeout from that config value, so a worker started with a shorter `--timeout` than the
-job asks for would kill translations mid-run — leave the worker's timeout at the default
-or above the job's.
+AI translation is the longest job in the system. Every field and every prose leaf is
+batched, so a typical record costs **two** sequential OpenRouter calls at
+`cms.ai.translation.timeout` seconds each (30 by default): one for the plain fields, one
+for the body. A long body is split into bounded chunks, at most
+`cms.ai.translation.max_requests_per_record` (12) of them, and a record needing more is
+refused up front with an actionable message rather than translated half way.
+
+The job derives its timeout from those same values — including the retry budget
+(`max_attempts`, `max_retry_delay`) — so it is a generous **kill-switch sized to the
+worst case the configuration permits**, not an expected duration. A worker started with
+a shorter `--timeout` than the job asks for would kill translations mid-run, after their
+calls were paid for, so leave the worker's timeout at the default or above the job's.
 
 ```bash
 php artisan queue:work --tries=3 --max-time=3600
@@ -134,6 +141,31 @@ normal case for this headless Core.
 Getting it wrong is quietly expensive: canonical URLs, hreflang annotations and every
 sitemap entry are built from it, so leaving it unset on a split deployment submits a
 sitemap full of API hostnames to Search Console and indexes the wrong host.
+
+## Redirects are the frontend's job
+
+The redirect table is stored and maintained here; **honouring it is the frontend's
+responsibility**, because a visitor clicking a stale link hits the old URL on the frontend
+and never passes through this host's middleware. `docs/redirects.md` is the contract — read
+it before signing off a deployment, because nothing errors when this is skipped. The
+symptom is simply that accepted 301s appear to do nothing.
+
+## robots.txt and the two hosts
+
+`/robots.txt` is served dynamically by this application, not from `public/`. It has to be:
+the panel path is configurable (`CMS_PANEL_PATH`), and the `Sitemap:` directive needs an
+absolute URL on **this** host, which is where the sitemap suite is generated and served.
+
+It describes this host only — panel, API, previews and media disallowed, sitemap index
+advertised. The public frontend is a separate deployment with its own `robots.txt`, which
+should advertise the same sitemap URL:
+
+```
+Sitemap: https://api.example.com/sitemap.xml
+```
+
+Do not copy this host's `robots.txt` to the frontend. It disallows `/api/` and the panel
+path, neither of which exists there, and it says nothing about the frontend's own routes.
 
 ## Video (Decision D-6)
 
@@ -171,6 +203,67 @@ php artisan scout:import "App\Models\Content"
 
 Leaving `SCOUT_DRIVER=collection` is a valid choice for a small site: search falls back
 to database matching with no extra service to run.
+
+## One-time backfills after upgrading
+
+Some fixes correct how new data is written and cannot retroactively fix old rows. Run
+these **once** on any deployment that predates them. Both are safe to re-run.
+
+### Media file metadata (Requirement 7.6)
+
+```bash
+php artisan cms:backfill-media-metadata --dry-run   # report first
+php artisan cms:backfill-media-metadata
+```
+
+`mime_type`, `size`, `width` and `height` are recorded on upload now, but assets
+uploaded before that are still null, and three things degrade silently as a result:
+
+- the Delivery API cannot tell a frontend what space to reserve, so the image lands as
+  a layout shift;
+- `SchemaBuilder::imageObject()` omits width/height, costing rich-result eligibility;
+- `SocialTagBuilder::cardType()` falls back to `summary` instead of
+  `summary_large_image`, so every share of an older article previews as a thumbnail.
+
+The command walks the library in batches (`--chunk`, default 200), skips assets that
+are already complete, and keeps going past an asset whose file has gone missing from
+disk — reporting its id instead of aborting. An asset with no file, or an image whose
+file is gone, is listed for manual attention; it is repaired as far as the media row
+allows and stays listed on a re-run.
+
+It writes quietly and does not touch `updated_at`: the files did not change, only our
+record of them, so this must not appear as an editorial change on every asset at once.
+The **run** is audited as a single `cms` activity row (`MediaAsset.metadata_backfilled`)
+carrying the counts and the ids touched — see the command's docblock for how that
+reading of RULE #8 was arrived at.
+
+### Translation staleness hashes — nothing to run
+
+Listed here because it is the deploy-day question this change would normally raise, and
+the answer is **no action required**.
+
+Translation staleness is detected by comparing a stored hash of the Persian source
+against a freshly computed one (Requirement 5.4). The hash is now normalised
+recursively, so an editor save that merely reorders a TipTap node's keys no longer
+changes it — previously that reordering flipped every reviewed locale to `outdated`,
+which is exactly the false alarm the hash exists to avoid.
+
+Changing how a stored hash is computed normally means every pinned value mismatches on
+the first save after deploy, flipping every reviewed locale in the database to
+`outdated` at once: a review backlog full of work nobody needs to do, which teaches
+translators to clear the flag without reading it. So the hash carries a **scheme tag**
+(`v2:…`), and a mismatch whose scheme is not the current one is silently re-pinned
+instead of raised.
+
+That is safe because the staleness check runs on every save: a row that is still
+`reviewed` is one whose hash matched at its last save, so recomputing it describes the
+same content the reviewer signed off on. There is no migration, nothing to run, and
+nothing to schedule — a record nobody saves keeps its old hash and is re-pinned the
+moment anyone touches it. A reviewed row with **no** hash at all is still flagged
+`outdated`, because it never had a verified baseline to re-pin.
+
+Bump `HasTranslationStatus::HASH_SCHEME` whenever the hash's inputs or encoding change,
+and this stays free next time.
 
 ## Releases
 
@@ -226,6 +319,19 @@ Everything below is data, not code — the Core ships no client-specific values
 - [ ] Contact address, phone and map coordinates in **Contact**
 - [ ] `CMS_BRAND_PRIMARY` for the panel accent colour
 - [ ] Disable unused modules in `config/cms.php`
+- [ ] **Designate a homepage.** Open the page that belongs at `/fa` and set its *Page
+      role* to *Homepage*. Optional — a site that skips this behaves exactly as before,
+      with `GET /api/v1/home-page` answering 404 and the frontend rendering its own root —
+      but without it the homepage is not a CMS concept and a menu item can only reach it as
+      a raw `/fa` string. Only **one** page can hold the role; designating a second is
+      refused with a message naming the first, including when the first is in the trash.
+- [ ] **Declare the site's menu locations** in `cms.menus.locations` if the frontend
+      renders anything other than a header, footer and sidebar. The list validates
+      `menu_key` on save and decides whether `GET /api/v1/menus/{key}` is a 404, so a
+      location the frontend asks for and this list does not contain is now an error rather
+      than an empty menu. Optionally add a label under `cms.menu.location.{key}` in
+      `lang/fa`, `lang/en` and `lang/ar`; without one the panel shows the raw key.
+- [ ] **Confirm the frontend honours redirects** — see `docs/redirects.md`
 - [ ] One admin account per real person, each with its own MFA enrolment
 - [ ] Remove the seeded demo accounts (`*@example.test`)
 

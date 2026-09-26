@@ -7,13 +7,16 @@ namespace App\Services\Translation;
 use App\Contracts\TracksTranslationStatus;
 use App\Enums\TranslationStatus;
 use App\Filament\Schemas\CmsRichEditor;
+use App\Filament\Schemas\TranslatableTabs;
 use App\Models\Setting;
 use App\Support\TipTap;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Throwable;
+use Illuminate\Support\Sleep;
 
 /**
  * Machine-translate a record's source-locale fields into a target locale via
@@ -30,6 +33,18 @@ use Throwable;
  * chat-completions POST. A direct Http call reads the key at call time, is
  * trivially faked with Http::fake() in tests, and adds no dependency. The
  * decision is recorded in the feature findings.
+ *
+ * WHY EVERYTHING IS BATCHED, INCLUDING THE PLAIN FIELDS:
+ *
+ * There used to be one POST per plain field — title, excerpt, answer_paragraph,
+ * meta_title, meta_description, up to five — plus one batched POST for the body.
+ * Six round trips for one record and locale, which meant six copies of the system
+ * prompt billed, six entries against the provider's rate limit, and six sequential
+ * timeouts to wait through. The argument for batching the body applies verbatim to
+ * the plain fields: they are a list of strings, which is exactly translateBatch()'s
+ * protocol. They now travel in ONE request, and the field↔translation mapping is
+ * positional against the same array that built the request, so there is no second
+ * traversal that could disagree about the order.
  *
  * WHY the body is translated by walking the TipTap tree, not serialising it:
  *
@@ -55,6 +70,43 @@ use Throwable;
  * After a block's config is translated, the attrs Filament DERIVES from it
  * (`label`, `preview`, `shouldApplyProseStylingToPreview`) are rebuilt through the
  * block class — see refreshCachedBlockAttrs().
+ *
+ * ---------------------------------------------------------------------------
+ * WHY A LONG BODY IS CHUNKED, AND HOW THE 1:1 CONTRACT SURVIVES IT
+ * ---------------------------------------------------------------------------
+ * Batching the whole body into one request has a ceiling: a long article with
+ * hundreds of prose leaves exceeds the model's OUTPUT token limit, the JSON
+ * truncates mid-string, json_decode fails, and the editor is told only
+ * "request_failed" with nothing to act on. So the segment list is split into
+ * bounded chunks (cms.ai.translation.max_segments_per_request and
+ * max_characters_per_request, both applied — forty captions and four enormous
+ * paragraphs are the same segment count and nothing like the same token count).
+ *
+ * The previous stage declined to chunk on the grounds that the whole-document 1:1
+ * length contract is what keeps the collect/apply cursor aligned. That contract is
+ * preserved, and now PROVED rather than assumed, by four properties:
+ *
+ *  1. chunkSegments() PARTITIONS the segment list: every segment appears in exactly
+ *     one chunk, in document order, and no segment is ever split (a split segment
+ *     could not map 1:1 back to a node, so an oversized single segment forms its
+ *     own chunk instead).
+ *  2. translateBatch() hard-enforces per-chunk 1:1 — a length mismatch, a
+ *     non-string element or an empty-after-trim element is requestFailed(), never a
+ *     best-effort merge.
+ *  3. the chunk results are concatenated in chunk order, so (1) + (2) give a merged
+ *     list of exactly count($segments) strings in document order. That derivation
+ *     is then ASSERTED in translateSegments() rather than left as an argument.
+ *  4. applyProseTranslations() checks array_key_exists BEFORE consuming the cursor,
+ *     and translateBodyDocument() checks afterwards that the cursor consumed the
+ *     whole list. Those two close the overrun hole that was raised and never
+ *     addressed: `$translations[$cursor++]` on a cursor past the end used to warn
+ *     and write NULL into a text node's `text`, which is an invalid TipTap leaf
+ *     (RULE #6) — the one thing the hard-fail policy exists to prevent.
+ *
+ * A body needing more chunks than cms.ai.translation.max_requests_per_record is
+ * refused up front with sourceTooLong(), before any request is issued, because
+ * collection is local and free. An actionable refusal beats twenty minutes of
+ * spending followed by a generic failure.
  *
  * WHY re-translation cannot duplicate work:
  *
@@ -82,9 +134,10 @@ use Throwable;
  *
  * WHY this is never called from a web request:
  *
- * One run issues up to six sequential OpenRouter POSTs (one per plain field plus
- * one batched call for the body), each with its own 30s timeout, so the worst case
- * is around three minutes of wall clock. PHP's max_execution_time and nginx's
+ * Batching cut the floor from six requests to two, but it did not remove the
+ * ceiling: a long article is several body chunks, each with its own timeout and its
+ * own retry budget, so the worst case a configuration permits is still many
+ * minutes of wall clock. PHP's max_execution_time and nginx's
  * fastcgi_read_timeout both fire long before that, killing the request AFTER the
  * API calls were paid for and losing every translation — while pinning a PHP-FPM
  * worker for the duration. App\Jobs\TranslateRecordJob is the only caller;
@@ -105,6 +158,18 @@ class AiTranslator
     private const SKIP_ATTRIBUTES = ['slug', 'body', 'robots_meta'];
 
     /**
+     * What a batch of strings IS, told to the model so it can translate them well.
+     *
+     * A meta description is a standalone piece of metadata with a length budget; a
+     * prose leaf is a fragment lifted mid-sentence out of a rich-text document and
+     * must come back as a fragment, not as a tidied-up sentence. Same protocol, two
+     * different jobs, and saying which one it is costs nothing.
+     */
+    private const KIND_FIELDS = 'standalone editorial metadata fields (for example a headline, a summary, or a meta description)';
+
+    private const KIND_PROSE = 'prose fragments taken in document order from a single rich-text document; each element may be a partial sentence and must be returned as a fragment, not expanded or re-punctuated';
+
+    /**
      * Translate a record's source-locale text into $targetLocale and persist it.
      *
      * On success the record is saved, which fires HasTranslationStatus::saved()
@@ -116,7 +181,8 @@ class AiTranslator
      *
      * @throws AiTranslationException on disabled feature, missing key, an
      *                                already-reviewed target locale, empty
-     *                                source, or an OpenRouter failure.
+     *                                source, an over-long source, or an
+     *                                OpenRouter failure.
      */
     public function translate(Model&TracksTranslationStatus $record, string $targetLocale): AiTranslationResult
     {
@@ -186,15 +252,38 @@ class AiTranslator
             throw AiTranslationException::emptySource();
         }
 
+        /*
+         * The request budget, checked before anything is spent. Chunking is decided
+         * from the segment list, which is already in hand and cost nothing, so a
+         * document too long to translate within the configured budget can be
+         * refused with an actionable message instead of being discovered half way
+         * through a paid run.
+         */
+        $this->guardRequestBudget($fields, $bodySegments);
+
         $translatedAttributes = [];
 
-        foreach ($fields as $attribute => $text) {
-            $record->setTranslation(
-                $attribute,
+        if ($fields !== []) {
+            /*
+             * ONE request for every plain field. The mapping back is positional
+             * against the very array that built the request — array_keys and
+             * array_values of the same array, recombined — so there is no second
+             * traversal of the record that could order the fields differently.
+             * array_combine would fail loudly on a length mismatch; it cannot,
+             * because translateSegments() has already hard-asserted the count.
+             */
+            $translations = $this->translateSegments(
+                $apiKey,
+                array_values($fields),
+                $source,
                 $targetLocale,
-                $this->translateText($apiKey, $text, $source, $targetLocale),
+                self::KIND_FIELDS,
             );
-            $translatedAttributes[] = $attribute;
+
+            foreach (array_combine(array_keys($fields), $translations) as $attribute => $value) {
+                $record->setTranslation($attribute, $targetLocale, $value);
+                $translatedAttributes[] = $attribute;
+            }
         }
 
         /*
@@ -230,11 +319,12 @@ class AiTranslator
             /*
              * Re-check the guard IMMEDIATELY before writing, authoritatively.
              *
-             * The check at the top of this method ran up to ~3 minutes ago — six
-             * sequential model calls at 30s each — and a human can finish reviewing
-             * the locale inside that window. Writing anyway would silently revert a
-             * sign-off that happened after the machine started, which is the same
-             * harm the up-front guard exists to prevent, only harder to notice.
+             * The check at the top of this method ran minutes ago — several sequential
+             * model calls, each with its own timeout and retry budget — and a human can
+             * finish reviewing the locale inside that window. Writing anyway would
+             * silently revert a sign-off that happened after the machine started, which
+             * is the same harm the up-front guard exists to prevent, only harder to
+             * notice.
              *
              * Fresh read plus a row lock: the caller's eager-loaded relation is
              * exactly the stale data that cannot be trusted here, and the lock stops
@@ -299,6 +389,48 @@ class AiTranslator
     }
 
     /**
+     * The most requests one record and locale may cost.
+     *
+     * Public so App\Jobs\TranslateRecordJob can size its wall-clock timeout from the
+     * same number this class enforces. Deriving the job's budget from config while
+     * the translator derived its behaviour separately is how a job ends up killed
+     * mid-run by its own timeout after the calls were paid for.
+     */
+    public static function maxRequestsPerRecord(): int
+    {
+        return max(1, (int) config('cms.ai.translation.max_requests_per_record', 12));
+    }
+
+    public static function maxAttemptsPerRequest(): int
+    {
+        return max(1, (int) config('cms.ai.translation.max_attempts', 3));
+    }
+
+    public static function maxRetryDelay(): int
+    {
+        return max(0, (int) config('cms.ai.translation.max_retry_delay', 30));
+    }
+
+    /**
+     * Refuse a record that cannot be translated within the configured budget.
+     *
+     * Free to check: chunking is computed from the already-collected segments and
+     * makes no request. The alternative — discovering the ceiling at request eleven —
+     * costs ten paid calls to reach an error message.
+     *
+     * @param  array<string, string>  $fields
+     * @param  list<string>  $bodySegments
+     */
+    private function guardRequestBudget(array $fields, array $bodySegments): void
+    {
+        $requests = ($fields === [] ? 0 : 1) + count($this->chunkSegments($bodySegments));
+
+        if ($requests > self::maxRequestsPerRecord()) {
+            throw AiTranslationException::sourceTooLong();
+        }
+    }
+
+    /**
      * Non-empty source-locale values of the model's translatable attributes,
      * excluding the fields that must not be machine-translated.
      *
@@ -348,9 +480,10 @@ class AiTranslator
      * Translate a TipTap body document while preserving its structure exactly.
      *
      * $segments is the ordered prose leaves the caller already collected from
-     * $doc (text nodes' `text` plus the whitelisted block attrs). They are batch
-     * translated 1:1 and written back into the SAME positions. Node types, marks,
-     * and all structural attrs are left byte-identical.
+     * $doc (text nodes' `text` plus the whitelisted block attrs). They are
+     * translated in bounded chunks that map 1:1 overall, and written back into the
+     * SAME positions. Node types, marks, and all structural attrs are left
+     * byte-identical.
      *
      * Collection happens in translate() rather than here because its RESULT
      * decides whether a body should be written at all — a prose-free body must
@@ -363,11 +496,26 @@ class AiTranslator
      */
     private function translateBodyDocument(string $apiKey, array $doc, array $segments, string $source, string $target): array
     {
-        $translations = $this->translateBatch($apiKey, $segments, $source, $target);
+        $translations = $this->translateSegments($apiKey, $segments, $source, $target, self::KIND_PROSE);
 
         $cursor = 0;
 
-        return $this->applyProseTranslations($doc, $translations, $cursor);
+        $translated = $this->applyProseTranslations($doc, $translations, $cursor);
+
+        /*
+         * The other half of the cursor contract. applyProseTranslations() refuses to
+         * read PAST the end of the list; this refuses to stop SHORT of it. Together
+         * they say: the walk that collected the segments and the walk that writes them
+         * back visited exactly the same leaves, in the same order. If they ever
+         * disagree — a TipTap accessor changing which attrs count as prose between the
+         * two passes, say — the body is discarded rather than written with translations
+         * in the wrong nodes, which is the failure nobody would spot until a reader did.
+         */
+        if ($cursor !== count($translations)) {
+            throw AiTranslationException::requestFailed();
+        }
+
+        return $translated;
     }
 
     /**
@@ -426,7 +574,7 @@ class AiTranslator
         $type = is_string($node['type'] ?? null) ? $node['type'] : null;
 
         if ($type === 'text' && $this->isTranslatableString($node['text'] ?? null)) {
-            $node['text'] = $translations[$cursor++];
+            $node['text'] = $this->consume($translations, $cursor);
         }
 
         $blockId = TipTap::customBlockId($node);
@@ -435,7 +583,7 @@ class AiTranslator
 
         foreach (TipTap::customBlockProseAttrs($node, forTranslation: true) as $attr) {
             if ($this->isTranslatableString($config[$attr] ?? null)) {
-                $config[$attr] = $translations[$cursor++];
+                $config[$attr] = $this->consume($translations, $cursor);
                 $configChanged = true;
             }
         }
@@ -454,6 +602,29 @@ class AiTranslator
         }
 
         return $node;
+    }
+
+    /**
+     * Take the next translation, refusing to read past the end of the list.
+     *
+     * The overrun hole, closed explicitly. `$translations[$cursor++]` on an
+     * exhausted list emits an undefined-key warning and evaluates to NULL, and that
+     * null was then written straight into a text node's `text` — an invalid
+     * ProseMirror/TipTap leaf (RULE #6) and precisely the "garbled body" the
+     * hard-fail policy exists to keep out of the database. It cannot happen given
+     * the partition + per-chunk 1:1 + asserted total, but a structural invariant
+     * that is only argued for is one refactor away from being false, and the cost of
+     * checking it is one array_key_exists per leaf.
+     *
+     * @param  list<string>  $translations
+     */
+    private function consume(array $translations, int &$cursor): string
+    {
+        if (! array_key_exists($cursor, $translations)) {
+            throw AiTranslationException::requestFailed();
+        }
+
+        return $translations[$cursor++];
     }
 
     /**
@@ -519,51 +690,132 @@ class AiTranslator
     }
 
     /**
-     * One chat-completion round trip. Any transport or non-2xx failure becomes a
-     * domain exception carrying a localisation key; the raw response body and the
-     * API key never appear in the thrown message.
+     * Translate a list of strings in bounded chunks, 1:1 and in order.
+     *
+     * The single entry point for both batch kinds. See the class docblock for why
+     * chunking cannot break the cursor contract; the assertion at the end is that
+     * argument made executable — the chunked result must be exactly as long as the
+     * input, or nothing is written.
+     *
+     * @param  non-empty-list<string>  $segments
+     * @return list<string>
      */
-    private function translateText(string $apiKey, string $text, string $source, string $target): string
+    private function translateSegments(string $apiKey, array $segments, string $source, string $target, string $kind): array
     {
-        $system = sprintf(
-            'You are a professional translator. Translate the user message from %s to %s. '
-            .'Return only the translation, with no quotes, notes, or explanation. '
-            .'Preserve meaning, tone, and any inline formatting.',
-            $source,
-            $target,
-        );
+        $translations = [];
 
-        $content = $this->chat($apiKey, $system, $text);
+        foreach ($this->chunkSegments($segments) as $chunk) {
+            foreach ($this->translateBatch($apiKey, $chunk, $source, $target, $kind) as $translation) {
+                $translations[] = $translation;
+            }
+        }
 
-        if (! is_string($content) || trim($content) === '') {
+        /*
+         * The whole-input 1:1 contract, checked rather than reasoned about. It
+         * follows from the partition and the per-chunk check, and it is the single
+         * property every caller depends on, so it is worth one count comparison to
+         * make a future change to either half fail here instead of silently writing
+         * translations into the wrong nodes.
+         */
+        if (count($translations) !== count($segments)) {
             throw AiTranslationException::requestFailed();
         }
 
-        return trim($content);
+        return $translations;
     }
 
     /**
-     * Translate a list of prose segments in one round trip, mapping 1:1 back to
-     * their input positions. The model is instructed to return a JSON array of
-     * the SAME length in the SAME order. A length mismatch (or any non-array /
-     * non-string / empty-after-trim element) is a HARD failure — never a
-     * best-effort merge — so a garbled, duplicated, or structurally-invalid body
-     * can never be written. Empty elements are rejected here for the same reason
-     * translateText() rejects empty single-field output: an empty string written
-     * into a text node's `text` is an invalid ProseMirror/TipTap leaf (RULE #6).
+     * Partition a segment list into request-sized chunks, in order.
+     *
+     * Greedy, bounded by BOTH the segment count and the character total, because
+     * either alone is escapable — forty short captions and four enormous paragraphs
+     * are the same segment count and nothing like the same number of tokens.
+     *
+     * A segment is ATOMIC: one longer than the character bound gets a chunk to
+     * itself rather than being split, because a split segment could not map back 1:1
+     * to the node it came from, which is the invariant that keeps the document's
+     * structure intact. The bound is therefore a target, not a guarantee — and an
+     * oversized single leaf is a paragraph, not an article, so it is within any
+     * model's output budget anyway.
      *
      * @param  list<string>  $segments
+     * @return list<non-empty-list<string>>
+     */
+    private function chunkSegments(array $segments): array
+    {
+        if ($segments === []) {
+            return [];
+        }
+
+        $maxSegments = max(1, (int) config('cms.ai.translation.max_segments_per_request', 40));
+        $maxCharacters = max(1, (int) config('cms.ai.translation.max_characters_per_request', 4000));
+
+        $chunks = [];
+        $current = [];
+        $currentLength = 0;
+
+        foreach ($segments as $segment) {
+            $length = mb_strlen($segment);
+
+            $wouldOverflow = $current !== []
+                && (count($current) >= $maxSegments || $currentLength + $length > $maxCharacters);
+
+            if ($wouldOverflow) {
+                $chunks[] = $current;
+                $current = [];
+                $currentLength = 0;
+            }
+
+            $current[] = $segment;
+            $currentLength += $length;
+        }
+
+        /*
+         * The tail is always non-empty, so it is appended unconditionally: $segments is
+         * non-empty by the guard above, and $current is only ever reset immediately
+         * before the segment that triggered the reset is appended to it.
+         */
+        $chunks[] = $current;
+
+        return $chunks;
+    }
+
+    /**
+     * Translate one chunk in one round trip, mapping 1:1 back to input positions.
+     *
+     * The model is asked for a JSON OBJECT — `{"translations": [...]}` — rather than
+     * a bare array, because that is the shape OpenAI-compatible JSON mode
+     * (`response_format: json_object`) is defined over; a top-level array is not
+     * valid in that mode. A bare array is still ACCEPTED on the way back: the model
+     * is administrator-chosen from OpenRouter's whole catalogue (Requirement 1.2),
+     * plenty of those models ignore response_format, and hard-failing on one that
+     * answered correctly-but-unwrapped would make the feature unusable on it for no
+     * gain. Unwrapping a container is not a best-effort merge — the contract below
+     * is untouched.
+     *
+     * A length mismatch (or any non-array / non-string / empty-after-trim element)
+     * is a HARD failure — never a best-effort merge — so a garbled, duplicated, or
+     * structurally-invalid body can never be written. Empty elements are rejected
+     * because an empty string written into a text node's `text` is an invalid
+     * ProseMirror/TipTap leaf (RULE #6).
+     *
+     * @param  non-empty-list<string>  $segments
      * @return list<string>
      */
-    private function translateBatch(string $apiKey, array $segments, string $source, string $target): array
+    private function translateBatch(string $apiKey, array $segments, string $source, string $target, string $kind): array
     {
         $system = sprintf(
-            'You are a professional translator. The user message is a JSON array of strings in %s. '
-            .'Translate each element into %s and return ONLY a JSON array of the SAME length, in the SAME order, '
-            .'with one translated string per input element. Preserve meaning, tone, and any inline formatting. '
+            'You are a professional translator. The user message is a JSON array of %d string(s) in %s. '
+            .'They are %s. '
+            .'Translate each element into %s and reply with ONLY a JSON object of the form {"translations": [...]}, '
+            .'whose array holds exactly %d element(s) in the SAME order, one translated string per input element. '
+            .'Preserve meaning, tone, and any inline formatting. '
             .'Do not add, remove, reorder, merge, or split elements, and translate nothing outside the array.',
-            $source,
-            $target,
+            count($segments),
+            $this->localeName($source),
+            $kind,
+            $this->localeName($target),
+            count($segments),
         );
 
         $payload = json_encode($segments, JSON_UNESCAPED_UNICODE);
@@ -581,6 +833,11 @@ class AiTranslator
         /** @var mixed $decoded */
         $decoded = json_decode(trim($content), true);
 
+        if (is_array($decoded) && ! array_is_list($decoded)) {
+            /** @var mixed $decoded */
+            $decoded = $decoded['translations'] ?? null;
+        }
+
         if (! is_array($decoded) || count($decoded) !== count($segments)) {
             throw AiTranslationException::requestFailed();
         }
@@ -588,11 +845,9 @@ class AiTranslator
         $translations = [];
 
         foreach ($decoded as $item) {
-            // Reject a non-string OR empty-after-trim element. Mirrors
-            // translateText(), which throws when the single-field result trims
-            // to '': an empty text-node `text` is an invalid TipTap leaf (RULE
-            // #6), and trimming keeps the batch path's output consistent with
-            // the single-field path (which returns trim($content)).
+            // Reject a non-string OR empty-after-trim element: an empty text-node
+            // `text` is an invalid TipTap leaf (RULE #6), and trimming keeps every
+            // translated value consistently normalised.
             if (! is_string($item) || trim($item) === '') {
                 throw AiTranslationException::requestFailed();
             }
@@ -604,10 +859,40 @@ class AiTranslator
     }
 
     /**
-     * One chat-completion POST. Returns the assistant message content, or throws
+     * A language as a person would name it, with the code beside it.
+     *
+     * The prompt used to interpolate raw ISO codes — "from fa to en" — while the
+     * panel already had human names for exactly these locales. "ar" in particular is
+     * ambiguous to a model reading it cold (it is also a country code); the endonym
+     * is not. Both are sent because together they are strictly more informative than
+     * either alone, and TranslatableTabs::localeLabel() is the one place the names
+     * live, so the prompt cannot drift from what the editor sees on the form.
+     */
+    private function localeName(string $locale): string
+    {
+        return sprintf('%s (%s)', TranslatableTabs::localeLabel($locale), $locale);
+    }
+
+    /**
+     * One chat-completion POST, with a bounded retry for the two answers that mean
+     * "ask again".
+     *
+     * Returns the assistant message content, or throws
      * AiTranslationException::requestFailed() on any transport, non-2xx, or
-     * malformed-response failure. The raw response body and the API key never
-     * appear in the thrown message.
+     * malformed-response failure. The raw response body and the API key never appear
+     * in the thrown message, in a log line, or in the exception's payload (RULE #8).
+     *
+     * A 429 used to be treated exactly like a 500 and, before that, like a 401: one
+     * attempt, then failure. That is the wrong answer to all three. A 429 is the
+     * provider saying "not yet" and usually saying WHEN in a Retry-After header; a
+     * 5xx is a transient fault; a 401/404 is a configuration error that will be just
+     * as wrong on the third attempt and only delays the editor finding out.
+     *
+     * The dead try/catch that used to wrap `$response->json('choices.0.message
+     * .content')` is gone. Laravel's json() with a path returns null for a missing
+     * key rather than throwing, so `catch (Throwable)` could not fire and read as
+     * protection that did not exist. The real protection is the explicit is_string
+     * check the callers make on what comes back.
      */
     private function chat(string $apiKey, string $system, string $user): mixed
     {
@@ -616,29 +901,143 @@ class AiTranslator
             'https://openrouter.ai/api/v1/chat/completions',
         );
 
-        try {
-            $response = Http::withToken($apiKey)
-                ->timeout((int) config('cms.ai.translation.timeout', 30))
-                ->asJson()
-                ->post($endpoint, [
-                    'model' => self::model(),
-                    'messages' => [
-                        ['role' => 'system', 'content' => $system],
-                        ['role' => 'user', 'content' => $user],
-                    ],
-                ]);
-        } catch (ConnectionException) {
-            throw AiTranslationException::requestFailed();
+        $attempts = self::maxAttemptsPerRequest();
+
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $isLastAttempt = $attempt === $attempts;
+
+            try {
+                $response = Http::withToken($apiKey)
+                    /*
+                     * OpenRouter's recommended attribution headers. Both come from
+                     * per-deployment config rather than being hardcoded, because this
+                     * is a reusable Core and a client's name must never be baked into
+                     * it. Nothing is disclosed that the request body does not already
+                     * carry.
+                     */
+                    ->withHeaders([
+                        'HTTP-Referer' => (string) config('app.url'),
+                        'X-Title' => (string) config('app.name'),
+                    ])
+                    // Separate from the total budget: an endpoint that accepts nothing
+                    // at all should report that in a second, not after the full
+                    // timeout — several times over, once per request in the run.
+                    ->connectTimeout((int) config('cms.ai.translation.connect_timeout', 10))
+                    ->timeout((int) config('cms.ai.translation.timeout', 30))
+                    ->asJson()
+                    ->post($endpoint, [
+                        'model' => self::model(),
+                        'messages' => [
+                            ['role' => 'system', 'content' => $system],
+                            ['role' => 'user', 'content' => $user],
+                        ],
+                        /*
+                         * Translation is not a creative task, and sampling is actively
+                         * harmful here: at a non-zero temperature the same article
+                         * re-translated after a small edit comes back reworded
+                         * throughout, so a reviewer who had already checked the
+                         * unchanged paragraphs has to check them again.
+                         */
+                        'temperature' => 0,
+                        // JSON mode. Cheap insurance against the single most common
+                        // malformed reply: a correct JSON body wrapped in a ```json
+                        // fence, which json_decode rejects outright.
+                        'response_format' => ['type' => 'json_object'],
+                        'max_tokens' => (int) config('cms.ai.translation.max_tokens', 4096),
+                    ]);
+            } catch (ConnectionException) {
+                if ($isLastAttempt) {
+                    throw AiTranslationException::requestFailed();
+                }
+
+                $this->waitBeforeRetry(null, $attempt);
+
+                continue;
+            }
+
+            if ($response->successful()) {
+                return $response->json('choices.0.message.content');
+            }
+
+            // Rate limited, or the provider is having a moment: both mean "ask
+            // again". Anything else in the 4xx range is a configuration error and is
+            // final — retrying a bad key three times only delays the diagnosis.
+            $retryable = $response->status() === 429 || $response->serverError();
+
+            if (! $retryable || $isLastAttempt) {
+                throw AiTranslationException::requestFailed();
+            }
+
+            $this->waitBeforeRetry($response, $attempt);
         }
 
-        if (! $response->successful()) {
-            throw AiTranslationException::requestFailed();
+        // Unreachable: the loop either returns or throws on its last attempt. Present
+        // because the compiler cannot see that, and returning null here would be a
+        // silent malformed-response rather than a failure.
+        throw AiTranslationException::requestFailed();
+    }
+
+    /**
+     * Wait before the next attempt, honouring Retry-After up to a hard ceiling.
+     *
+     * The provider knows when its own limit resets, so Retry-After is a better number
+     * than any backoff curve — but only up to a point. A queued job that sleeps for
+     * ten minutes because a header said so is occupying a worker the rest of the
+     * queue needs, and the queue's own retry is the right place to wait that long, so
+     * a request beyond cms.ai.translation.max_retry_delay is refused and the wait
+     * falls back to the capped curve.
+     *
+     * Both the numeric-seconds and HTTP-date forms of the header are read, because
+     * RFC 9110 allows either and providers use both.
+     *
+     * Through Illuminate\Support\Sleep rather than sleep(), so the retry policy is
+     * assertable in tests without a test suite that actually waits.
+     */
+    private function waitBeforeRetry(?Response $response, int $attempt): void
+    {
+        $cap = self::maxRetryDelay();
+
+        // 1s, 2s, 4s, ... capped. Enough to clear a burst limit without turning a
+        // transient fault into a long stall.
+        $backoff = min($cap, 2 ** ($attempt - 1));
+
+        $requested = $response === null ? null : $this->retryAfterSeconds($response);
+
+        $delay = $requested !== null && $requested <= $cap
+            ? $requested
+            : $backoff;
+
+        if ($delay > 0) {
+            Sleep::for($delay)->seconds();
+        }
+    }
+
+    /**
+     * Seconds requested by a Retry-After header, or null when it says nothing usable.
+     */
+    private function retryAfterSeconds(Response $response): ?int
+    {
+        $header = trim($response->header('Retry-After'));
+
+        if ($header === '') {
+            return null;
+        }
+
+        if (ctype_digit($header)) {
+            return (int) $header;
         }
 
         try {
-            return $response->json('choices.0.message.content');
-        } catch (Throwable) {
-            throw AiTranslationException::requestFailed();
+            $until = Carbon::parse($header);
+        } catch (\Throwable) {
+            // A malformed date is not worth failing the request over; the backoff
+            // curve is a perfectly good answer.
+            return null;
         }
+
+        // Plain timestamp arithmetic rather than a diff helper: an HTTP-date is always
+        // absolute, and a date already in the past means "retry now", not "retry
+        // however long ago that was".
+        return max(0, $until->getTimestamp() - now()->getTimestamp());
     }
 }

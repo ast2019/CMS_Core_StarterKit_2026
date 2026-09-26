@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Image\Enums\Fit;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -164,38 +165,120 @@ class MediaAsset extends Model implements HasMedia
      * follows Requirement 7.6 ("reserve space before the image loads") had nothing
      * to reserve it with. SchemaBuilder's ImageObject drops width/height for the
      * same reason.
+     */
+    public function syncFileMetadata(): void
+    {
+        $metadata = $this->fileMetadata();
+
+        if ($metadata === []) {
+            return;
+        }
+
+        $this->forceFill($metadata);
+
+        if ($this->isDirty()) {
+            $this->save();
+        }
+    }
+
+    /**
+     * The facts the stored file can tell us about itself, as an attribute array.
+     *
+     * Separated from syncFileMetadata() because the WRITE differs between the two
+     * callers while the DERIVATION must not. The upload path saves normally (an
+     * editor is attaching a file, and the save is part of their action);
+     * cms:backfill-media-metadata writes quietly and without touching timestamps,
+     * because it is retroactively correcting our record of files that have not
+     * changed. Two copies of "how do we read a file's dimensions" is how the
+     * backfill ends up disagreeing with the uploader about what a correct row
+     * looks like.
+     *
+     * Only keys that could actually be DETERMINED are returned. An asset whose file
+     * has gone missing from disk still has a mime type and a byte size recorded on
+     * its media row — those are real facts, worth writing — but no dimensions can be
+     * read, and inventing a zero would be worse than leaving the column null, which
+     * SchemaBuilder and SocialTagBuilder already handle.
      *
      * Read from the ORIGINAL file, never from a conversion: conversions are queued
      * (config/media-library.php), so at the moment an upload finishes the
      * derivatives do not exist yet and asking one for its size would report null
      * for every fresh upload.
+     *
+     * @return array<string, int|string|null>
      */
-    public function syncFileMetadata(): void
+    public function fileMetadata(): array
     {
         $media = $this->getFirstMedia('file');
 
         if ($media === null) {
-            return;
+            return [];
         }
 
-        $this->mime_type = $media->mime_type;
-        $this->size = $media->size;
+        $metadata = [
+            'mime_type' => $media->mime_type,
+            'size' => $media->size,
+        ];
 
         // Dimensions are meaningful for images only, and getimagesize() on a video
         // or a PDF returns false rather than throwing, so the guard is about intent
         // rather than safety.
-        if ($this->isImage()) {
+        if ($this->isImage() && ! $this->fileIsMissingFromDisk()) {
             $dimensions = @getimagesize($media->getPath());
 
             if (is_array($dimensions)) {
-                $this->width = $dimensions[0];
-                $this->height = $dimensions[1];
+                $metadata['width'] = $dimensions[0];
+                $metadata['height'] = $dimensions[1];
             }
         }
 
-        if ($this->isDirty()) {
-            $this->save();
+        return $metadata;
+    }
+
+    /**
+     * Whether this asset has a media row whose file is not on disk.
+     *
+     * False for an asset with no media row at all — that is a different condition
+     * (nothing was ever attached) and the two must not be conflated, because one is
+     * an incomplete upload and the other is data loss.
+     *
+     * The distinction earns its keep in the backfill command, which has to keep
+     * going past a missing file rather than aborting the run, and has to be able to
+     * tell an operator which of the two it found.
+     */
+    public function fileIsMissingFromDisk(): bool
+    {
+        $media = $this->getFirstMedia('file');
+
+        if ($media === null) {
+            return false;
         }
+
+        // Asked of the DISK rather than of the local filesystem, so the answer is
+        // still correct if a deployment ever points the media disk somewhere other
+        // than the default root. RULE #9 keeps it local either way.
+        return ! Storage::disk($media->disk)->exists($media->getPathRelativeToRoot());
+    }
+
+    /**
+     * Assets whose stored metadata is incomplete.
+     *
+     * The backfill's candidate set, expressed as a scope so the command and its
+     * test ask the same question. `mime_type` and `size` apply to every asset;
+     * dimensions are only expected of an image, so a video with null width is not a
+     * candidate and a re-run does not keep picking it up for ever.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeMissingFileMetadata(Builder $query): void
+    {
+        $query->where(function (Builder $inner): void {
+            $inner->whereNull('mime_type')
+                ->orWhereNull('size')
+                ->orWhere(function (Builder $image): void {
+                    $image->where('type', 'image')
+                        ->where(fn (Builder $q) => $q->whereNull('width')->orWhereNull('height'));
+                });
+        });
     }
 
     /**

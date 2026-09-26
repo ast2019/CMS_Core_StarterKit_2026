@@ -148,8 +148,79 @@ return [
             // client-specific value, so it is safe to keep in code.
             'endpoint' => 'https://openrouter.ai/api/v1/chat/completions',
 
-            // Seconds to wait on the outbound call before failing gracefully.
+            // Seconds to wait for the whole outbound call before failing
+            // gracefully.
             'timeout' => 30,
+
+            /*
+             * Seconds to wait for the CONNECTION alone, separate from the total
+             * budget above. Without it, an endpoint that accepts nothing at all
+             * (DNS gone, provider hard down) consumed the full timeout before
+             * reporting a failure it could have reported in a second — and a run
+             * makes several requests, so the difference is minutes of a worker's
+             * life spent proving the network is down.
+             */
+            'connect_timeout' => 10,
+
+            /*
+             * Attempts per request, counting the first. Retries exist for exactly
+             * two answers — a 429 (rate limited) and a 5xx (the provider is having a
+             * moment) — both of which say "ask again" rather than "you asked wrongly".
+             * A 4xx other than 429 is never retried: a bad key or an unknown model
+             * will be just as bad on the third attempt, and retrying only triples
+             * the latency before the editor sees the real problem.
+             */
+            'max_attempts' => 3,
+
+            /*
+             * Ceiling, in seconds, on how long a single retry will wait — including
+             * when the provider's own Retry-After header asks for longer. The header
+             * is honoured up to this point and refused beyond it: a queued job that
+             * sleeps for ten minutes on a third party's say-so is occupying a worker
+             * the rest of the queue needs, and the queue's own retry is a better
+             * place to wait that long.
+             */
+            'max_retry_delay' => 30,
+
+            /*
+             * Output ceiling per request. Present so a runaway response cannot bill
+             * for tokens nobody asked for, and sized against the chunk bounds below
+             * — see max_characters_per_request.
+             */
+            'max_tokens' => 4096,
+
+            /*
+             * Chunk bounds for one batched request.
+             *
+             * A body is translated as a batch of its prose leaves. Sent whole, a long
+             * article exceeds the model's OUTPUT token limit, the JSON is truncated
+             * mid-string, the decode fails and the editor is told only that the
+             * request failed. Both bounds are applied, because either alone is
+             * escapable: forty short captions and four enormous paragraphs are the
+             * same segment count and nothing like the same number of tokens.
+             *
+             * `max_characters_per_request` and `max_tokens` are two halves of one
+             * setting. Raising the character bound without raising the token ceiling
+             * reintroduces exactly the truncation the chunking exists to prevent.
+             *
+             * A single segment longer than the character bound is never split — a
+             * split segment would break the 1:1 contract that keeps the document's
+             * structure intact — so it forms a chunk of its own.
+             */
+            'max_segments_per_request' => 40,
+            'max_characters_per_request' => 4000,
+
+            /*
+             * Hard cap on requests for one record and locale, enforced BEFORE any
+             * HTTP work (segment collection is local, so this costs nothing). A
+             * document needing more than this is refused with an actionable message
+             * rather than quietly spending for twenty minutes.
+             *
+             * At the defaults this allows roughly 480 prose leaves or 48,000
+             * characters of body — a very long article — plus the single batched
+             * request that carries the plain fields.
+             */
+            'max_requests_per_record' => 12,
         ],
     ],
 
@@ -185,6 +256,42 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Menu Locations
+    |--------------------------------------------------------------------------
+    |
+    | The navigation regions this deployment has. One `menu_items` table serves all
+    | of them, grouped by `menu_key` — so a location is METADATA about the frontend's
+    | layout, not content, and deliberately has no model or table of its own. A
+    | `menus` table would have to be seeded per deployment, would let an editor create
+    | a location the frontend has no slot to render, and would answer no question this
+    | list does not.
+    |
+    | Declared here rather than hardcoded in App\Models\MenuItem so a client site can
+    | add a "utility" bar or drop the sidebar without patching the Core (Requirement
+    | 1.2). The same list does three jobs, which is why it is one list:
+    |   - it populates the location Select and the table filter in the panel;
+    |   - it VALIDATES `menu_key` on save, so a seed or an import cannot write items
+    |     into a menu nothing renders;
+    |   - it decides whether GET /api/v1/menus/{key} is a 404. An undeclared location
+    |     is a frontend typo and now says so, instead of being indistinguishable from
+    |     a declared menu that happens to be empty.
+    |
+    | Labels are NOT here. The panel is trilingual, so a literal label in config would
+    | force one language on a field the rest of the panel translates, and config is
+    | resolved (and cached) independently of the active locale. Each key is labelled
+    | from `cms.menu.location.{key}` in the lang files, falling back to the raw key —
+    | so a client can add a location and ship without touching lang files at all.
+    |
+    | Requirement 3.1.
+    |
+    */
+
+    'menus' => [
+        'locations' => ['header', 'footer', 'sidebar'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Slides
     |--------------------------------------------------------------------------
     |
@@ -195,6 +302,28 @@ return [
 
     'slides' => [
         'max' => env('CMS_SLIDES_MAX', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sitemaps
+    |--------------------------------------------------------------------------
+    |
+    | Requirements 7.2, 7.4. Decision D-5.
+    |
+    | Rows loaded per batch while a sitemap is generated. The generator walks
+    | every indexable type with chunkById() rather than get(), because a sitemap
+    | is the one response whose cost grows with the WHOLE archive rather than
+    | with a page of it — at starter-kit scale it does not matter and at tens of
+    | thousands of records a single get() is what exhausts the request's memory
+    | limit. Larger batches mean fewer round trips and more resident rows; this
+    | default is sized so a batch of articles with their media and translation
+    | states stays comfortably small.
+    |
+    */
+
+    'sitemap' => [
+        'chunk' => env('CMS_SITEMAP_CHUNK', 500),
     ],
 
     /*
@@ -218,6 +347,23 @@ return [
             'key' => env('CMS_DELIVERY_API_KEY'),
             'rate_limit' => env('CMS_DELIVERY_RATE_LIMIT', 120),
             'cache_ttl' => env('CMS_DELIVERY_CACHE_TTL', 300),
+
+            /*
+             * Redirect lookups get their own, much higher allowance.
+             *
+             * Not generosity — a correction for how the traffic actually arrives. The
+             * delivery limiter is keyed by IP, which is right for browsers hitting the
+             * API directly. But the redirect lookup is called by the FRONTEND server on
+             * every 404 it serves, from one IP for the entire site's traffic, so the
+             * shared 120/min ceiling would throttle the whole deployment the moment a
+             * crawler walked a few stale URLs — and the failure mode is that redirects
+             * stop working, which is the bug this endpoint exists to fix.
+             *
+             * The work behind each call is an in-memory lookup against one cached map,
+             * so a high limit is cheap. It is still a limit: without one, a 404 flood
+             * would drive an unbounded number of hit-counter UPDATEs.
+             */
+            'redirect_rate_limit' => env('CMS_REDIRECT_RATE_LIMIT', 600),
         ],
 
         'management' => [
@@ -252,6 +398,34 @@ return [
         'limit' => 6,
         'weight_category' => 2,
         'weight_tag' => 1,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | SEO Authoring Analysis
+    |--------------------------------------------------------------------------
+    |
+    | Thresholds for the focus-keyphrase checks (App\Services\Seo\SeoAnalyser),
+    | Requirement 7.1. Configurable because they are editorial conventions rather
+    | than facts: a news desk publishing 200-word wires and a site publishing
+    | long-form guides should not be told the same number is "too short".
+    |
+    | The density band is wide on purpose. Substring matching undercounts inflected
+    | Persian forms and the word count treats ZWNJ-joined compounds as two words,
+    | so the computed density sits below the real one — a narrow band would nag
+    | editors whose copy is fine. See the SeoAnalyser docblock for what this
+    | analysis deliberately does NOT measure.
+    |
+    */
+
+    'seo' => [
+        'analysis' => [
+            'min_words' => env('CMS_SEO_MIN_WORDS', 300),
+            'opening_words' => 50,
+            'density_min' => 0.5,
+            'density_max' => 2.5,
+            'max_section_words' => 300,
+        ],
     ],
 
     /*

@@ -22,6 +22,16 @@ interface TracksTranslationStatus
     public function translationStatusFor(string $locale): TranslationStatus;
 
     /**
+     * The status ROW for a locale, answered from the eager-loaded collection when
+     * there is one.
+     *
+     * Part of the contract because the row's `updated_at` is the only honest lastmod
+     * for a translated URL: a sign-off writes this row and not the content row, and
+     * under Decision D-5 the sign-off is what put the URL in the sitemap at all.
+     */
+    public function translationStateFor(string $locale): ?TranslationState;
+
+    /**
      * The locale's status read from the database, ignoring a loaded relation.
      *
      * Part of the contract because translationStatusFor() is allowed to answer from

@@ -19,6 +19,9 @@ class SlidesTable
     public static function configure(Table $table): Table
     {
         return $table
+            // The link column resolves the morph, so without this the list costs an
+            // extra query per slide.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('linkable'))
             ->columns([
                 TextColumn::make('position')
                     ->label('#')
@@ -32,6 +35,19 @@ class SlidesTable
                         // preloaded, so which one it is matters operationally.
                         ? 'preload'
                         : null),
+
+                TextColumn::make('resolved')
+                    ->label(__('cms.field.link'))
+                    /*
+                     * What the slide actually resolves to in the current locale, as the
+                     * menu table already showed. A slide pointing at a deleted,
+                     * unpublished or disabled-module target is dropped from the public
+                     * payload, and the dash here is the only place an editor can see
+                     * that before a visitor does.
+                     */
+                    ->getStateUsing(fn (Slide $record): string => $record->resolveUrl(app()->getLocale()) ?? '—')
+                    ->extraAttributes(['class' => 'cms-ltr'])
+                    ->toggleable(),
 
                 IconColumn::make('is_active')
                     ->label(__('cms.field.is_active'))

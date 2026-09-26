@@ -256,12 +256,13 @@ class TranslationReview extends Page implements HasTable
     /**
      * Queue a machine translation for this row.
      *
-     * The translation itself used to run HERE, inside the Livewire request: up to
-     * six sequential OpenRouter calls at 30s each, so nearly three minutes of wall
-     * clock against a PHP max_execution_time and an nginx read timeout that both
-     * fire first. The request died after the API calls had been paid for, the work
-     * was lost, and a PHP-FPM worker had been held the whole time. It is now a
-     * queued job (TranslateRecordJob) and this method only dispatches.
+     * The translation itself used to run HERE, inside the Livewire request: several
+     * sequential OpenRouter calls at 30s each — one batched request for the plain
+     * fields plus one per chunk of a long body — against a PHP max_execution_time and
+     * an nginx read timeout that both fire first. The request died after the API calls
+     * had been paid for, the work was lost, and a PHP-FPM worker had been held the
+     * whole time. It is now a queued job (TranslateRecordJob) and this method only
+     * dispatches.
      *
      * The cheap guards stay SYNCHRONOUS on purpose. "The feature is off", "no API
      * key" and "this locale is already reviewed" are all answerable in one query,

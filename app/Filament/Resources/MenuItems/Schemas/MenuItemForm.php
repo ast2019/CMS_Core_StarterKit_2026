@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\MenuItems\Schemas;
 
+use App\Filament\Schemas\LinkTargetFields;
 use App\Filament\Schemas\TranslatableTabs;
-use App\Models\Category;
-use App\Models\Content;
-use App\Models\Gallery;
 use App\Models\MenuItem;
-use App\Models\Page;
+use Closure;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -39,78 +37,72 @@ class MenuItemForm
                 ->schema([
                     Select::make('menu_key')
                         ->label(__('cms.field.menu_key'))
-                        ->options([
-                            'header' => 'header',
-                            'footer' => 'footer',
-                            'sidebar' => 'sidebar',
-                        ])
-                        ->default('header')
-                        ->required(),
+                        ->helperText(__('cms.field.menu_key_help'))
+                        /*
+                         * The locations this deployment declares in `cms.menus.locations`,
+                         * labelled from the lang files. The list is no longer written out
+                         * here: the same set validates the column on save and decides
+                         * whether GET /api/v1/menus/{key} is a 404, so three readers of
+                         * one config entry is the only arrangement in which they cannot
+                         * disagree.
+                         */
+                        ->options(fn (): array => MenuItem::menuLocations())
+                        ->default(MenuItem::DEFAULT_MENU_KEY)
+                        ->required()
+                        // Live because the parent options are scoped to the same
+                        // location: a parent in another menu is not reachable from this
+                        // one's tree, so the child would vanish from both.
+                        ->live(),
 
                     Select::make('parent_id')
                         ->label(__('cms.field.parent'))
-                        // Query modifier is relationship()'s third argument; Select
-                        // has no ->modifyQueryUsing(). Excludes self to prevent a
-                        // menu item becoming its own parent.
+                        ->helperText(__('cms.field.parent_help', ['depth' => MenuItem::MAX_DEPTH]))
+                        /*
+                         * Query modifier is relationship()'s third argument; Select
+                         * has no ->modifyQueryUsing().
+                         *
+                         * Excluding only self was not enough. A→B plus B→A was
+                         * savable, and the branch then disappeared from the API
+                         * entirely because neither row is topLevel() any more — a
+                         * whole menu silently gone, with nothing in the panel to
+                         * show why. So the options also exclude this item's own
+                         * descendants, items in other menus, and items already deep
+                         * enough that nesting under them would breach MAX_DEPTH.
+                         */
                         ->relationship(
                             'parent',
                             'id',
-                            fn (Builder $query, ?MenuItem $record): Builder => $record === null
-                                ? $query
-                                : $query->whereKeyNot($record->getKey()),
+                            fn (Builder $query, ?MenuItem $record, Get $get): Builder => self::parentOptions(
+                                $query,
+                                $record,
+                                is_string($get('menu_key')) ? $get('menu_key') : null,
+                            ),
                         )
                         ->getOptionLabelFromRecordUsing(
                             fn (MenuItem $record): string => $record->getTranslation('label', app()->getLocale()),
                         )
-                        ->searchable(),
+                        ->searchable()
+                        /*
+                         * Validated as well as filtered. The options list is a
+                         * courtesy; the rule is the guarantee, and it is the rule
+                         * that also catches a stale live()-filtered form and a tree
+                         * that was already cyclic before this validation existed.
+                         */
+                        ->rules([
+                            fn (?MenuItem $record): Closure => static function (
+                                string $attribute,
+                                mixed $value,
+                                Closure $fail,
+                            ) use ($record): void {
+                                self::validateParent($record, $value, $fail);
+                            },
+                        ]),
 
                     /*
-                     * A menu item points either at a raw URL or at a CMS record.
-                     * Linking to a record is preferable because its slug is
-                     * per-locale, so one item resolves to a different path in each
-                     * language — a hardcoded URL would send every locale to the
-                     * Persian page.
+                     * The raw-URL-or-record picker, shared with SlideForm. A menu item
+                     * must have one of the two; a slide need not.
                      */
-                    Select::make('linkable_type')
-                        ->label(__('cms.field.type'))
-                        ->options([
-                            Page::class => __('cms.resource.page'),
-                            Content::class => __('cms.resource.content'),
-                            Category::class => __('cms.resource.category'),
-                            Gallery::class => __('cms.resource.gallery'),
-                        ])
-                        ->live()
-                        ->placeholder(__('cms.field.link')),
-
-                    Select::make('linkable_id')
-                        ->label(__('cms.field.name'))
-                        ->searchable()
-                        ->visible(fn (Get $get): bool => filled($get('linkable_type')))
-                        ->options(function (Get $get): array {
-                            /** @var class-string|null $type */
-                            $type = $get('linkable_type');
-
-                            if (blank($type) || ! class_exists($type)) {
-                                return [];
-                            }
-
-                            $field = $type === Category::class ? 'name' : 'title';
-
-                            return $type::query()
-                                ->limit(100)
-                                ->get()
-                                ->mapWithKeys(fn ($record): array => [
-                                    $record->getKey() => (string) $record->getTranslation($field, app()->getLocale()),
-                                ])
-                                ->all();
-                        }),
-
-                    TextInput::make('link')
-                        ->label(__('cms.field.link'))
-                        ->maxLength(500)
-                        ->visible(fn (Get $get): bool => blank($get('linkable_type')))
-                        ->regex('/^(?!javascript:|data:|vbscript:)/i')
-                        ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
+                    ...LinkTargetFields::make(targetRequired: true),
 
                     TextInput::make('position')
                         ->label(__('cms.field.position'))
@@ -122,5 +114,72 @@ class MenuItemForm
                         ->label(__('cms.field.opens_in_new_tab')),
                 ]),
         ]);
+    }
+
+    /**
+     * Items that may legally be this item's parent.
+     *
+     * @param  Builder<MenuItem>  $query
+     * @return Builder<MenuItem>
+     */
+    private static function parentOptions(Builder $query, ?MenuItem $record, ?string $menuKey): Builder
+    {
+        if ($menuKey !== null) {
+            $query->where('menu_key', $menuKey);
+        }
+
+        if ($record !== null) {
+            $query->whereNotIn('id', $record->descendantKeys());
+        }
+
+        $height = $record?->subtreeHeight() ?? 1;
+
+        /*
+         * Keep only candidates shallow enough to take this item's whole subtree.
+         * Done in PHP rather than SQL because depth is a recursive property and
+         * MySQL/SQLite parity rules out a recursive CTE here; a navigation menu is
+         * a handful of rows, so the cost is a non-issue.
+         */
+        $allowed = MenuItem::query()
+            ->when($menuKey !== null, fn (Builder $inner): Builder => $inner->where('menu_key', $menuKey))
+            ->get()
+            ->filter(fn (MenuItem $candidate): bool => $candidate->level() + $height <= MenuItem::MAX_DEPTH)
+            ->modelKeys();
+
+        return $query->whereIn('id', $allowed);
+    }
+
+    /**
+     * @param  Closure(string): void  $fail
+     */
+    private static function validateParent(?MenuItem $record, mixed $value, Closure $fail): void
+    {
+        if (blank($value)) {
+            return;
+        }
+
+        $parent = MenuItem::find($value);
+
+        if ($parent === null) {
+            $fail(__('cms.validation.menu_parent_missing'));
+
+            return;
+        }
+
+        if ($record !== null && (int) $parent->getKey() === (int) $record->getKey()) {
+            $fail(__('cms.validation.menu_parent_cycle'));
+
+            return;
+        }
+
+        $verdict = ($record ?? new MenuItem)->canNestUnder($parent);
+
+        if ($verdict['ok']) {
+            return;
+        }
+
+        $fail($verdict['reason'] === 'cycle'
+            ? __('cms.validation.menu_parent_cycle')
+            : __('cms.validation.menu_depth', ['depth' => MenuItem::MAX_DEPTH]));
     }
 }

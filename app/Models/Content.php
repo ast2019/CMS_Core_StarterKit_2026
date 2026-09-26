@@ -17,6 +17,7 @@ use App\Contracts\HasSeoMetadata;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
 use App\Contracts\Versionable;
+use App\Enums\ArticleSchemaType;
 use App\Enums\ContentStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -42,6 +43,7 @@ use Spatie\Translatable\HasTranslations;
  *  - HasContentVersions    Requirement 3.7
  *
  * @property ContentStatus $status
+ * @property ArticleSchemaType|null $schema_type
  * @property Carbon|null $publish_date
  * @property int|null $author_id
  * @property int|null $primary_category_id
@@ -74,6 +76,15 @@ class Content extends Model implements HasFeaturedMedia, HasSeoMetadata, Publish
         'meta_title',
         'meta_description',
         'robots_meta',
+        /*
+         * The keyphrase this locale is written to be found by, and the social-card
+         * overrides. Translatable per HasSeoMetadata::OPTIONAL_SEO_TRANSLATABLE_ATTRIBUTES;
+         * asserted by tests/Architecture/SeoMetaTest.php so a later model cannot add
+         * the column while leaving it shared across locales.
+         */
+        'focus_keyphrase',
+        'og_title',
+        'og_description',
     ];
 
     protected $fillable = [
@@ -85,6 +96,10 @@ class Content extends Model implements HasFeaturedMedia, HasSeoMetadata, Publish
         'meta_title',
         'meta_description',
         'robots_meta',
+        'focus_keyphrase',
+        'og_title',
+        'og_description',
+        'schema_type',
         'status',
         'publish_date',
         'author_id',
@@ -95,8 +110,22 @@ class Content extends Model implements HasFeaturedMedia, HasSeoMetadata, Publish
     {
         return [
             'status' => ContentStatus::class,
+            'schema_type' => ArticleSchemaType::class,
             'publish_date' => 'datetime',
         ];
+    }
+
+    /**
+     * The schema.org type this article is published as (Requirement 7.3).
+     *
+     * Falls back to the default rather than returning null, because SchemaBuilder has
+     * to emit SOME @type and the column is only nullable for rows written before the
+     * cast existed. NewsArticle is that default precisely because it is what the
+     * builder used to hardcode, so an unset column means "unchanged".
+     */
+    public function schemaType(): ArticleSchemaType
+    {
+        return $this->schema_type ?? ArticleSchemaType::default();
     }
 
     /**

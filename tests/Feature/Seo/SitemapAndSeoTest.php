@@ -11,6 +11,8 @@ use App\Models\Setting;
 use App\Services\Seo\HreflangBuilder;
 use App\Services\Seo\SchemaBuilder;
 use App\Services\Sitemap\SitemapGenerator;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\get;
 use function Pest\Laravel\getJson;
@@ -447,4 +449,211 @@ it('marks a draft noindex in its SEO payload', function (): void {
 
 it('returns 404 for a sitemap in an unsupported locale', function (): void {
     get('/sitemap-de.xml')->assertNotFound();
+});
+
+/**
+ * Read the `<lastmod>` of one entry out of a sitemap index document.
+ *
+ * Parsed rather than pattern-matched against the whole file, because the assertions
+ * below are about one entry differing from another — and a bare str_contains() on the
+ * document would pass while every entry still shared the same timestamp, which is the
+ * exact defect these tests exist to catch.
+ */
+function indexLastModFor(string $xml, string $sitemap): ?string
+{
+    preg_match_all('#<sitemap>(.*?)</sitemap>#s', $xml, $blocks);
+
+    foreach ($blocks[1] as $block) {
+        if (! str_contains($block, $sitemap)) {
+            continue;
+        }
+
+        return preg_match('#<lastmod>(.*?)</lastmod>#', $block, $match) === 1
+            ? $match[1]
+            : null;
+    }
+
+    return null;
+}
+
+it('stamps each sitemap in the index with a real lastmod, not the fetch time', function (): void {
+    /*
+     * Spatie's Sitemap tag defaults lastModificationDate to Carbon::now() in its
+     * constructor, so the index was ALREADY emitting a lastmod — the request time,
+     * identical on every entry, on every fetch. That is worse than omitting the field:
+     * an index claiming all five sitemaps changed this second teaches Google to ignore
+     * lastmod for this site, after which the whole archive is re-crawled on the
+     * crawler's schedule rather than on ours.
+     */
+    Content::factory()->published()->create();
+
+    $past = now()->subDays(3)->startOfSecond();
+
+    // Straight to the table: an Eloquent save would re-stamp updated_at to now, which
+    // is the value under test.
+    DB::table('contents')->update(['updated_at' => $past]);
+    DB::table('media_assets')->update(['updated_at' => $past]);
+
+    $xml = get('/sitemap.xml')->assertOk()->content();
+
+    $faLastMod = indexLastModFor($xml, 'sitemap-fa.xml');
+
+    expect($faLastMod)->not->toBeNull()
+        // The content's own timestamp, not the moment of the request.
+        ->and(Carbon::parse((string) $faLastMod)->toIso8601String())->toBe($past->toIso8601String());
+});
+
+it('moves an entry in the index when only that locale changed', function (): void {
+    /*
+     * The point of lastmod is to distinguish the sitemaps worth re-fetching from the
+     * ones that are not. A sign-off on the English translation changes which records
+     * sitemap-en.xml CONTAINS (Decision D-5) while touching no content row at all —
+     * so if the index derived its dates from content timestamps alone, the one sitemap
+     * that genuinely changed would be the one advertised as unchanged.
+     */
+    $content = Content::factory()->published()->multilingual()->create();
+
+    $past = now()->subDays(5)->startOfSecond();
+
+    DB::table('contents')->update(['updated_at' => $past]);
+    DB::table('translation_states')->update(['updated_at' => $past]);
+
+    $content->markTranslationReviewed('en');
+
+    $xml = get('/sitemap.xml')->assertOk()->content();
+
+    $fa = Carbon::parse((string) indexLastModFor($xml, 'sitemap-fa.xml'));
+    $en = Carbon::parse((string) indexLastModFor($xml, 'sitemap-en.xml'));
+
+    // Persian is untouched and still reports the old date; English moved.
+    expect($fa->toIso8601String())->toBe($past->toIso8601String())
+        ->and($en->greaterThan($fa))->toBeTrue();
+});
+
+it('dates a translated URL by its review rather than by the last Persian edit', function (): void {
+    /*
+     * Per-URL lastmod, same reasoning one level down. The record's `updated_at` is only
+     * half the answer for /en/...: the translator who made that URL authoritative wrote
+     * the TranslationState, not the article, so reporting the article's timestamp tells
+     * a crawler the page has not changed since the Persian edit that PRECEDED the
+     * review it is waiting for.
+     */
+    $content = Content::factory()->published()->multilingual()->create();
+
+    $past = now()->subDays(5)->startOfSecond();
+
+    DB::table('contents')->update(['updated_at' => $past]);
+    DB::table('translation_states')->update(['updated_at' => $past]);
+
+    $content->markTranslationReviewed('en');
+
+    $enSlug = (string) $content->getTranslation('slug', 'en');
+    $faSlug = (string) $content->getTranslation('slug', 'fa');
+
+    $lastModFor = function (string $xml, string $slug): ?string {
+        preg_match_all('#<url>(.*?)</url>#s', $xml, $blocks);
+
+        foreach ($blocks[1] as $block) {
+            if (str_contains($block, '<loc>') && str_contains($block, $slug)) {
+                return preg_match('#<lastmod>(.*?)</lastmod>#', $block, $match) === 1 ? $match[1] : null;
+            }
+        }
+
+        return null;
+    };
+
+    $en = $lastModFor(get('/sitemap-en.xml')->assertOk()->content(), $enSlug);
+    $fa = $lastModFor(get('/sitemap-fa.xml')->assertOk()->content(), $faSlug);
+
+    expect($en)->not->toBeNull()
+        ->and($fa)->not->toBeNull()
+        // The source locale IS the content, so it keeps the content's date...
+        ->and(Carbon::parse((string) $fa)->toIso8601String())->toBe($past->toIso8601String())
+        // ...while the translated URL reports the sign-off that put it in this sitemap.
+        ->and(Carbon::parse((string) $en)->greaterThan(Carbon::parse((string) $fa)))->toBeTrue();
+});
+
+it('reads the article table once for all locales when building the media sitemaps', function (): void {
+    /*
+     * The N-loads-per-locale defect, pinned where it would come back. images() and
+     * videos() each called eligibleArticles($locale) INSIDE the locale loop, so each
+     * one re-ran a full `Content::query()->live()->with(...)->get()` per locale —
+     * three complete loads each, six between them, of identical rows, every row
+     * resident. The locale loop is now inside the record walk.
+     *
+     * Counted as SELECTs against `contents` rather than as a total, so the number
+     * means one thing: how many times the archive was read. Three supported locales
+     * makes the old behaviour three and the fixed behaviour one, so the assertion
+     * cannot pass by accident.
+     */
+    expect(config('cms.locales.supported'))->toHaveCount(3);
+
+    $content = Content::factory()->published()->create();
+    $content->setFeaturedImage(MediaAsset::factory()->withFile()->create());
+    $content->attachMediaAsset(
+        MediaAsset::factory()->videoWithThumbnail()->create(['alt_text' => ['fa' => 'ویدیو']]),
+        MediaRole::Inline,
+    );
+
+    $countArticleLoads = function (callable $build): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $build();
+
+        $loads = 0;
+
+        foreach (DB::getQueryLog() as $query) {
+            $sql = strtolower((string) $query['query']);
+
+            if (str_starts_with($sql, 'select') && str_contains($sql, 'from "contents"')) {
+                $loads++;
+            }
+        }
+
+        DB::disableQueryLog();
+
+        return $loads;
+    };
+
+    $generator = app(SitemapGenerator::class);
+
+    expect($countArticleLoads(fn () => $generator->images()->render()))->toBe(1)
+        ->and($countArticleLoads(fn () => $generator->videos()->render()))->toBe(1);
+});
+
+it('still associates each locale with the right image URL after the single pass', function (): void {
+    // The guard for the test above: reading the table once must not cost a locale its
+    // entries. An eligible English translation gets its own URL with the same image.
+    $content = Content::factory()->published()->multilingual()->create();
+    $content->setFeaturedImage(MediaAsset::factory()->withFile()->create(['alt_text' => ['fa' => 'تصویر']]));
+    $content->markTranslationReviewed('en');
+
+    $xml = app(SitemapGenerator::class)->images()->render();
+
+    expect($xml)->toContain((string) $content->getTranslation('slug', 'fa'))
+        ->and($xml)->toContain((string) $content->getTranslation('slug', 'en'))
+        // Arabic has no reviewed translation, so it contributes nothing (Decision D-5).
+        ->and($xml)->not->toContain((string) $content->getTranslation('slug', 'ar'));
+});
+
+it('walks each indexable type in batches rather than loading it whole', function (): void {
+    /*
+     * A chunk size smaller than the number of records, asserted through the OUTPUT
+     * rather than through a query count: what must hold is that batching loses no URL.
+     * chunkById() keyset-pages on the primary key, so a row leaving the live set
+     * mid-generation cannot shift a later page and silently drop an entry — which is
+     * what plain chunk()'s OFFSET paging would do.
+     */
+    config()->set('cms.sitemap.chunk', 2);
+
+    $articles = Content::factory()->count(5)->published()->create();
+
+    $xml = app(SitemapGenerator::class)->forLocale('fa')->render();
+
+    foreach ($articles as $article) {
+        expect($xml)->toContain((string) $article->getTranslation('slug', 'fa'));
+    }
+
+    expect(substr_count($xml, '<url>'))->toBe(6); // five articles plus the locale root
 });

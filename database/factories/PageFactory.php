@@ -43,4 +43,23 @@ class PageFactory extends Factory
             'status' => ContentStatus::Published,
         ]);
     }
+
+    /**
+     * The page served at the locale root.
+     *
+     * Published by default, because an unpublished homepage is served by nothing and a
+     * test asking for "the homepage" almost always means the live one. Note that only
+     * ONE of these can exist per test — the unique index on `system_key` and
+     * Page::guardSystemKeyIsUnique() both say so — so `count(2)` of this state is a
+     * deliberate way to assert that refusal rather than a usable fixture.
+     */
+    public function homePage(): static
+    {
+        return $this->state(fn (): array => [
+            'title' => ['fa' => 'خانه', 'en' => 'Home'],
+            'system_key' => Page::SYSTEM_HOME,
+            'status' => ContentStatus::Published,
+            'publish_date' => now()->subDay(),
+        ]);
+    }
 }

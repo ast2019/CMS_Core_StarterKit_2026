@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Schemas;
 
 use App\Contracts\HasSeoMetadata;
+use App\Services\Seo\SerpPreviewBuilder;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -36,22 +37,51 @@ use Illuminate\Support\HtmlString;
  * One component per concern means they cannot drift again.
  *
  * ---------------------------------------------------------------------------
- * How the warnings stay honest
+ * How everything here stays honest
  * ---------------------------------------------------------------------------
- * The warnings are not reimplemented here. A detached instance of the model is
- * filled from the CURRENT form state and asked for seoWarningsFor(), so what the
- * editor sees is what the API will report, and the rules exist once. Filling a
- * throwaway instance rather than the record is what makes it work before the
- * first save, and for edits made but not yet saved.
+ * Nothing in this class computes an SEO answer. A detached instance of the model
+ * is filled from the CURRENT form state and then ASKED — for its warnings, its
+ * search-result preview, its keyphrase score. So what the editor sees is what the
+ * API will report, and each rule exists once. Filling a throwaway instance rather
+ * than the record is what makes it work before the first save, and for edits made
+ * but not yet saved.
+ *
+ * ---------------------------------------------------------------------------
+ * Why the optional blocks are decided by asking the model
+ * ---------------------------------------------------------------------------
+ * The keyphrase and the social-card overrides exist on some SEO-bearing models and
+ * not others (HasSeoMeta::OPTIONAL_SEO_TRANSLATABLE_ATTRIBUTES explains which and
+ * why). This class does not keep a list of which — it asks whether the model
+ * declares the attribute as translatable. A list here would be the fifth place the
+ * same fact is written down, and the one nobody updates: adding a keyphrase to
+ * Gallery later is then a migration plus one line in $translatable, and the form
+ * grows the field on its own.
  */
 final class SeoSection
 {
+    /**
+     * Non-translatable attributes that change what the preview should say, picked up
+     * from live form state so switching a draft to published updates the preview
+     * before the save rather than after it.
+     *
+     * Deliberately a short, explicit list rather than "everything in the form": these
+     * are the three the SEO layer actually reads (UrlBuilder::hasLocaleRootUrl() reads
+     * `system_key`; Publishable::isLive() reads the other two), and copying arbitrary
+     * form state onto a model instance is how a preview starts triggering model
+     * behaviour nobody asked for.
+     */
+    private const URL_AND_VISIBILITY_ATTRIBUTES = ['system_key', 'status', 'publish_date'];
+
     /**
      * @param  class-string<Model&HasSeoMetadata>  $model
      */
     public static function make(string $model, string $locale, bool $withRobots = true): Section
     {
+        $probe = new $model;
+
         $components = [
+            self::serpPreview($model, $locale),
+
             self::warnings($model, $locale),
 
             TextInput::make("meta_title.{$locale}")
@@ -84,11 +114,26 @@ final class SeoSection
                 ->extraInputAttributes(self::directionFor($locale)),
         ];
 
+        if ($probe->seoSupportsFocusKeyphrase()) {
+            $components[] = TextInput::make("focus_keyphrase.{$locale}")
+                ->label(__('cms.field.focus_keyphrase'))
+                ->maxLength(120)
+                ->live(onBlur: true)
+                ->helperText(__('cms.field.focus_keyphrase_help'))
+                ->extraInputAttributes(self::directionFor($locale));
+
+            $components[] = self::analysis($model, $locale);
+        }
+
         if ($withRobots) {
             $components[] = Select::make("robots_meta.{$locale}")
                 ->label(__('cms.field.robots_meta'))
                 ->options(self::robotsOptions())
                 ->helperText(__('cms.field.robots_meta_help'));
+        }
+
+        if (self::declaresTranslatable($probe, 'og_title')) {
+            $components[] = self::socialOverrides($locale);
         }
 
         return Section::make(__('cms.section.seo'))
@@ -118,6 +163,83 @@ final class SeoSection
     }
 
     /**
+     * The Google-style search-result preview.
+     *
+     * First in the section on purpose: it is the only component here that shows the
+     * editor the OUTCOME rather than an input. The counters tell them a title is 68
+     * characters; this tells them which three words a searcher will never read.
+     *
+     * @param  class-string<Model&HasSeoMetadata>  $model
+     */
+    private static function serpPreview(string $model, string $locale): Placeholder
+    {
+        return Placeholder::make("serp_preview_{$locale}")
+            ->label(__('cms.seo.preview.label'))
+            ->columnSpanFull()
+            ->content(function (Get $get, ?Model $record) use ($model, $locale): HtmlString {
+                $preview = app(SerpPreviewBuilder::class)->for(
+                    self::instanceFrom($model, $locale, $get, $record),
+                    $locale,
+                );
+
+                return new HtmlString(view('filament.seo.serp-preview', [
+                    'preview' => $preview,
+                    'rtl' => TranslatableTabs::isRtl($locale),
+                ])->render());
+            });
+    }
+
+    /**
+     * The keyphrase score and its checks.
+     *
+     * @param  class-string<Model&HasSeoMetadata>  $model
+     */
+    private static function analysis(string $model, string $locale): Placeholder
+    {
+        return Placeholder::make("seo_analysis_{$locale}")
+            ->label(__('cms.seo.analysis.label'))
+            ->columnSpanFull()
+            ->content(function (Get $get, ?Model $record) use ($model, $locale): HtmlString {
+                $analysis = self::instanceFrom($model, $locale, $get, $record)
+                    ->seoAnalysisFor($locale);
+
+                return new HtmlString(view('filament.seo.keyphrase-analysis', [
+                    'analysis' => $analysis,
+                ])->render());
+            });
+    }
+
+    /**
+     * Per-record Open Graph overrides.
+     *
+     * Nested and collapsed, because they are the exception rather than the routine:
+     * blank means "use the meta values", which is what the API has always served.
+     * Surfacing them at the same level as the meta fields would suggest four fields
+     * need filling in where two do.
+     */
+    private static function socialOverrides(string $locale): Section
+    {
+        return Section::make(__('cms.section.social_card'))
+            ->description(__('cms.section.social_card_help'))
+            ->collapsed()
+            ->columnSpanFull()
+            ->schema([
+                TextInput::make("og_title.{$locale}")
+                    ->label(__('cms.field.og_title'))
+                    ->maxLength(255)
+                    ->helperText(__('cms.field.og_title_help'))
+                    ->extraInputAttributes(self::directionFor($locale)),
+
+                Textarea::make("og_description.{$locale}")
+                    ->label(__('cms.field.og_description'))
+                    ->rows(2)
+                    ->maxLength(320)
+                    ->helperText(__('cms.field.og_description_help'))
+                    ->extraInputAttributes(self::directionFor($locale)),
+            ]);
+    }
+
+    /**
      * Advisory warnings for this locale, read from the model's own rules.
      *
      * @param  class-string<Model&HasSeoMetadata>  $model
@@ -127,8 +249,9 @@ final class SeoSection
         return Placeholder::make("seo_warnings_{$locale}")
             ->label(__('cms.seo.warnings'))
             ->columnSpanFull()
-            ->content(function (Get $get) use ($model, $locale): HtmlString {
-                $warnings = self::warningsFor($model, $locale, $get);
+            ->content(function (Get $get, ?Model $record) use ($model, $locale): HtmlString {
+                $warnings = self::instanceFrom($model, $locale, $get, $record)
+                    ->seoWarningsFor($locale);
 
                 if ($warnings === []) {
                     return new HtmlString(
@@ -153,20 +276,35 @@ final class SeoSection
     }
 
     /**
-     * Ask the model's own trait, against unsaved form state.
+     * An instance of the model carrying UNSAVED form state, safe to interrogate.
      *
-     * A detached instance is filled with whatever translatable attributes the
-     * model declares AND the form is currently holding, then queried. Only
-     * declared attributes are touched: spatie throws AttributeIsNotTranslatable
-     * for anything else, which is the same trap that used to make
-     * metaDescriptionFor() a 500 on a Page.
+     * The one helper behind the warnings, the preview and the keyphrase score, so
+     * all three are computed against the same picture of the record.
+     *
+     * Two things it has to get right:
+     *
+     * 1. It CLONES the saved record when there is one, rather than always starting
+     *    from `new $model`. The URL shape and the robots directive depend on columns
+     *    that are not translatable and are not in this section — `system_key` decides
+     *    whether a Page is the site's homepage, and `status` and `publish_date`
+     *    decide whether anything is indexable at all. A blank instance answers "not
+     *    the homepage, not published" for every record, which would have previewed
+     *    the homepage at /fa/{slug} (a URL stage 2 deliberately stopped serving) and
+     *    labelled every published article noindex. The clone is never saved; Filament
+     *    writes the form array, not this object.
+     *
+     * 2. It only touches attributes the model DECLARES as translatable. Asking
+     *    spatie for anything else throws AttributeIsNotTranslatable — the same trap
+     *    that once turned a missing meta description on a Page into a 500.
      *
      * @param  class-string<Model&HasSeoMetadata>  $model
-     * @return list<string>
+     * @return Model&HasSeoMetadata
      */
-    private static function warningsFor(string $model, string $locale, Get $get): array
+    private static function instanceFrom(string $model, string $locale, Get $get, ?Model $record): Model
     {
-        $instance = new $model;
+        // `$record instanceof $model` is enough: $model is class-string<Model&HasSeoMetadata>,
+        // so a record of that class satisfies both halves.
+        $instance = $record instanceof $model ? clone $record : new $model;
 
         /** @var list<string> $translatable */
         $translatable = $instance->getTranslatableAttributes();
@@ -174,14 +312,43 @@ final class SeoSection
         foreach ($translatable as $attribute) {
             $value = $get("{$attribute}.{$locale}");
 
-            // Only strings: `body` and `blocks` are translatable too and hold
-            // TipTap documents, which no SEO getter reads.
             if (is_string($value) && $value !== '') {
+                $instance->setTranslation($attribute, $locale, $value);
+
+                continue;
+            }
+
+            /*
+             * The body is an array, not a string: RichEditor::json() holds a TipTap
+             * document. It is skipped by the string branch above and has to be set
+             * explicitly, because the keyphrase checks that matter most — is the phrase
+             * in a heading, in the opening, how dense is it — read the body and nothing
+             * else. The editor is NOT live (re-rendering the whole form on every
+             * keystroke inside a rich editor is not affordable), so these checks reflect
+             * the last save; cms.seo.analysis.caveat says so in the panel.
+             */
+            if (is_array($value) && $value !== []) {
                 $instance->setTranslation($attribute, $locale, $value);
             }
         }
 
-        return $instance->seoWarningsFor($locale);
+        foreach (self::URL_AND_VISIBILITY_ATTRIBUTES as $attribute) {
+            $value = $get($attribute);
+
+            if ($value !== null && $value !== '' && in_array($attribute, $instance->getFillable(), true)) {
+                $instance->setAttribute($attribute, $value);
+            }
+        }
+
+        return $instance;
+    }
+
+    /**
+     * @param  Model&HasSeoMetadata  $instance
+     */
+    private static function declaresTranslatable(Model $instance, string $attribute): bool
+    {
+        return in_array($attribute, $instance->getTranslatableAttributes(), true);
     }
 
     /**

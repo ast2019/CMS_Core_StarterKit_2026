@@ -7,6 +7,8 @@ namespace App\Concerns;
 use App\Contracts\HasSeoMetadata;
 use App\Contracts\Publishable;
 use App\Contracts\TracksTranslationStatus;
+use App\Services\Seo\SeoAnalyser;
+use App\Services\Seo\SeoAnalysisSubject;
 use Illuminate\Support\Str;
 
 /**
@@ -19,26 +21,29 @@ use Illuminate\Support\Str;
  * one — and expecting editors to fill three locales x four fields per article
  * guarantees gaps.
  *
- * The advisory limits are declared on App\Contracts\HasSeoMetadata rather than
- * here, because a trait constant cannot be read through the trait's name and the
- * panel needs to quote the numbers. Models using this trait should implement that
- * contract, which is what makes the constants part of their public surface.
+ * The advisory limits and the lists of translatable SEO attributes are declared on
+ * App\Contracts\HasSeoMetadata rather than here, because a trait constant cannot be
+ * read through the trait's name and both the panel and the architecture tests need
+ * them. Models using this trait should implement that contract, which is what makes
+ * the constants part of their public surface.
+ *
+ * The keyphrase ANALYSIS is not in here. This trait gathers the values (only the
+ * model knows which attributes it declares, and asking spatie for an undeclared one
+ * throws) and App\Services\Seo\SeoAnalyser applies the checks, so the checks are
+ * testable without a database and the panel and the Delivery API cannot compute
+ * different scores.
  */
 trait HasSeoMeta
 {
-    /**
-     * Attributes this trait expects to be registered as translatable on the
-     * model. Asserted by tests/Architecture/SeoMetaTest.php so a model cannot
-     * use the trait while leaving the fields non-translatable, which would make
-     * every locale share one Persian meta description.
-     *
-     * @var list<string>
+    /*
+     * The lists of translatable SEO attributes used to live here as trait constants
+     * and are now on HasSeoMetadata — SEO_TRANSLATABLE_ATTRIBUTES and
+     * OPTIONAL_SEO_TRANSLATABLE_ATTRIBUTES. Same reason the advisory limits moved
+     * there, and it was found the same way: the architecture test asserting the lists
+     * could not read them. PHP does not allow a trait constant to be reached through
+     * the trait's name, so a constant here is invisible to every caller that is
+     * generic over the model — including the test that makes it more than a comment.
      */
-    public const SEO_TRANSLATABLE_ATTRIBUTES = [
-        'meta_title',
-        'meta_description',
-        'robots_meta',
-    ];
 
     /**
      * Attributes the meta title falls back to, in order, when the editor set no
@@ -102,6 +107,153 @@ trait HasSeoMeta
         }
 
         return '';
+    }
+
+    /**
+     * Attributes that may hold this model's prose, in order.
+     *
+     * Same guarded-list pattern as the fallbacks above, for the same reason: Content
+     * calls its body `body` and Page calls it `blocks` (the column name the blueprint
+     * chose), so reaching for either unconditionally throws on the other model. Only
+     * the first one the model actually declares is read.
+     *
+     * A model declaring none — Category, Gallery — simply has no prose, and the
+     * keyphrase analysis omits the checks that need it rather than failing them.
+     *
+     * @return list<string>
+     */
+    protected function seoBodyAttributes(): array
+    {
+        return ['body', 'blocks'];
+    }
+
+    /**
+     * The editor's focus keyphrase for a locale, or '' when unset or unsupported.
+     *
+     * No fallback to another locale, deliberately. A keyphrase is the phrase this
+     * locale is written to be found by; borrowing the Persian one for the English tab
+     * would score the English copy against a phrase that does not appear in it and
+     * report five failures the editor cannot fix.
+     */
+    public function focusKeyphraseFor(string $locale): string
+    {
+        return trim((string) ($this->explicitTranslation('focus_keyphrase', $locale) ?? ''));
+    }
+
+    /**
+     * Whether this model carries a focus keyphrase at all.
+     *
+     * Read off the model's own $translatable rather than from a list here, so
+     * SeoSection and the API agree with the model by construction and adding the
+     * column to another type needs no change in either.
+     */
+    public function seoSupportsFocusKeyphrase(): bool
+    {
+        return in_array('focus_keyphrase', $this->getTranslatableAttributes(), true);
+    }
+
+    /**
+     * OG title for a locale: the per-record override, else the meta title.
+     *
+     * The override exists because the two strings have different jobs. A meta title
+     * competes in a results page against nine others and wants the keyphrase near the
+     * front; a social card is read by someone scrolling a feed and can afford to be
+     * conversational. Until now the OG values were always derived, so the only way to
+     * have both was to compromise on one.
+     *
+     * Falls back rather than returning empty, for the same reason every getter in this
+     * trait does: a card with no title renders as a bare URL.
+     */
+    public function ogTitleFor(string $locale): string
+    {
+        $explicit = $this->explicitTranslation('og_title', $locale);
+
+        return filled($explicit) ? (string) $explicit : $this->metaTitleFor($locale);
+    }
+
+    public function ogDescriptionFor(string $locale): string
+    {
+        $explicit = $this->explicitTranslation('og_description', $locale);
+
+        return filled($explicit) ? (string) $explicit : $this->metaDescriptionFor($locale);
+    }
+
+    /**
+     * Focus-keyphrase and content analysis for a locale (Requirement 7.1).
+     *
+     * Delegates to App\Services\Seo\SeoAnalyser, which is where the checks live so
+     * the panel and the Delivery API cannot compute different scores — the same
+     * arrangement seoWarningsFor() has, one layer down. This method's job is only to
+     * gather the values, because only the model knows which attributes it declares
+     * and asking spatie for an undeclared one throws.
+     *
+     * @return array{
+     *     keyphrase: string,
+     *     score: int|null,
+     *     band: string|null,
+     *     checks: list<array{id: string, status: string, value: string|null}>
+     * }
+     */
+    public function seoAnalysisFor(string $locale): array
+    {
+        return app(SeoAnalyser::class)->analyse($this->seoAnalysisSubject($locale));
+    }
+
+    protected function seoAnalysisSubject(string $locale): SeoAnalysisSubject
+    {
+        $bodyAttribute = $this->firstDeclaredTranslatable($this->seoBodyAttributes());
+
+        return new SeoAnalysisSubject(
+            locale: $locale,
+            keyphrase: $this->focusKeyphraseFor($locale),
+            // Resolved values, not raw columns: the checks must run against what the
+            // frontend will actually render, which for a blank meta_title is the
+            // article's own title.
+            metaTitle: $this->metaTitleFor($locale),
+            metaDescription: $this->metaDescriptionFor($locale),
+            slug: (string) ($this->explicitTranslation('slug', $locale) ?? ''),
+            body: $bodyAttribute === null
+                ? null
+                : $this->getTranslation($bodyAttribute, $locale, useFallbackLocale: false),
+            hasBody: $bodyAttribute !== null,
+        );
+    }
+
+    /**
+     * A translation of an attribute this model may or may not declare.
+     *
+     * Returns null for an attribute the model does not register, which is the ONLY
+     * safe way to read an optional SEO column: spatie throws
+     * AttributeIsNotTranslatable rather than returning null, the same trap
+     * firstTranslatableValue() below exists to avoid.
+     */
+    private function explicitTranslation(string $attribute, string $locale): ?string
+    {
+        if (! in_array($attribute, $this->getTranslatableAttributes(), true)) {
+            return null;
+        }
+
+        $value = $this->getTranslation($attribute, $locale, useFallbackLocale: false);
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * The first of these attributes the model declares as translatable, or null.
+     *
+     * @param  list<string>  $attributes
+     */
+    private function firstDeclaredTranslatable(array $attributes): ?string
+    {
+        $translatable = $this->getTranslatableAttributes();
+
+        foreach ($attributes as $attribute) {
+            if (in_array($attribute, $translatable, true)) {
+                return $attribute;
+            }
+        }
+
+        return null;
     }
 
     /**
