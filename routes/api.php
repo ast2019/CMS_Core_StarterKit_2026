@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Delivery\SeoController;
 use App\Http\Controllers\Api\V1\Delivery\SiteController;
 use App\Http\Controllers\Api\V1\Management\ManagementContentController;
 use App\Http\Controllers\Api\V1\Management\TranslationReviewController;
+use App\Http\Middleware\AddDeliveryCacheValidators;
 use App\Http\Middleware\AuthenticateDeliveryApi;
 use App\Http\Middleware\EnsureMaintenanceModeAllowsDelivery;
 use App\Http\Middleware\ResolveApiLocale;
@@ -49,6 +50,16 @@ Route::prefix('v1')->group(function (): void {
         AuthenticateDeliveryApi::class,
         EnsureMaintenanceModeAllowsDelivery::class,
         ResolveApiLocale::class,
+
+        /*
+         * INNERMOST, on purpose. Response middleware runs outward, so
+         * AuthenticateDeliveryApi gets the last word on Cache-Control and its
+         * `private, no-store` correctly overrides the public caching added here when
+         * key enforcement is on — responses then vary per client and must not sit in a
+         * shared cache. ResolveApiLocale likewise adds Vary/Content-Language after,
+         * which a 304 is allowed to carry.
+         */
+        AddDeliveryCacheValidators::class,
     ])->group(function (): void {
 
         Route::get('news', [ContentController::class, 'index'])->name('api.v1.news.index');
@@ -81,13 +92,25 @@ Route::prefix('v1')->group(function (): void {
             ->where('slug', '[^/]+')
             ->name('api.v1.pages.show');
 
+        Route::get('pages/{slug}/seo', [SeoController::class, 'forPage'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.pages.seo');
+
         Route::get('categories/{slug}', [CategoryController::class, 'show'])
             ->where('slug', '[^/]+')
             ->name('api.v1.categories.show');
 
+        Route::get('categories/{slug}/seo', [SeoController::class, 'forCategory'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.categories.seo');
+
         Route::get('galleries/{slug}', [GalleryController::class, 'show'])
             ->where('slug', '[^/]+')
             ->name('api.v1.galleries.show');
+
+        Route::get('galleries/{slug}/seo', [SeoController::class, 'forGallery'])
+            ->where('slug', '[^/]+')
+            ->name('api.v1.galleries.seo');
 
         Route::get('search', SearchController::class)->name('api.v1.search');
 
@@ -117,6 +140,13 @@ Route::prefix('v1')->group(function (): void {
          * homepage was either hardcoded per client or not a CMS concept at all.
          */
         Route::get('home-page', [SiteController::class, 'homePage'])->name('api.v1.home-page');
+
+        /*
+         * The homepage's SEO payload, addressed by ROLE rather than by slug — a frontend
+         * rendering /fa has no slug to ask with, which is the same reason home-page above
+         * exists.
+         */
+        Route::get('home-page/seo', [SeoController::class, 'forHome'])->name('api.v1.home-page.seo');
 
         /*
          * The full redirect table, for a frontend that compiles redirects at build time.

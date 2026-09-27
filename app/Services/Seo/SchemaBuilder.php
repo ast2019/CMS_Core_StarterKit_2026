@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Seo;
 
+use App\Contracts\HasFeaturedMedia;
+use App\Contracts\HasSeoMetadata;
 use App\Enums\ArticleSchemaType;
 use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
+use App\Models\Gallery;
 use App\Models\MediaAsset;
+use App\Models\Page;
 use App\Support\OrganisationProfile;
 use App\Support\SiteIdentity;
 use App\Support\TipTap;
+use Illuminate\Database\Eloquent\Model;
 use Spatie\SchemaOrg\BaseType;
 use Spatie\SchemaOrg\Contracts\ArticleContract;
+use Spatie\SchemaOrg\Contracts\WebPageContract;
 use Spatie\SchemaOrg\Schema;
 
 /**
@@ -49,6 +55,13 @@ class SchemaBuilder
     private const ID_BREADCRUMB = 'breadcrumb';
 
     private const ID_ORGANIZATION = 'organization';
+
+    /**
+     * The WebSite node's fragment. Emitted on the homepage only, because it describes
+     * the site as a whole — repeating it per URL would restate a site-wide claim on
+     * every page.
+     */
+    private const ID_WEBSITE = 'website';
 
     public function __construct(private readonly UrlBuilder $urls) {}
 
@@ -647,6 +660,302 @@ class SchemaBuilder
         }
 
         return array_values(array_filter([$article, $breadcrumbs, $organization, $faq]));
+    }
+
+    /**
+     * The @graph for a static page.
+     *
+     * A WebPage rather than an Article: a page is not a dated piece of journalism with
+     * an author and a publication date, and announcing an "About us" page as an Article
+     * is the same class of false claim that ArticleSchemaType exists to prevent.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forPage(Page $page, string $locale): array
+    {
+        /*
+         * The homepage takes the WebSite graph instead. It is reachable both as
+         * /api/v1/pages/{slug}/seo and as /api/v1/home-page/seo, and it must describe
+         * itself the same way through either door — a site whose root claims to be an
+         * ordinary WebPage loses the WebSite node that carries the search action.
+         */
+        if ($page->isHomePage()) {
+            return $this->forHome($locale);
+        }
+
+        $webPage = $this->webPage($page, $locale, Schema::webPage());
+        $organization = $this->organization($locale);
+        $breadcrumbs = $this->trail($page, $locale, [
+            ['name' => (string) $page->getTranslation('title', $locale, useFallbackLocale: true), 'record' => $page],
+        ]);
+
+        return $this->assemble($webPage, $breadcrumbs, $organization);
+    }
+
+    /**
+     * The @graph for a category archive.
+     *
+     * A CollectionPage, which is what a listing of other pages is. The breadcrumb walks
+     * the category's own ancestry, so a nested category announces its place in the tree
+     * rather than appearing to hang off the homepage.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forCategory(Category $category, string $locale): array
+    {
+        $collectionPage = $this->webPage($category, $locale, Schema::collectionPage());
+        $organization = $this->organization($locale);
+
+        /** @var list<Category> $chain */
+        $chain = [...array_reverse($category->ancestors()), $category];
+
+        $crumbs = [];
+
+        foreach ($chain as $node) {
+            $crumbs[] = [
+                'name' => (string) $node->getTranslation('name', $locale, useFallbackLocale: true),
+                'record' => $node,
+            ];
+        }
+
+        $breadcrumbs = $this->trail($category, $locale, $crumbs);
+
+        return $this->assemble($collectionPage, $breadcrumbs, $organization);
+    }
+
+    /**
+     * The @graph for a gallery.
+     *
+     * An ImageGallery — a subtype of CollectionPage — and the only one of these graphs
+     * that enumerates its contents, because for a gallery the images ARE the content
+     * rather than illustration attached to prose.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forGallery(Gallery $gallery, string $locale): array
+    {
+        $galleryPage = $this->webPage($gallery, $locale, Schema::imageGallery());
+        $organization = $this->organization($locale);
+        $breadcrumbs = $this->trail($gallery, $locale, [
+            ['name' => (string) $gallery->getTranslation('title', $locale, useFallbackLocale: true), 'record' => $gallery],
+        ]);
+
+        if ($galleryPage !== null) {
+            $images = [];
+
+            foreach ($gallery->items as $asset) {
+                $image = $this->imageObject($asset, $locale);
+
+                if ($image !== null) {
+                    $images[] = $this->embedded($image);
+                }
+            }
+
+            if ($images !== []) {
+                /*
+                 * hasPart rather than image: `image` on a CreativeWork means "a picture
+                 * OF this thing", which for a gallery would claim every photograph is a
+                 * depiction of the gallery itself. hasPart says they are its contents,
+                 * which is what they are.
+                 */
+                $galleryPage['hasPart'] = $images;
+            }
+        }
+
+        return $this->assemble($galleryPage, $breadcrumbs, $organization);
+    }
+
+    /**
+     * The @graph for the locale's homepage.
+     *
+     * A WebSite node, which is the one place it belongs: it describes the site as a
+     * whole, so emitting it on every page would repeat a site-wide claim per URL.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forHome(string $locale): array
+    {
+        $home = $this->urls->localeHome($locale);
+        $name = SiteIdentity::translatedName($locale);
+
+        if ($name === null) {
+            // `name` is required on a WebSite. Without a configured site name there is
+            // nothing to say, and the Organization would be absent for the same reason.
+            return [];
+        }
+
+        $website = Schema::webSite()
+            ->name($name)
+            ->url($home)
+            ->setProperty('@id', $this->urls->withFragment($home, self::ID_WEBSITE))
+            ->inLanguage($locale);
+
+        $description = OrganisationProfile::description($locale);
+
+        if ($description !== null) {
+            $website->description($description);
+        }
+
+        /*
+         * The sitelinks search action, and only when the site actually has search. A
+         * SearchAction pointing at a disabled module is a promise the frontend cannot
+         * keep, and Google resolving it to a 404 is worse than not offering it.
+         *
+         * The target is the FRONTEND's search URL, not this API's: the action tells a
+         * search engine where a human would search, and sending a person to a JSON
+         * endpoint is not that.
+         */
+        if ((bool) config('cms.modules.search', true)) {
+            $website->potentialAction(Schema::searchAction()
+                ->setProperty('target', [
+                    '@type' => 'EntryPoint',
+                    'urlTemplate' => $home.'/search?q={search_term_string}',
+                ])
+                ->setProperty('query-input', 'required name=search_term_string'));
+        }
+
+        $organization = $this->organization($locale);
+
+        if ($organization !== null && isset($organization['@id']) && is_string($organization['@id'])) {
+            // The site is published BY the organisation; the link makes the two nodes
+            // one identity rather than two unrelated things at the same address.
+            $website->setProperty('publisher', ['@id' => $organization['@id']]);
+        }
+
+        return $this->assemble($website->toArray(), null, $organization);
+    }
+
+    /**
+     * A WebPage-family node for any SEO-bearing record.
+     *
+     * The caller passes the NODE, not a type name, for the same reason articleOfType()
+     * returns real classes: `toArray()` composes `['@type' => $this->getType()] +
+     * $properties`, and PHP's `+` does not overwrite an existing key — so
+     * `setProperty('@type', 'CollectionPage')` on a WebPage is silently discarded and
+     * the node keeps claiming to be a WebPage. Using the real class also keeps the
+     * library's property checking, which is what holds this class inside "omit rather
+     * than guess".
+     *
+     * Typed as the intersection because CollectionPage and ImageGallery are siblings
+     * under BaseType rather than subclasses of WebPage; WebPageContract is what says
+     * "carries the properties used below", and BaseType is what carries setProperty().
+     *
+     * @return array<string, mixed>|null
+     */
+    private function webPage(Model&HasSeoMetadata $record, string $locale, BaseType&WebPageContract $node): ?array
+    {
+        $url = $this->urls->canonicalFor($record, $locale);
+
+        if ($url === null) {
+            return null;
+        }
+
+        $page = $node
+            ->setProperty('@id', $url)
+            ->url($url)
+            ->name($record->metaTitleFor($locale))
+            ->inLanguage($locale);
+
+        $description = $record->metaDescriptionFor($locale);
+
+        if ($description !== '') {
+            $page->description($description);
+        }
+
+        /*
+         * `primaryImageOfPage` rather than `image`: it names the one image that
+         * represents the page, which is what a share card and a rich result use, and it
+         * does not compete with a gallery's hasPart list.
+         *
+         * Guarded on the contract because Category carries no media at all.
+         */
+        if ($record instanceof HasFeaturedMedia) {
+            $featured = $record->featuredImage();
+
+            if ($featured !== null) {
+                $image = $this->imageObject($featured, $locale);
+
+                if ($image !== null) {
+                    $page->setProperty('primaryImageOfPage', $this->embedded($image));
+                }
+            }
+        }
+
+        return $page->toArray();
+    }
+
+    /**
+     * A BreadcrumbList from the homepage down to this record.
+     *
+     * @param  list<array{name: string, record: Model}>  $crumbs
+     * @return array<string, mixed>|null
+     */
+    private function trail(Model $record, string $locale, array $crumbs): ?array
+    {
+        $url = $this->urls->canonicalFor($record, $locale);
+
+        if ($url === null) {
+            return null;
+        }
+
+        $items = [
+            ['name' => $this->homeName($locale), 'url' => $this->urls->localeHome($locale)],
+        ];
+
+        foreach ($crumbs as $crumb) {
+            $crumbUrl = $this->urls->canonicalFor($crumb['record'], $locale);
+
+            if ($crumbUrl !== null) {
+                $items[] = ['name' => $crumb['name'], 'url' => $crumbUrl];
+            }
+        }
+
+        // A trail whose only entry is the homepage describes nothing: it is the crumb
+        // every page shares, with no path through the site attached to it.
+        if (count($items) < 2) {
+            return null;
+        }
+
+        $listItems = [];
+
+        foreach ($items as $position => $item) {
+            $listItems[] = Schema::listItem()
+                ->position($position + 1)
+                ->name($item['name'])
+                ->setProperty('item', $item['url']);
+        }
+
+        return Schema::breadcrumbList()
+            ->itemListElement($listItems)
+            ->setProperty('@id', $this->urls->withFragment($url, self::ID_BREADCRUMB))
+            ->toArray();
+    }
+
+    /**
+     * Join a page node, its breadcrumb and the organisation into one graph.
+     *
+     * Cross-references are written only when BOTH ends exist, the same rule
+     * forArticle() follows: a reference to an absent node is a dangling URI, which is a
+     * guess by another name.
+     *
+     * @param  array<string, mixed>|null  $page
+     * @param  array<string, mixed>|null  $breadcrumbs
+     * @param  array<string, mixed>|null  $organization
+     * @return list<array<string, mixed>>
+     */
+    private function assemble(?array $page, ?array $breadcrumbs, ?array $organization): array
+    {
+        if ($page !== null) {
+            if ($organization !== null && isset($organization['@id']) && is_string($organization['@id'])) {
+                $page['isPartOf'] = ['@id' => $organization['@id']];
+            }
+
+            if ($breadcrumbs !== null && isset($breadcrumbs['@id']) && is_string($breadcrumbs['@id'])) {
+                $page['breadcrumb'] = ['@id' => $breadcrumbs['@id']];
+            }
+        }
+
+        return array_values(array_filter([$page, $breadcrumbs, $organization]));
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Enums\ContentStatus;
+use App\Jobs\NotifyFrontendOfChange;
 use App\Models\Content;
 use App\Models\Gallery;
 use App\Models\Page;
@@ -82,7 +83,7 @@ class PublishDueContentCommand extends Command
         $due = 0;
 
         foreach (self::SCHEDULABLE as $model) {
-            $due += $model::query()
+            $records = $model::query()
                 ->where('status', ContentStatus::Published)
                 /*
                  * The window is half-open on the `since` side so a record sitting
@@ -93,7 +94,28 @@ class PublishDueContentCommand extends Command
                  */
                 ->where('publish_date', '>', $since)
                 ->where('publish_date', '<=', $now)
-                ->count();
+                // Keys only: the webhook re-reads the record, and nothing here needs the
+                // rest of the row.
+                ->pluck((new $model)->getKeyName());
+
+            $due += $records->count();
+
+            /*
+             * THE WEBHOOK THAT NO OBSERVER CAN SEND.
+             *
+             * FrontendWebhookObserver fires on model writes, and an elapsing embargo is
+             * precisely not one — that absence is the whole reason this command exists.
+             * So without this loop a scheduled article would refresh the server's caches
+             * and never tell the frontend, which would keep serving its cached page until
+             * its own max-age expired. The published-on-a-timer problem would move from
+             * the API to the frontend rather than being fixed.
+             */
+            if (NotifyFrontendOfChange::isConfigured()) {
+                foreach ($records as $key) {
+                    /** @var int|string $key */
+                    NotifyFrontendOfChange::dispatch($model, $key, 'published');
+                }
+            }
         }
 
         if ($due === 0) {

@@ -556,6 +556,28 @@ return [
             'cache_ttl' => env('CMS_DELIVERY_CACHE_TTL', 300),
 
             /*
+             * Seconds a CDN or browser may reuse a Delivery response WITHOUT asking
+             * again (AddDeliveryCacheValidators).
+             *
+             * Deliberately much smaller than cache_ttl above, because the two are not
+             * the same kind of number. `cache_ttl` is how long this application may
+             * reuse its own computed payload, and the observers invalidate it the
+             * instant an editor saves — so it is a ceiling that rarely applies. Once a
+             * response is sitting in a CDN or a browser, nothing here can reach it, so
+             * the same 300 would leave an editor's correction invisible for five
+             * minutes despite the server having discarded its copy immediately.
+             *
+             * Past this window the response is not re-transferred: every response
+             * carries an ETag, so revalidation is a 304 with no body.
+             *
+             * 0 means "always revalidate" — still cached, still an ETag, just never
+             * reused without a conditional request. Raise it for a site whose content
+             * rarely changes; lower it to 0 for a newsroom that wants corrections live
+             * immediately and can afford a conditional request per view.
+             */
+            'http_max_age' => env('CMS_DELIVERY_HTTP_MAX_AGE', 60),
+
+            /*
              * Redirect lookups get their own, much higher allowance.
              *
              * Not generosity — a correction for how the traffic actually arrives. The
@@ -704,6 +726,38 @@ return [
 
     'scheduling' => [
         'publish_lookback' => (int) env('CMS_PUBLISH_LOOKBACK', 90),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend webhooks
+    |--------------------------------------------------------------------------
+    |
+    | Tells the frontend that a record changed, so it can rebuild the affected
+    | pages instead of waiting out a timer. This is what makes a Next.js
+    | deployment's cached pages correct promptly rather than eventually.
+    |
+    | OFF by default: with no endpoint and no secret configured, nothing is sent
+    | and nothing is queued. Both are required — a deployment with an endpoint but
+    | no secret sends NOTHING rather than sending unsigned requests, because the
+    | receiver is a public endpoint that triggers work and a silent downgrade to no
+    | authentication is worse than a feature that is plainly switched off.
+    |
+    | The payload names what changed and its public URL per locale; the frontend
+    | re-fetches through the Delivery API. See docs/deployment.md for the receiver,
+    | including how to verify the signature.
+    |
+    */
+
+    'webhooks' => [
+        // Comma-separated, so a deployment can notify a preview build as well as
+        // production without this becoming an array in .env.
+        'endpoints' => env('CMS_WEBHOOK_ENDPOINTS'),
+
+        'secret' => env('CMS_WEBHOOK_SECRET'),
+
+        'connect_timeout' => (int) env('CMS_WEBHOOK_CONNECT_TIMEOUT', 5),
+        'timeout' => (int) env('CMS_WEBHOOK_TIMEOUT', 10),
     ],
 
 ];
