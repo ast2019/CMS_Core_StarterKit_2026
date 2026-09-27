@@ -276,6 +276,10 @@ class CmsServiceProvider extends ServiceProvider
      * renders a navigation item by asking whether each resource is viewable, so
      * every page load by a limited-role user would emit a handful of denials that
      * represent nothing more than a correctly hidden menu entry.
+     *
+     * And it does not log checks made to decide what to DRAW — Filament asks about the edit and
+     * delete actions of every row it renders, which wrote dozens of refusals per list for any
+     * limited role. Acting still authorises again, audibly. See AuthorisationProbe.
      */
     protected function logAuthorisationDenials(): void
     {
@@ -288,7 +292,8 @@ class CmsServiceProvider extends ServiceProvider
                 return;
             }
 
-            // A render-time probe (whether to draw a link), not an attempt; see AuthorisationProbe.
+            // Deciding whether to DRAW a button or link — Filament does it for every row it
+            // renders — is not an attempt to use it. See AuthorisationProbe.
             if (AuthorisationProbe::isQuiet()) {
                 return;
             }

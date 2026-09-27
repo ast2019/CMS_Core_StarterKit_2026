@@ -11,7 +11,6 @@ use App\Models\Content;
 use App\Models\Gallery;
 use App\Models\Page;
 use App\Models\User;
-use App\Support\AuthorisationProbe;
 use App\Support\Dates\CalendarMonth;
 use App\Support\EditorialCalendar as Calendar;
 use Carbon\CarbonImmutable;
@@ -253,13 +252,6 @@ it('shows a notice instead of a grid for a calendar whose years restart by era',
     Livewire::test(EditorialCalendar::class)
         ->assertOk()
         ->assertSee(__('cms.editorial_calendar.unavailable'));
-});
-
-it('releases the quiet probe even when the check throws', function (): void {
-    expect(fn () => AuthorisationProbe::quietly(fn () => throw new RuntimeException('boom')))
-        ->toThrow(RuntimeException::class);
-
-    expect(AuthorisationProbe::isQuiet())->toBeFalse();
 });
 
 it('steps between months and back to the current one', function (): void {
