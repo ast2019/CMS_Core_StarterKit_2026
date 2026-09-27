@@ -110,6 +110,7 @@ return [
         'analytics' => 'آنالیتیکس و تأیید مالکیت',
         'social_card' => 'کارت اشتراک‌گذاری (اختیاری)',
         'social_card_help' => 'اگر خالی بماند، همان عنوان و توضیح متا برای شبکه‌های اجتماعی استفاده می‌شود.',
+        'diagnostics' => 'اطلاعات فنی',
     ],
 
     'field' => [
@@ -178,6 +179,8 @@ return [
         'image_dimensions' => 'ابعاد تصویر',
         'image_dimensions_help' => 'برای جلوگیری از جابه‌جایی چیدمان (CLS) الزامی است.',
         'read_at' => 'زمان مطالعه',
+        'spam_reason' => 'دلیل هرزنامه',
+        'user_agent' => 'مرورگر فرستنده',
         'message' => 'پیام',
         'email' => 'ایمیل',
         'phone' => 'تلفن',
@@ -200,6 +203,12 @@ return [
         'scheduled' => 'زمان‌بندی‌شده',
         'next_publish' => 'بعدی: :date',
         'nothing_scheduled' => 'چیزی زمان‌بندی نشده',
+        // Item 18 — replaces the promised publish date when cron is not running.
+        'scheduler_stopped' => 'زمان‌بند متوقف است؛ این موارد منتشر نمی‌شوند.',
+        // Raised for records whose time has ALREADY passed while cron was down: they are
+        // live by the database's reckoning but the Delivery cache was never refreshed, so
+        // they are probably not on the public site.
+        'scheduler_missed' => 'زمان‌بند متوقف است و زمان انتشار :count مورد گذشته؛ احتمالاً روی سایت دیده نمی‌شوند.',
         'unread_messages' => 'پیام‌های خوانده‌نشده',
         'inbox_clear' => 'همهٔ پیام‌ها خوانده شده',
 
@@ -219,6 +228,7 @@ return [
      * they come from ICU via App\Support\Dates\LocalizedDate, because «مهر» is a
      * property of the Persian calendar rather than a string this CMS translates.
      */
+
     'date' => [
         'today' => 'امروز',
         'clear' => 'پاک کردن',
@@ -244,6 +254,10 @@ return [
         'unread' => 'خوانده‌نشده',
         'missing_alt_text' => 'بدون متن جایگزین',
         'active' => 'فعال',
+        'spam' => 'هرزنامه',
+        'spam_all' => 'همه پیام‌ها',
+        'spam_only' => 'فقط هرزنامه',
+        'spam_excluded' => 'بدون هرزنامه',
     ],
 
     'action' => [
@@ -256,8 +270,14 @@ return [
         'unpublish_selected_confirm' => 'موارد انتخاب‌شده به پیش‌نویس برمی‌گردند و از سایت عمومی حذف می‌شوند.',
         'unpublish_selected_done' => 'انتشار :count مورد لغو شد.',
         'bulk_skipped' => ':count مورد به دلیل نداشتن دسترسی تغییر نکرد.',
+        // Already in the requested status. Distinct from bulk_skipped: nothing was refused,
+        // there was simply nothing to do — and reporting it as a refusal would send an
+        // editor looking for a permission problem that does not exist.
+        'bulk_unchanged' => ':count مورد از قبل همین وضعیت را داشت.',
         'mark_read_selected' => 'علامت‌گذاری به‌عنوان خوانده‌شده',
         'mark_read_selected_done' => ':count پیام خوانده‌شده علامت خورد.',
+        'mark_spam' => 'انتقال به هرزنامه',
+        'mark_not_spam' => 'هرزنامه نیست',
         'reset_two_factor' => 'ریست احراز دو مرحله‌ای',
         'reset_two_factor_confirm' => 'کلید و کدهای بازیابی این کاربر پاک می‌شود و در ورود بعدی باید دوباره احراز دو مرحله‌ای را تنظیم کند. برای کسی که گوشی‌اش را گم کرده همین لازم است.',
         'reset_two_factor_done' => 'احراز دو مرحله‌ای :name ریست شد.',
@@ -439,6 +459,39 @@ return [
         'installed_at' => 'زمان نصب',
         'about' => 'دربارهٔ سیستم',
         'no_changelog' => 'هنوز تغییری ثبت نشده است.',
+
+        /*
+         * Item 18 — RUNTIME state, nested under `status` to keep it apart from the install
+         * facts above. Both are legitimately "system", and a flat merge would put
+         * `scheduler` next to `version` with nothing saying that one is a fact about this
+         * release and the other changes every minute.
+         *
+         * Every string names a consequence or a remedy rather than a status word, because
+         * "stopped" alone sends an administrator looking for a switch in the panel that does
+         * not and should not exist.
+         */
+        'status' => [
+            'scheduler' => 'زمان‌بند (cron)',
+            'queue' => 'کارگر صف',
+            'cache_store' => 'انبارهٔ کش',
+            'running' => 'در حال اجرا',
+            'stopped' => 'متوقف',
+            'unknown' => 'نامعلوم',
+            'last_seen' => 'آخرین گزارش :ago',
+            'queue_lag' => 'تأخیر صف: :seconds ثانیه',
+            'scheduler_stopped_help' => 'زمان‌بند لاراول اجرا نمی‌شود؛ پس انتشار زمان‌بندی‌شده هم انجام نمی‌شود. دستور cron را در docs/deployment.md ببین.',
+            'queue_stopped_help' => 'هیچ کارگری صف را پردازش نمی‌کند؛ ترجمه، نمایه‌سازی جست‌وجو و وب‌هوک‌ها روی هم انبار می‌شوند. سرویس queue:work را راه بیندازید.',
+            'queue_unknown_help' => 'تا وقتی زمان‌بند متوقف است چیزی به صف سپرده نمی‌شود، پس وضعیت صف سنجیدنی نیست. اول cron را درست کن.',
+            'cache_tags_ok' => 'برچسب‌گذاری پشتیبانی می‌شود؛ باطل‌سازی کش هدفمند است.',
+            'cache_tags_missing' => 'این انباره برچسب ندارد، پس هر انتشار کل کش را پاک می‌کند (شمارنده‌های محدودیت نرخ هم با آن می‌رود). برای تولید از Redis استفاده کن.',
+            // The web process and the cron process disagree about which cache they use. Each
+            // writes where the other never reads, so an editor's publish clears a store the
+            // API does not consult and the site serves stale pages indefinitely.
+            'cache_store_mismatch' => 'ناسازگاری تنظیمات: زمان‌بند از انبارهٔ «:store» استفاده می‌کند و وب از انبارهٔ دیگری. باطل‌سازی کش به سایت نمی‌رسد. فایل env هر دو را یکسان کن.',
+            'contact_protection' => 'محافظت فرم تماس',
+            'contact_no_submissions' => 'هنوز پیامی نرسیده، پس کارکرد کادر پنهان سنجیدنی نیست.',
+            'contact_honeypot_missing' => 'پیام‌های تازه بدون کادر پنهان می‌رسند؛ یعنی فرانت آن را نمی‌فرستد و این محافظت خاموش است. نام فیلد را با فرانت هم‌تراز کن.',
+        ],
     ],
 
     'audit' => [
@@ -471,6 +524,15 @@ return [
 
     'contact' => [
         'received' => 'پیام شما دریافت شد. سپاس از تماس شما.',
+
+        // Why a submission was flagged (item 16). `manual` is set by an editor, the rest
+        // by App\Services\Contact\SpamInspector.
+        'spam_reason' => [
+            'honeypot' => 'پر شدن کادر پنهان',
+            'too_fast' => 'ارسال بی‌درنگ',
+            'missing_timing' => 'نبود زمان نمایش فرم',
+            'manual' => 'تشخیص سردبیر',
+        ],
     ],
 
     'user' => [

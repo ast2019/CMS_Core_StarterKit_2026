@@ -39,4 +39,19 @@ class ContactSubmissionFactory extends Factory
             'read_at' => $this->faker->dateTimeBetween('-1 month', 'now'),
         ]);
     }
+
+    /**
+     * A submission a spam check flagged (item 16).
+     *
+     * The reason is a real key from App\Services\Contact\SpamInspector rather than a
+     * faker word, so a test asserting the panel renders the reason label is exercising a
+     * value the application can actually produce.
+     */
+    public function spam(string $reason = 'honeypot'): static
+    {
+        return $this->state(fn (): array => [
+            'is_spam' => true,
+            'spam_reason' => $reason,
+        ]);
+    }
 }

@@ -122,6 +122,26 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping(2);
 
         /*
+         * SYSTEM HEARTBEAT (item 18).
+         *
+         * The scheduler and the queue worker both fail SILENTLY. A stopped scheduler does
+         * not error — scheduled articles simply never appear, while the dashboard goes on
+         * promising "next publish: 8am" for a publish that will not happen. A stopped
+         * worker does not error either: translations, search indexing and webhooks queue up
+         * and nothing says so. Before this, neither was answerable from inside the panel.
+         *
+         * Every minute, matching cms:publish-due — a heartbeat coarser than the task it
+         * vouches for could report healthy through several missed publishes.
+         *
+         * Deliberately WITHOUT withoutOverlapping. The mutex is the right call for
+         * publish-due, whose run can be slow, but here it would be the bug: a stale lock
+         * left by a hard-killed run would suppress the heartbeat and the dashboard would
+         * report the scheduler dead while cron was faithfully running it. The task is two
+         * writes and cannot overlap meaningfully.
+         */
+        $schedule->command('cms:heartbeat')->everyMinute();
+
+        /*
          * QUEUE HYGIENE. Both tables grow without bound otherwise: job_batches on
          * every batch, failed_jobs on every failure. Neither is content, and losing
          * old rows costs nothing once the failures in them have been read.

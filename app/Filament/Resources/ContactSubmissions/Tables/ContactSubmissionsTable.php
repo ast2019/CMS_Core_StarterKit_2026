@@ -16,6 +16,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -52,6 +53,23 @@ class ContactSubmissionsTable
                     ->label(__('cms.field.publish_date'))
                     ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state))
                     ->sortable(),
+
+                /*
+                 * Which spam check fired. Only meaningful in the spam view, so it is
+                 * toggled off by default rather than added to everyone's inbox as a
+                 * permanently empty column.
+                 *
+                 * Worth having at all because it separates an attack from a frontend bug:
+                 * a list of `missing_timing` rows that are plainly real enquiries means
+                 * the site is not sending the timing field, which is a deployment fix, not
+                 * a spam problem.
+                 */
+                TextColumn::make('spam_reason')
+                    ->label(__('cms.field.spam_reason'))
+                    ->formatStateUsing(fn (ContactSubmission $record): ?string => $record->spamReasonLabel())
+                    ->badge()
+                    ->color('warning')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Filter::make('unread')
@@ -60,6 +78,25 @@ class ContactSubmissionsTable
                         /** @var Builder<ContactSubmission> $query */
                         return $query->unread();
                     }),
+
+                /*
+                 * Item 16 — spam is hidden by DEFAULT, not excluded.
+                 *
+                 * A default on the filter rather than a scope on the resource's base query,
+                 * because the editor has to be able to get back to those rows: the checks
+                 * are heuristics and a false positive is a lost enquiry unless someone can
+                 * look. A base-query scope would make the flagged rows unreachable from the
+                 * panel entirely, which is only marginally better than having deleted them.
+                 *
+                 * `placeholder` is the "everything" option, so the three states read as
+                 * inbox / spam / both.
+                 */
+                TernaryFilter::make('is_spam')
+                    ->label(__('cms.filter.spam'))
+                    ->placeholder(__('cms.filter.spam_all'))
+                    ->trueLabel(__('cms.filter.spam_only'))
+                    ->falseLabel(__('cms.filter.spam_excluded'))
+                    ->default(false),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -72,6 +109,34 @@ class ContactSubmissionsTable
                     // non-editable, and marking read is the one permitted mutation.
                     ->authorize(fn (ContactSubmission $record): bool => auth()->user()?->can('markRead', $record) ?? false)
                     ->action(fn (ContactSubmission $record) => $record->markRead()),
+
+                /*
+                 * Item 16 — the two halves of spam triage, shown one at a time depending on
+                 * which list the row is currently in.
+                 *
+                 * The manual direction matters as much as the automatic one: an editor
+                 * reading a message is a far better spam detector than a hidden input, and
+                 * without this action their only way to clear an obvious junk enquiry out of
+                 * the inbox is to delete it — which is admin-only, and destroys the record.
+                 */
+                Action::make('markNotSpam')
+                    ->label(__('cms.action.mark_not_spam'))
+                    ->icon('heroicon-o-inbox-arrow-down')
+                    ->visible(fn (ContactSubmission $record): bool => $record->is_spam)
+                    ->authorize(fn (ContactSubmission $record): bool => auth()->user()?->can('triageSpam', $record) ?? false)
+                    ->action(fn (ContactSubmission $record) => $record->clearSpamFlag()),
+
+                Action::make('markSpam')
+                    ->label(__('cms.action.mark_spam'))
+                    ->icon('heroicon-o-shield-exclamation')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->visible(fn (ContactSubmission $record): bool => ! $record->is_spam)
+                    ->authorize(fn (ContactSubmission $record): bool => auth()->user()?->can('triageSpam', $record) ?? false)
+                    // 'manual' rather than a check name: the reason column records WHY a row
+                    // is flagged, and "a person decided so" is a different and stronger
+                    // answer than any of the heuristics.
+                    ->action(fn (ContactSubmission $record) => $record->flagAsSpam('manual')),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

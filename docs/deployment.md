@@ -146,6 +146,7 @@ This is **not optional if you use scheduled publishing.** What is registered (se
 | Task | When | Why |
 |---|---|---|
 | `cms:publish-due` | every minute | Refreshes the Delivery content and sitemap caches when a record's embargo elapses |
+| `cms:heartbeat` | every minute | Records that cron and a queue worker are alive, so the panel can say when they are not |
 | `queue:prune-batches --hours=48` | daily | `job_batches` grows on every batch |
 | `queue:prune-failed --hours=336` | weekly | `failed_jobs` grows on every failure |
 
@@ -185,6 +186,34 @@ makes it append-only with no opt-out, and a retention policy is that opt-out. Co
 versions need no task either: `cms.versions.keep` is enforced inside the write that
 creates a version, not nightly.
 
+### Checking that any of this is actually running
+
+Everything above fails **silently**. A stopped cron does not error — scheduled articles
+simply never appear, while the dashboard goes on naming a publish time. A stopped worker
+does not error either; queued work accumulates in a table nobody looks at.
+
+`cms:heartbeat` fixes the blind spot. It stamps two rows in `system_heartbeats` every
+minute — one for the scheduler, one written by a job it dispatches through the queue — and
+the dashboard's **System status** card (administrators only) reads them:
+
+| Reading | Meaning | Fix |
+|---|---|---|
+| Both running | cron and a worker are alive | — |
+| Scheduler running, queue stopped | cron is fine, no worker is consuming the queue | start `queue:work` |
+| Scheduler stopped | cron is not running `schedule:run` for this app; the queue reading is reported as *unknown* because nothing was dispatched to test it | fix the crontab above |
+| Cache store warning | the store has no tag support, so every publish flushes the whole cache | use Redis |
+
+An editor with content queued also sees the scheduler warning on their own **Scheduled**
+card, because that is where the promise they rely on is made.
+
+Tolerance is `CMS_HEARTBEAT_STALE_AFTER` seconds (default 300 — five missed ticks), so a
+deploy or a container restart does not raise a false alarm. A monitor that cries wolf for
+one skipped minute is a monitor people learn to ignore.
+
+Note for verifying a deployment: the heartbeat lives in a **table**, not the cache. With a
+tagless cache store every publish runs `Cache::flush()`, which would erase a cached
+heartbeat and report the worker dead because someone published an article.
+
 ## Frontend URL
 
 Set `CMS_FRONTEND_URL` when the public site is a separate deployment, which is the
@@ -218,6 +247,81 @@ Sitemap: https://api.example.com/sitemap.xml
 
 Do not copy this host's `robots.txt` to the frontend. It disallows `/api/` and the panel
 path, neither of which exists there, and it says nothing about the frontend's own routes.
+
+## Contact form spam defences (two fields the frontend sends)
+
+`POST /api/v1/contact` is the only public write, so it is the only endpoint that can be
+flooded with content. It has three defences, and only the first is enforced entirely here:
+
+1. **A rate limit** (`throttle:cms-contact`) — the actual ceiling, and the only one an
+   attacker cannot simply avoid.
+2. **A honeypot field** — a decoy input a human never sees and therefore never fills.
+3. **A timing value** — when the form was presented, used to reject a submission that took
+   no time at all.
+
+A submission failing 2 or 3 is **stored and flagged**, never refused. The sender gets the
+same `201` either way — telling them which check fired is how the next attempt avoids it —
+and the panel hides flagged rows behind the inbox's spam filter, where an editor can clear
+the flag if a real enquiry lands there. Nothing is ever silently discarded.
+
+Deliberately **not** a CAPTCHA. A hosted CAPTCHA makes the contact form depend on a third
+party being reachable, which for Iranian deployments is a real availability problem, and it
+puts someone else's script on a frontend this repository does not control.
+
+### What the frontend must render
+
+Both field names are configurable, because a fixed name in an open-source kit is a fixed
+target for scrapers. Defaults:
+
+```
+CMS_CONTACT_HONEYPOT_FIELD=cms_reference
+CMS_CONTACT_TIMING_FIELD=form_presented_at
+CMS_CONTACT_MIN_FILL_SECONDS=3
+CMS_CONTACT_REQUIRE_TIMING=false
+```
+
+Hide the honeypot **visually**, with CSS, rather than using `type="hidden"`. The reason is
+not that bots ignore hidden inputs — one that fills every `<input>` fills a hidden one too.
+It is that hidden inputs conventionally carry state a form must round-trip unchanged (CSRF
+tokens, ids), so the automation that bothers to distinguish at all tends to preserve them
+verbatim and overwrite only the visible fields. A CSS-hidden text input reads as a visible
+field to a parser and as nothing at all to a person.
+
+It also has to be kept away from autofill and from screen readers, or the two groups it
+catches are password-manager users and blind visitors:
+
+```jsx
+<div aria-hidden="true" style={{ position: 'absolute', left: '-9999px' }}>
+  <label htmlFor="cms_reference">Leave this empty</label>
+  <input id="cms_reference" name="cms_reference" type="text"
+         tabIndex={-1} autoComplete="off" defaultValue="" />
+</div>
+```
+
+The timing value is a **Unix timestamp in seconds**, written when the form mounts:
+
+```jsx
+const presentedAt = useRef(Math.floor(Date.now() / 1000));
+// …then post it as form_presented_at
+```
+
+Seconds, not milliseconds. `Date.now()` unscaled reads as a timestamp tens of thousands of
+years in the future, which the inspector treats as a wrong clock and ignores — so the check
+silently stops working rather than breaking anything you would notice.
+
+Neither value is authenticated; a determined client can forge both. They raise the cost of
+bulk automation, and that is all they are for.
+
+### Turning the timing check up
+
+`CMS_CONTACT_REQUIRE_TIMING` is **off by default**, and should stay off until the frontend
+demonstrably sends the field. On, a submission carrying no timing value at all is flagged —
+which for a frontend that never sends one means the entire inbox lands in the spam list.
+
+Order of operations: ship the frontend fields, watch the inbox for a few days with the spam
+filter set to "all messages", confirm nothing legitimate is being flagged, then set it to
+`true`. If real enquiries start appearing with reason `missing_timing`, that is the frontend
+having stopped sending the field — a deployment bug, not spam.
 
 ## Publish webhooks (telling the frontend to rebuild)
 

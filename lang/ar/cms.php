@@ -109,6 +109,7 @@ return [
         'analytics' => 'التحليلات والتحقق',
         'social_card' => 'بطاقة المشاركة (اختياري)',
         'social_card_help' => 'إذا تُركت فارغة، يُستخدم عنوان ووصف الميتا في الشبكات الاجتماعية.',
+        'diagnostics' => 'معلومات تشخيصية',
     ],
 
     'field' => [
@@ -177,6 +178,8 @@ return [
         'image_dimensions' => 'أبعاد الصورة',
         'image_dimensions_help' => 'مطلوبة لمنع إزاحة التصميم (CLS).',
         'read_at' => 'وقت القراءة',
+        'spam_reason' => 'سبب الاعتبار مزعجة',
+        'user_agent' => 'متصفح المُرسل',
         'message' => 'الرسالة',
         'email' => 'البريد الإلكتروني',
         'phone' => 'الهاتف',
@@ -199,6 +202,12 @@ return [
         'scheduled' => 'مُجدول',
         'next_publish' => 'التالي: :date',
         'nothing_scheduled' => 'لا شيء مُجدول',
+        // Item 18 — replaces the promised publish date when cron is not running.
+        'scheduler_stopped' => 'المُجدوِل متوقف — لن يُنشر هذا.',
+        // Raised for records whose time has ALREADY passed while cron was down: they are
+        // live by the database's reckoning but the Delivery cache was never refreshed, so
+        // they are probably not on the public site.
+        'scheduler_missed' => 'المُجدوِل متوقف وقد حان وقت نشر :count عنصرًا — أغلب الظن أنها ليست على الموقع.',
         'unread_messages' => 'رسائل غير مقروءة',
         'inbox_clear' => 'تمت قراءة جميع الرسائل',
 
@@ -216,6 +225,7 @@ return [
     /*
      * Date picker chrome. Month and weekday names come from ICU, not from here.
      */
+
     'date' => [
         'today' => 'اليوم',
         'clear' => 'مسح',
@@ -241,6 +251,10 @@ return [
         'unread' => 'غير مقروء',
         'missing_alt_text' => 'بدون نص بديل',
         'active' => 'نشط',
+        'spam' => 'رسائل مزعجة',
+        'spam_all' => 'كل الرسائل',
+        'spam_only' => 'المزعجة فقط',
+        'spam_excluded' => 'بدون المزعجة',
     ],
 
     'action' => [
@@ -253,8 +267,14 @@ return [
         'unpublish_selected_confirm' => 'سيعود ما حدّدته إلى مسودة ويخرج من الموقع العام.',
         'unpublish_selected_done' => 'تم إلغاء نشر :count عنصرًا.',
         'bulk_skipped' => 'لم يتغيّر :count عنصرًا لعدم وجود صلاحية.',
+        // Already in the requested status. Distinct from bulk_skipped: nothing was refused,
+        // there was simply nothing to do — and reporting it as a refusal would send an
+        // editor looking for a permission problem that does not exist.
+        'bulk_unchanged' => ':count عنصرًا كان بهذه الحالة أصلًا.',
         'mark_read_selected' => 'تحديد كمقروء',
         'mark_read_selected_done' => 'تم تحديد :count رسالة كمقروءة.',
+        'mark_spam' => 'نقل إلى المزعجة',
+        'mark_not_spam' => 'ليست مزعجة',
         'reset_two_factor' => 'إعادة تعيين التحقّق بخطوتين',
         'reset_two_factor_confirm' => 'سيُحذف مفتاح المستخدم ورموز الاسترداد، وسيُعيد الإعداد عند تسجيل الدخول التالي. هذا ما يحتاجه من فقد هاتفه.',
         'reset_two_factor_done' => 'أُعيد تعيين التحقّق بخطوتين للمستخدم :name.',
@@ -436,6 +456,39 @@ return [
         'installed_at' => 'وقت التثبيت',
         'about' => 'حول النظام',
         'no_changelog' => 'لا توجد إصدارات مسجّلة بعد.',
+
+        /*
+         * Item 18 — RUNTIME state, nested under `status` to keep it apart from the install
+         * facts above. Both are legitimately "system", and a flat merge would put
+         * `scheduler` next to `version` with nothing saying that one is a fact about this
+         * release and the other changes every minute.
+         *
+         * Every string names a consequence or a remedy rather than a status word, because
+         * "stopped" alone sends an administrator looking for a switch in the panel that does
+         * not and should not exist.
+         */
+        'status' => [
+            'scheduler' => 'المُجدوِل (cron)',
+            'queue' => 'عامل الطابور',
+            'cache_store' => 'مخزن التخزين المؤقت',
+            'running' => 'يعمل',
+            'stopped' => 'متوقف',
+            'unknown' => 'غير معروف',
+            'last_seen' => 'آخر تقرير :ago',
+            'queue_lag' => 'تأخّر الطابور: :seconds ثانية',
+            'scheduler_stopped_help' => 'مُجدوِل لارافيل لا يعمل، لذا لا يحدث النشر المُجدول أيضًا. راجع أمر cron في docs/deployment.md.',
+            'queue_stopped_help' => 'لا يوجد عامل يعالج الطابور، فتتراكم الترجمات وفهرسة البحث وخطافات الويب. شغّل خدمة queue:work.',
+            'queue_unknown_help' => 'لا يُرسَل شيء إلى الطابور أثناء توقف المُجدوِل، فلا يمكن قياس حالته. أصلح cron أولًا.',
+            'cache_tags_ok' => 'الوسوم مدعومة — إبطال التخزين المؤقت مُوجَّه.',
+            'cache_tags_missing' => 'هذا المخزن لا يدعم الوسوم، لذا يمسح كل نشر التخزين المؤقت بالكامل، بما فيه عدّادات تحديد المعدل. استخدم Redis في الإنتاج.',
+            // The web process and the cron process disagree about which cache they use. Each
+            // writes where the other never reads, so an editor's publish clears a store the
+            // API does not consult and the site serves stale pages indefinitely.
+            'cache_store_mismatch' => 'تعارض في الإعداد: المُجدوِل يستخدم مخزن «:store» والويب يستخدم غيره. لا يصل إبطال التخزين المؤقت إلى الموقع. وحّد بيئة الاثنين.',
+            'contact_protection' => 'حماية نموذج التواصل',
+            'contact_no_submissions' => 'لم تصل أي رسالة بعد، لذا لا يمكن التأكد من عمل الحقل المخفي.',
+            'contact_honeypot_missing' => 'الرسائل الأخيرة تصل بدون الحقل المخفي، أي أن الواجهة لا ترسله وهذه الحماية معطّلة. وحّد اسم الحقل مع الواجهة.',
+        ],
     ],
 
     'audit' => [
@@ -468,6 +521,15 @@ return [
 
     'contact' => [
         'received' => 'تم استلام رسالتك. شكرًا لتواصلك.',
+
+        // Why a submission was flagged (item 16). `manual` is set by an editor, the rest
+        // by App\Services\Contact\SpamInspector.
+        'spam_reason' => [
+            'honeypot' => 'تم تعبئة الحقل المخفي',
+            'too_fast' => 'إرسال فوري',
+            'missing_timing' => 'لا يوجد وقت لعرض النموذج',
+            'manual' => 'قرار المحرر',
+        ],
     ],
 
     'user' => [
