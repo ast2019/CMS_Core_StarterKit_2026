@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\ContentOverviewWidget;
 use App\Filament\Widgets\PublishingActivityWidget;
@@ -88,7 +89,8 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path((string) config('cms.brand.panel_path', 'admin'))
-            ->login()
+            // Filament's page plus an audit row for a wrong second factor (item 52).
+            ->login(Login::class)
             ->passwordReset()
             ->profile(EditProfile::class, isSimple: false)
 

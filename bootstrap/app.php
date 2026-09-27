@@ -18,6 +18,18 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    /*
+     * Listener auto-discovery OFF. Every listener is registered explicitly in CmsServiceProvider,
+     * which says so — "one place to read to find out what reacts to what" — but discovery was never
+     * actually switched off, so Laravel ALSO scanned app/Listeners and registered each listener a
+     * second time.
+     *
+     * The effect was real and silent: ExtractVideoMetadata ran twice for every uploaded video (two
+     * queued ffprobe runs, two writes of the same duration), and the sign-in audit (item 52) wrote
+     * every login and every failed attempt twice. `php artisan event:list` showed both registrations
+     * side by side; nothing else did. tests/Architecture/ListenersRegisteredOnceTest.php pins it.
+     */
+    ->withEvents(discover: false)
     ->withMiddleware(function (Middleware $middleware): void {
         /*
          * Sanctum ships these middleware but does NOT register the aliases — since

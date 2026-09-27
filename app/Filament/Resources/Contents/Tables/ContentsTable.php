@@ -27,8 +27,18 @@ class ContentsTable
     public static function configure(Table $table): Table
     {
         return $table
-            // Item 50 — the thumbnail's relations, so fifty rows cost one query rather than a hundred.
-            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query))
+            /*
+             * Everything a row reads, loaded once for the page.
+             *
+             * Item 50 — the thumbnail's relations. Item 37 — `translationStates`, read by the
+             * translations column below through translationStatusFor(), which uses the loaded
+             * relation when there is one and queries when there is not. Without it every row cost
+             * one query per non-source locale: two per row at fa/en/ar, a hundred on a page of fifty,
+             * on the list editors open most. HasTranslationStatus's docblock claimed this table
+             * eager-loaded it; it did not, which is why nothing had noticed.
+             */
+            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query)
+                ->with('translationStates'))
             ->columns([
                 FeaturedImageColumn::make(),
 

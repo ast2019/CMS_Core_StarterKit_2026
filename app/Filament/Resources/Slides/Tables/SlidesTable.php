@@ -20,6 +20,28 @@ class SlidesTable
 {
     public static function configure(Table $table): Table
     {
+        /*
+         * Which slide the homepage preloads, decided once per table render.
+         *
+         * Slide::isFirstActive() answers by querying `active()->first()` — correct on its own and
+         * wasteful here, where it ran once per row and returned the same answer every time. The
+         * memo lives in this closure, and configure() runs on every request, so the answer can never
+         * outlive the request that computed it (a static would, under Octane).
+         *
+         * The same set, in the same order, as the Delivery endpoint: active() orders by position.
+         */
+        $resolved = false;
+        $firstActive = null;
+
+        $firstActiveId = function () use (&$resolved, &$firstActive): mixed {
+            if (! $resolved) {
+                $firstActive = Slide::query()->active()->value('id');
+                $resolved = true;
+            }
+
+            return $firstActive;
+        };
+
         return $table
             // The link column resolves the morph, so without this the list costs an
             // extra query per slide.
@@ -34,10 +56,10 @@ class SlidesTable
                 TextColumn::make('title')
                     ->label(__('cms.field.title'))
                     ->getStateUsing(fn (Slide $record): string => $record->getTranslation('title', app()->getLocale()))
-                    ->description(fn (Slide $record): ?string => $record->isFirstActive()
+                    ->description(fn (Slide $record): ?string => $record->getKey() === $firstActiveId()
                         // Requirement 7.6 — the first active slide's image is
                         // preloaded, so which one it is matters operationally.
-                        ? 'preload'
+                        ? __('cms.slide.preloaded')
                         : null),
 
                 TextColumn::make('resolved')

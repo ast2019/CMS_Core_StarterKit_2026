@@ -75,7 +75,7 @@ class AuditLog extends Page implements HasTable
     {
         $labels = [];
 
-        foreach (['created', 'updated', 'deleted', 'restored', 'destroyed', 'published', 'archived', 'denied'] as $event) {
+        foreach (['created', 'updated', 'deleted', 'restored', 'destroyed', 'published', 'archived', 'denied', 'login', 'login_failed'] as $event) {
             $labels[$event] = __("cms.audit.events.{$event}");
         }
 
@@ -128,7 +128,8 @@ class AuditLog extends Page implements HasTable
                         // A trash is reversible; a destruction is not. Colouring them alike would
                         // hide the one distinction an auditor reads this column for.
                         'deleted', 'archived' => 'warning',
-                        'destroyed', 'denied' => 'danger',
+                        'destroyed', 'denied', 'login_failed' => 'danger',
+                        'login' => 'gray',
                         default => 'gray',
                     }),
 

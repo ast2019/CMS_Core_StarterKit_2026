@@ -8,6 +8,7 @@ use App\Filament\Pages\TranslationReview;
 use App\Models\Content;
 use App\Models\TranslationState;
 use App\Models\User;
+use App\Support\Dates\LocalizedDate;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 
@@ -136,8 +137,10 @@ it('counts the backlog on the navigation badge', function (): void {
 
     Content::factory()->create();
 
-    // Two outstanding locales (en, ar) for one article.
-    expect((int) TranslationReview::getNavigationBadge())->toBe(2);
+    // Two outstanding locales (en, ar) for one article — shown in the panel's own digits, like
+    // every other count in it. The cached value was cleared when the article's states were written,
+    // which is what makes the badge move here without waiting out a TTL (item 38).
+    expect(TranslationReview::getNavigationBadge())->toBe(LocalizedDate::number(2));
 });
 
 it('does not change the hash when the editor reorders a node key', function (): void {

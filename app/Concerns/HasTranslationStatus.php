@@ -6,6 +6,7 @@ namespace App\Concerns;
 
 use App\Enums\TranslationStatus;
 use App\Models\TranslationState;
+use App\Support\TranslationBacklog;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
@@ -39,7 +40,20 @@ trait HasTranslationStatus
          */
         static::forceDeleted(function (self $model): void {
             $model->translationStates()->delete();
+
+            // A query-builder delete fires no TranslationState events, so the backlog badges have
+            // to be told directly (item 38).
+            TranslationBacklog::forget();
         });
+
+        /*
+         * The article badge counts only articles outside the trash, so moving one in or out changes
+         * it without any translation state being written.
+         */
+        static::deleted(fn () => TranslationBacklog::forget());
+        // Through the base registrar: `static::restored()` exists only on soft-deleting models, and
+        // calling it on one that is not would take the application down at boot.
+        static::registerModelEvent('restored', fn () => TranslationBacklog::forget());
     }
 
     /**

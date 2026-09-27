@@ -12,6 +12,8 @@ use App\Filament\Resources\Contents\Pages\ListContents;
 use App\Filament\Resources\Contents\Schemas\ContentForm;
 use App\Filament\Resources\Contents\Tables\ContentsTable;
 use App\Models\Content;
+use App\Support\Dates\LocalizedDate;
+use App\Support\TranslationBacklog;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -75,11 +77,10 @@ class ContentResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = Content::query()
-            ->whereHas('translationStates', fn ($query) => $query->needingAttention())
-            ->count();
+        // Item 38 — cached and cleared by the writes that can move it; see TranslationBacklog.
+        $count = TranslationBacklog::articlesNeedingWork();
 
-        return $count > 0 ? (string) $count : null;
+        return $count > 0 ? LocalizedDate::number($count) : null;
     }
 
     public static function getNavigationBadgeColor(): ?string

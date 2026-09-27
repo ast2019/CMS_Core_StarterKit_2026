@@ -179,6 +179,8 @@ return [
         'image_dimensions_help' => 'مطلوبة لمنع إزاحة التصميم (CLS).',
         'read_at' => 'وقت القراءة',
         'spam_reason' => 'سبب الاعتبار مزعجة',
+        'last_login' => 'آخر تسجيل دخول',
+        'never_signed_in' => 'لم يسجّل الدخول قط',
         'preview' => 'معاينة',
         'read_status' => 'حالة القراءة',
         'user_agent' => 'متصفح المُرسل',
@@ -564,6 +566,12 @@ return [
         ],
     ],
 
+    'slide' => [
+        // Requirement 7.6 — the first active slide's image is preloaded. This was the English word
+        // `preload`, hardcoded in the slides table.
+        'preloaded' => 'يُحمَّل مسبقًا في الصفحة الرئيسية',
+    ],
+
     /*
     | Item 35 — someone else saved the record while this form was open.
     */
@@ -596,6 +604,19 @@ return [
         // Item 55 — the event filter and badge showed the raw event names in English. `restored`
         // and `destroyed` are new with the trash (items 10/11); without labels they appeared in the
         // log with no filter option to find them by.
+        'context' => [
+            'ip' => 'عنوان IP',
+            'user_agent' => 'المتصفح',
+            'reason' => 'السبب',
+            'via_cookie' => 'طريقة الدخول',
+        ],
+        'via_cookie_yes' => 'من ملف تعريف «تذكّرني»',
+        'via_cookie_no' => 'بإدخال كلمة المرور',
+        'failure_reason' => [
+            'wrong_password' => 'كلمة مرور خاطئة',
+            'account_disabled' => 'حساب معطّل (كانت كلمة المرور صحيحة)',
+            'wrong_second_factor' => 'رمز تحقق ثنائي خاطئ (كانت كلمة المرور صحيحة)',
+        ],
         'events' => [
             'created' => 'إنشاء',
             'updated' => 'تعديل',
@@ -605,6 +626,8 @@ return [
             'published' => 'نشر',
             'archived' => 'أرشفة',
             'denied' => 'رفض الوصول',
+            'login' => 'تسجيل دخول',
+            'login_failed' => 'تسجيل دخول فاشل',
         ],
     ],
 

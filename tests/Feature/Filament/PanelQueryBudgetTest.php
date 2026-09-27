@@ -1,0 +1,209 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Enums\MediaRole;
+use App\Enums\TranslationStatus;
+use App\Filament\Pages\TranslationReview;
+use App\Filament\Resources\Categories\Pages\ListCategories;
+use App\Filament\Resources\ContactSubmissions\Pages\ListContactSubmissions;
+use App\Filament\Resources\Contents\ContentResource;
+use App\Filament\Resources\Contents\Pages\ListContents;
+use App\Filament\Resources\Galleries\Pages\ListGalleries;
+use App\Filament\Resources\MediaAssets\Pages\ListMediaAssets;
+use App\Filament\Resources\MenuItems\Pages\ListMenuItems;
+use App\Filament\Resources\Pages\Pages\ListPages;
+use App\Filament\Resources\Redirects\Pages\ListRedirects;
+use App\Filament\Resources\Slides\Pages\ListSlides;
+use App\Filament\Resources\Tags\Pages\ListTags;
+use App\Filament\Resources\Users\Pages\ListUsers;
+use App\Models\Category;
+use App\Models\ContactSubmission;
+use App\Models\Content;
+use App\Models\Gallery;
+use App\Models\MediaAsset;
+use App\Models\MenuItem;
+use App\Models\Page;
+use App\Models\Redirect;
+use App\Models\Slide;
+use App\Models\Tag;
+use App\Models\User;
+use App\Support\TranslationBacklog;
+use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
+
+use function Pest\Laravel\actingAs;
+
+/*
+|--------------------------------------------------------------------------
+| Items 37, 38, 39 — a list costs the same number of queries at any length
+|--------------------------------------------------------------------------
+|
+| Measured rather than inspected. The article list issued one query per row per non-source locale
+| for its translations column, the gallery list one per row for its item count, the slide list one per
+| row to ask which slide is first, and the category list one per child row for its parent's name.
+| None of them was wrong, and none of them showed up with the ten rows a developer tests with. At
+| fifty rows the article list alone was a hundred extra queries.
+|
+| The test is the same for every list: render it, add rows, render it again, and require that the
+| query count did not grow with the rows. It covers EVERY resource list, not only the four that were
+| fixed, so the next column somebody adds with a lazy relation fails here instead of in production.
+|
+*/
+
+/**
+ * @return array<string, array{class-string, Closure(): mixed}>
+ */
+function listPagesWithRowFactories(): array
+{
+    return [
+        'articles' => [ListContents::class, function (): void {
+            Content::factory()->create()->setFeaturedImage(MediaAsset::factory()->create());
+        }],
+        'pages' => [ListPages::class, fn () => Page::factory()->create()],
+        'galleries' => [ListGalleries::class, function (): void {
+            Gallery::factory()->create()->attachMediaAsset(MediaAsset::factory()->create(), MediaRole::Gallery);
+        }],
+        'slides' => [ListSlides::class, fn () => Slide::factory()->create(['is_active' => false])],
+        'media' => [ListMediaAssets::class, fn () => MediaAsset::factory()->create()],
+        'categories' => [ListCategories::class, fn () => Category::factory()->create([
+            'parent_id' => Category::factory()->create()->getKey(),
+        ])],
+        'tags' => [ListTags::class, fn () => Tag::factory()->create()],
+        'menu' => [ListMenuItems::class, fn () => MenuItem::factory()->create(['menu_key' => 'header'])],
+        'inbox' => [ListContactSubmissions::class, fn () => ContactSubmission::factory()->create()],
+        'users' => [ListUsers::class, fn () => User::factory()->editor()->create()],
+        'redirects' => [ListRedirects::class, fn () => Redirect::factory()->create()],
+    ];
+}
+
+function queriesToRender(string $page): int
+{
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    Livewire::test($page)->assertOk();
+
+    $count = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    return $count;
+}
+
+it('renders every list in a number of queries that does not grow with its rows', function (string $name): void {
+    actingAs(User::factory()->admin()->create());
+
+    [$page, $makeRow] = listPagesWithRowFactories()[$name];
+
+    foreach (range(1, 3) as $i) {
+        $makeRow();
+    }
+
+    $few = queriesToRender($page);
+
+    foreach (range(1, 6) as $i) {
+        $makeRow();
+    }
+
+    // Twice as many rows on the page and not one more query.
+    expect(queriesToRender($page))->toBe($few, "the {$name} list issues a query per row");
+})->with(array_keys(listPagesWithRowFactories()));
+
+it('names the first active slide without asking the database per row', function (): void {
+    // Item 37 family: the answer is the same for every row, so it is computed once per render.
+    actingAs(User::factory()->admin()->create());
+
+    $first = Slide::factory()->create(['is_active' => true, 'position' => 1]);
+    Slide::factory()->create(['is_active' => true, 'position' => 2]);
+
+    Livewire::test(ListSlides::class)
+        ->assertSee(__('cms.slide.preloaded'))
+        ->assertTableColumnFormattedStateSet('title', $first->getTranslation('title', app()->getLocale()), $first);
+});
+
+it('counts gallery items with the same rules as the gallery itself', function (): void {
+    // Item 39: withCount('items') uses the same relation as Gallery::itemCount(), so a trashed asset
+    // is not counted in the list either.
+    actingAs(User::factory()->admin()->create());
+
+    $gallery = Gallery::factory()->create();
+    $gallery->attachMediaAsset(MediaAsset::factory()->create(), MediaRole::Gallery);
+    $trashed = MediaAsset::factory()->create();
+    $gallery->attachMediaAsset($trashed, MediaRole::Gallery);
+    $trashed->delete();
+
+    expect($gallery->itemCount())->toBe(1);
+
+    Livewire::test(ListGalleries::class)
+        ->assertTableColumnStateSet('items_count', 1, $gallery);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Item 38 — the navigation badges
+|--------------------------------------------------------------------------
+*/
+
+it('does not recount the translation backlog on every page', function (): void {
+    /*
+     * The badges render on every page for every user. Computed once, they must not query again until
+     * something changes.
+     */
+    Content::factory()->create();
+
+    ContentResource::getNavigationBadge();
+    TranslationReview::getNavigationBadge();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    ContentResource::getNavigationBadge();
+    TranslationReview::getNavigationBadge();
+    $queries = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    expect($queries)->toBe(0);
+});
+
+it('moves the backlog badges the moment a translation is reviewed', function (): void {
+    /*
+     * Cached but exact: the cache is cleared by the writes that move the number, so a translator
+     * finishing an article sees the badge drop on their next click rather than ten minutes later.
+     */
+    $article = Content::factory()->create();
+
+    expect(TranslationBacklog::statesNeedingWork())->toBe(2)
+        ->and(TranslationBacklog::articlesNeedingWork())->toBe(1);
+
+    foreach ($article->translationStates as $state) {
+        $state->update(['status' => TranslationStatus::Reviewed]);
+    }
+
+    expect(TranslationBacklog::statesNeedingWork())->toBe(0)
+        ->and(TranslationBacklog::articlesNeedingWork())->toBe(0);
+});
+
+it('drops an article from the badge when it goes to the trash, and back when restored', function (): void {
+    // The article badge counts only articles outside the trash, so a trash move changes it without
+    // any translation state being written — which is why the trash lifecycle clears it too.
+    $article = Content::factory()->create();
+
+    expect(TranslationBacklog::articlesNeedingWork())->toBe(1);
+
+    $article->delete();
+    expect(TranslationBacklog::articlesNeedingWork())->toBe(0);
+
+    $article->restore();
+    expect(TranslationBacklog::articlesNeedingWork())->toBe(1);
+});
+
+it('drops a destroyed article from the review badge', function (): void {
+    // The states of a destroyed record go in one query-builder delete, which fires no model events —
+    // so the badge is told directly.
+    $article = Content::factory()->create();
+
+    expect(TranslationBacklog::statesNeedingWork())->toBe(2);
+
+    $article->forceDelete();
+
+    expect(TranslationBacklog::statesNeedingWork())->toBe(0);
+});

@@ -12,6 +12,7 @@ use App\Jobs\TranslateRecordJob;
 use App\Models\TranslationState;
 use App\Services\Translation\AiTranslator;
 use App\Support\Dates\LocalizedDate;
+use App\Support\TranslationBacklog;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -71,9 +72,10 @@ class TranslationReview extends Page implements HasTable
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = TranslationState::query()->needingAttention()->count();
+        // Item 38 — cached and cleared by the writes that can move it; see TranslationBacklog.
+        $count = TranslationBacklog::statesNeedingWork();
 
-        return $count > 0 ? (string) $count : null;
+        return $count > 0 ? LocalizedDate::number($count) : null;
     }
 
     public static function getNavigationBadgeColor(): ?string

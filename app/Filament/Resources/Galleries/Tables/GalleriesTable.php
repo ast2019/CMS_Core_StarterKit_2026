@@ -25,7 +25,13 @@ class GalleriesTable
     {
         return $table
             // Item 50 — the thumbnail's relations, so fifty rows cost one query rather than a hundred.
-            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query))
+            /*
+             * Item 39 — `items_count` as a subquery on the page's own SELECT, rather than
+             * Gallery::itemCount() per row. Same relation, so the same rules apply: the gallery role
+             * only, and a trashed asset is not counted.
+             */
+            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query)
+                ->withCount('items'))
             ->columns([
                 FeaturedImageColumn::make(),
 
@@ -41,9 +47,10 @@ class GalleriesTable
                     ->formatStateUsing(fn (ContentStatus $state): string => $state->label())
                     ->color(fn (ContentStatus $state): string => $state->color()),
 
-                TextColumn::make('items')
+                TextColumn::make('items_count')
                     ->label(__('cms.table.items'))
-                    ->getStateUsing(fn (Gallery $record): int => $record->itemCount()),
+                    ->formatStateUsing(fn (?int $state): string => LocalizedDate::number((int) $state))
+                    ->sortable(),
 
                 TextColumn::make('publish_date')
                     ->label(__('cms.field.publish_date'))

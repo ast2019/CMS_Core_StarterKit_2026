@@ -180,6 +180,8 @@ return [
         'image_dimensions_help' => 'برای جلوگیری از جابه‌جایی چیدمان (CLS) الزامی است.',
         'read_at' => 'زمان مطالعه',
         'spam_reason' => 'دلیل هرزنامه',
+        'last_login' => 'آخرین ورود',
+        'never_signed_in' => 'هرگز وارد نشده',
         'preview' => 'پیش‌نمایش',
         'read_status' => 'وضعیت خواندن',
         'user_agent' => 'مرورگر فرستنده',
@@ -565,6 +567,12 @@ return [
         ],
     ],
 
+    'slide' => [
+        // Requirement 7.6 — the first active slide's image is preloaded. This was the English word
+        // `preload`, hardcoded in the slides table.
+        'preloaded' => 'پیش‌بارگذاری در صفحهٔ اصلی',
+    ],
+
     /*
     | Item 35 — someone else saved the record while this form was open.
     */
@@ -597,6 +605,19 @@ return [
         // Item 55 — the event filter and badge showed the raw event names in English. `restored`
         // and `destroyed` are new with the trash (items 10/11); without labels they appeared in the
         // log with no filter option to find them by.
+        'context' => [
+            'ip' => 'نشانی IP',
+            'user_agent' => 'مرورگر',
+            'reason' => 'علت',
+            'via_cookie' => 'روش ورود',
+        ],
+        'via_cookie_yes' => 'از کوکی «مرا به خاطر بسپار»',
+        'via_cookie_no' => 'با وارد کردن گذرواژه',
+        'failure_reason' => [
+            'wrong_password' => 'گذرواژهٔ نادرست',
+            'account_disabled' => 'حساب غیرفعال (گذرواژه درست بود)',
+            'wrong_second_factor' => 'کد تأیید دومرحله‌ای نادرست (گذرواژه درست بود)',
+        ],
         'events' => [
             'created' => 'ایجاد',
             'updated' => 'ویرایش',
@@ -606,6 +627,8 @@ return [
             'published' => 'انتشار',
             'archived' => 'بایگانی',
             'denied' => 'دسترسی ردشده',
+            'login' => 'ورود',
+            'login_failed' => 'ورود ناموفق',
         ],
     ],
 
