@@ -93,9 +93,12 @@ final class LocalizedDate
      * calendarTable() return null rather than guess — a wrong month length would
      * silently shift every later date in the table.
      *
+     * Public so the server-side reader of the table (CalendarMonth, item 43) decodes with this
+     * map rather than a copy of it.
+     *
      * @var array<int, string>
      */
-    private const MONTH_LENGTH_CODES = [
+    public const MONTH_LENGTH_CODES = [
         28 => '8',
         29 => '9',
         30 => '0',

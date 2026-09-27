@@ -20,7 +20,7 @@ class ContentPolicy
         return 'content';
     }
 
-    protected function ownerColumn(): ?string
+    public function ownerColumn(): ?string
     {
         return 'author_id';
     }

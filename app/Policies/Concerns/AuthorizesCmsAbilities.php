@@ -26,8 +26,11 @@ trait AuthorizesCmsAbilities
 
     /**
      * Column naming the owner, or null when the model has no concept of one.
+     *
+     * Public so a screen that loads only some columns (the editorial calendar) can ask which one
+     * the policy will read, instead of guessing and silently denying an owner their own record.
      */
-    protected function ownerColumn(): ?string
+    public function ownerColumn(): ?string
     {
         return null;
     }

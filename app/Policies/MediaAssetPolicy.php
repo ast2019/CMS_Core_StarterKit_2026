@@ -19,7 +19,7 @@ class MediaAssetPolicy
         return 'media';
     }
 
-    protected function ownerColumn(): ?string
+    public function ownerColumn(): ?string
     {
         return 'uploaded_by';
     }

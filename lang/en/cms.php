@@ -697,6 +697,23 @@ return [
         'empty_hint' => 'No locale is waiting for translation or an update.',
     ],
 
+    'editorial_calendar' => [
+        'title' => 'Editorial calendar',
+        'intro' => 'Articles, pages and galleries by the day they go out. Times are in :timezone.',
+        'previous' => 'Previous month',
+        'next' => 'Next month',
+        'today' => 'This month',
+        'state' => [
+            'scheduled' => 'Scheduled — goes live on its own',
+            'unapproved' => 'Not published yet — will not go live until approved',
+            'missed' => 'Missed — its time today has passed and it is not on the site',
+            'published' => 'Published',
+        ],
+        'more' => 'One more|:count more',
+        'empty' => 'Nothing is scheduled or published in this month.',
+        'unavailable' => 'The calendar configured for this language cannot be shown as a month grid.',
+    ],
+
     'settings' => [
         'title' => 'Settings',
         'save' => 'Save settings',
