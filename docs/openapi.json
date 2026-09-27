@@ -240,6 +240,104 @@
                 }
             }
         },
+        "/v1/forms/{key}": {
+            "get": {
+                "operationId": "v1.forms.show",
+                "summary": "A form's schema, localised for the request locale",
+                "tags": [
+                    "Form"
+                ],
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`FormResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/FormResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/forms/{key}/submissions": {
+            "post": {
+                "operationId": "v1.forms.submissions.store",
+                "description": "Always answers 201 with the new id once the input is valid \u2014 including when a spam check\nfired, because the submission is stored and flagged rather than refused (item 16), and a\ndifferent answer would tell the sender which check they tripped.",
+                "summary": "Submit answers to a form",
+                "tags": [
+                    "Form"
+                ],
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "\u067e\u06cc\u0627\u0645 \u0634\u0645\u0627 \u062f\u0631\u06cc\u0627\u0641\u062a \u0634\u062f. \u0633\u067e\u0627\u0633 \u0627\u0632 \u062a\u0645\u0627\u0633 \u0634\u0645\u0627."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFoundHttpException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/v1/galleries/{slug}": {
             "get": {
                 "operationId": "v1.galleries.show",
@@ -2476,6 +2574,124 @@
                     "archived"
                 ],
                 "title": "ContentStatus"
+            },
+            "FormResource": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": "In the order the form presents them.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "text",
+                                        "email",
+                                        "tel",
+                                        "textarea",
+                                        "select",
+                                        "checkbox"
+                                    ]
+                                },
+                                "required": {
+                                    "type": "boolean"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "placeholder": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "help": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "max_length": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "options": {
+                                    "type": [
+                                        "array",
+                                        "null"
+                                    ],
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "value": {
+                                                "type": "string"
+                                            },
+                                            "label": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "value",
+                                            "label"
+                                        ]
+                                    }
+                                }
+                            },
+                            "required": [
+                                "key",
+                                "type",
+                                "required",
+                                "label",
+                                "placeholder",
+                                "help",
+                                "max_length",
+                                "options"
+                            ]
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "locale": {
+                                "type": "string"
+                            },
+                            "is_fallback": {
+                                "type": "boolean"
+                            },
+                            "fallback_locale": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "locale",
+                            "is_fallback",
+                            "fallback_locale"
+                        ]
+                    }
+                },
+                "required": [
+                    "key",
+                    "title",
+                    "fields",
+                    "meta"
+                ],
+                "title": "FormResource"
             },
             "GalleryResource": {
                 "type": "object",

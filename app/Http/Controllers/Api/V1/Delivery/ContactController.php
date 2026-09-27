@@ -7,20 +7,25 @@ namespace App\Http\Controllers\Api\V1\Delivery;
 use App\Http\Controllers\Api\V1\Delivery\Concerns\ResolvesDeliveryRequest;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreContactSubmissionRequest;
-use App\Models\ContactSubmission;
-use App\Services\Contact\SpamInspector;
+use App\Models\Form;
+use App\Services\Forms\SubmissionRecorder;
 use Illuminate\Http\JsonResponse;
 
 /**
  * Accepts public contact form submissions.
  *
  * Requirement 3.1.
+ *
+ * Item 15 — kept, with its request contract unchanged, for every frontend already posting here.
+ * It now records against the seeded `contact` form through the same SubmissionRecorder as
+ * POST /api/v1/forms/{key}/submissions, so the two endpoints store, flag and rate-limit
+ * identically. See docs/forms.md.
  */
 class ContactController extends Controller
 {
     use ResolvesDeliveryRequest;
 
-    public function store(StoreContactSubmissionRequest $request, SpamInspector $spam): JsonResponse
+    public function store(StoreContactSubmissionRequest $request, SubmissionRecorder $recorder): JsonResponse
     {
         /*
          * Requirement 1.1. Gated alongside the read endpoint that serves the form's
@@ -30,32 +35,7 @@ class ContactController extends Controller
          */
         $this->ensureModuleEnabled('contact');
 
-        $submission = ContactSubmission::query()->create([
-            ...$request->validated(),
-
-            /*
-             * Captured server-side, never from the payload. A client-supplied IP
-             * would be trivially forged, which would make the abuse trail and the
-             * rate-limit forensics worthless.
-             */
-            'ip_address' => $request->ip(),
-            'user_agent' => substr((string) $request->userAgent(), 0, 255),
-        ]);
-
-        /*
-         * Item 16. Inspected AFTER the row exists, and the response is identical either
-         * way — the sender is never told which check they failed, because telling them is
-         * how the next attempt avoids it.
-         *
-         * Flagged rather than refused so a false positive is recoverable: the panel hides
-         * spam behind a filter instead of deleting it, and an editor who finds a real
-         * enquiry there can clear the flag. See config('cms.contact.spam').
-         */
-        $reason = $spam->reasonFor($request);
-
-        if ($reason !== null) {
-            $submission->flagAsSpam($reason);
-        }
+        $submission = $recorder->record(Form::contact(), $request->validated(), $request);
 
         /*
          * The created record is deliberately NOT echoed back. Returning it would

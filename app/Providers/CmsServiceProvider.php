@@ -73,6 +73,7 @@ class CmsServiceProvider extends ServiceProvider
         Models\Redirect::class => Policies\RedirectPolicy::class,
         Models\Setting::class => Policies\SettingPolicy::class,
         Models\ContactSubmission::class => Policies\ContactSubmissionPolicy::class,
+        Models\Form::class => Policies\FormPolicy::class,
         User::class => Policies\UserPolicy::class,
     ];
 

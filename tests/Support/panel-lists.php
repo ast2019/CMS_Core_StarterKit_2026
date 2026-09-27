@@ -6,6 +6,7 @@ use App\Enums\MediaRole;
 use App\Filament\Resources\Categories\Pages\ListCategories;
 use App\Filament\Resources\ContactSubmissions\Pages\ListContactSubmissions;
 use App\Filament\Resources\Contents\Pages\ListContents;
+use App\Filament\Resources\Forms\Pages\ListForms;
 use App\Filament\Resources\Galleries\Pages\ListGalleries;
 use App\Filament\Resources\MediaAssets\Pages\ListMediaAssets;
 use App\Filament\Resources\MenuItems\Pages\ListMenuItems;
@@ -17,6 +18,7 @@ use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Models\Category;
 use App\Models\ContactSubmission;
 use App\Models\Content;
+use App\Models\Form;
 use App\Models\Gallery;
 use App\Models\MediaAsset;
 use App\Models\MenuItem;
@@ -51,7 +53,15 @@ function listPagesWithRowFactories(): array
         ])],
         'tags' => [ListTags::class, fn () => Tag::factory()->create()],
         'menu' => [ListMenuItems::class, fn () => MenuItem::factory()->create(['menu_key' => 'header'])],
-        'inbox' => [ListContactSubmissions::class, fn () => ContactSubmission::factory()->create()],
+        'inbox' => [ListContactSubmissions::class, function (): void {
+            // A submission to a builder form as well, so the form column reads more than one form.
+            ContactSubmission::factory()->create();
+            ContactSubmission::factory()->create(['form_id' => Form::factory()->create()->getKey()]);
+        }],
+        'forms' => [ListForms::class, function (): void {
+            Form::factory()->create();
+            ContactSubmission::factory()->create(['form_id' => Form::factory()->create()->getKey()]);
+        }],
         'users' => [ListUsers::class, fn () => User::factory()->editor()->create()],
         'redirects' => [ListRedirects::class, fn () => Redirect::factory()->create()],
     ];

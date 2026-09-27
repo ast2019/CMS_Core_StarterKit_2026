@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Forms\FormSchema;
+use App\Services\Forms\SubmissionRecorder;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -19,9 +23,19 @@ use Illuminate\Support\Facades\Cache;
  * Reading and deleting a submission by an admin IS audited, via the policy and
  * the panel action.
  *
+ * Item 15 — every submission belongs to a Form and stores what was sent as `payload`, keyed
+ * by field key. `name`, `email` and `phone` are ALSO columns, copied from the payload fields
+ * with those keys, because they are what the inbox is searched by and what identifies a sender
+ * across forms (see the add_form_and_payload migration).
+ *
+ * @property int|null $form_id
+ * @property array<string, mixed>|null $payload
+ * @property-read string|null $subject
+ * @property-read string|null $message
  * @property Carbon|null $read_at
  * @property bool $is_spam
  * @property string|null $spam_reason
+ * @property-read Form|null $form
  */
 class ContactSubmission extends Model
 {
@@ -45,11 +59,11 @@ class ContactSubmission extends Model
      * @var list<string>
      */
     protected $fillable = [
+        'form_id',
         'name',
         'email',
         'phone',
-        'subject',
-        'message',
+        'payload',
         'ip_address',
         'user_agent',
     ];
@@ -57,9 +71,99 @@ class ContactSubmission extends Model
     protected function casts(): array
     {
         return [
+            // Unescaped, so a Persian answer is searchable with LIKE from the inbox.
+            'payload' => 'json:unicode',
             'read_at' => 'datetime',
             'is_spam' => 'boolean',
         ];
+    }
+
+    /**
+     * @return BelongsTo<Form, $this>
+     */
+    public function form(): BelongsTo
+    {
+        return $this->belongsTo(Form::class);
+    }
+
+    /**
+     * One answer from the payload, or null when the field was not answered.
+     */
+    public function answer(string $key): mixed
+    {
+        return ($this->payload ?? [])[$key] ?? null;
+    }
+
+    /**
+     * The contact form's `subject`, which was a column until item 15.
+     *
+     * Kept as a read-only attribute so code written against the contact form — and
+     * `$submission->subject` in its tests — reads the same value from where it now lives.
+     *
+     * @return Attribute<string|null, never>
+     */
+    protected function subject(): Attribute
+    {
+        return Attribute::get(fn (): ?string => is_string($this->answer('subject')) ? $this->answer('subject') : null);
+    }
+
+    /**
+     * The contact form's `message`; see subject().
+     *
+     * @return Attribute<string|null, never>
+     */
+    protected function message(): Attribute
+    {
+        return Attribute::get(fn (): ?string => is_string($this->answer('message')) ? $this->answer('message') : null);
+    }
+
+    /**
+     * The payload as label/value pairs for the inbox, in the reader's locale.
+     *
+     * @return list<array{key: string, label: string, value: string, multiline: bool}>
+     */
+    public function readablePayload(?string $locale = null): array
+    {
+        return FormSchema::describe(
+            $this->form !== null ? $this->form->fields : [],
+            $this->payload ?? [],
+            $locale ?? app()->getLocale(),
+        );
+    }
+
+    /**
+     * A one-line preview for the inbox list: the subject where the form has one, otherwise the
+     * first answer that is not already shown in its own column.
+     */
+    public function summary(): ?string
+    {
+        foreach (['subject', 'message'] as $key) {
+            if (is_string($this->answer($key)) && $this->answer($key) !== '') {
+                return $this->answer($key);
+            }
+        }
+
+        /*
+         * In the FORM's field order, then any leftover keys — not in the payload's own order.
+         * MySQL stores a JSON object with its keys re-sorted (by length, then bytes), so "the
+         * first answer in the payload" would be the one with the shortest key there and the first
+         * one asked on SQLite.
+         */
+        $payload = $this->payload ?? [];
+        $keys = array_unique([
+            ...($this->form !== null ? $this->form->fieldKeys() : []),
+            ...array_map('strval', array_keys($payload)),
+        ]);
+
+        foreach ($keys as $key) {
+            $value = $payload[$key] ?? null;
+
+            if (! in_array($key, SubmissionRecorder::INDEXED_KEYS, true) && is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     protected static function booted(): void

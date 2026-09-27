@@ -43,14 +43,15 @@ it('versions every API route', function (): void {
     }
 });
 
-it('keeps the delivery API read-only apart from the contact form', function (): void {
+it('keeps the delivery API read-only apart from the form submissions', function (): void {
     /*
      * Requirement 8.3. Enforced against the route table so "read-only" is a
      * structural fact: adding a POST to the delivery group fails the build rather
      * than waiting for a reviewer to notice.
      *
-     * The contact form is the single, deliberate exception — it writes a submission
-     * and returns only an id.
+     * Form submissions are the deliberate exception — the contact form and, since
+     * item 15, any form built in the panel. Each writes a submission and returns only
+     * an id, and both sit behind the tight `cms-contact` limiter (asserted below).
      */
     $writeRoutes = [];
 
@@ -61,7 +62,7 @@ it('keeps the delivery API read-only apart from the contact form', function (): 
             continue;
         }
 
-        if ($route->uri() === 'api/v1/contact') {
+        if (in_array($route->uri(), ['api/v1/contact', 'api/v1/forms/{key}/submissions'], true)) {
             continue;
         }
 
@@ -137,6 +138,14 @@ it('rate-limits the public write far more tightly than the reads', function (): 
 
     expect($contact)->not->toBeNull()
         ->and($contact->gatherMiddleware())->toContain('throttle:cms-contact');
+
+    // Item 15 — the builder's submissions share the contact limiter, and so its budget.
+    $forms = collect(apiRoutes())
+        ->first(fn (RouteInstance $route): bool => $route->uri() === 'api/v1/forms/{key}/submissions'
+            && in_array('POST', $route->methods(), true));
+
+    expect($forms)->not->toBeNull()
+        ->and($forms->gatherMiddleware())->toContain('throttle:cms-contact');
 
     $news = collect(apiRoutes())
         ->first(fn (RouteInstance $route): bool => $route->uri() === 'api/v1/news');

@@ -6,6 +6,7 @@ use App\Concerns\IsAuditable;
 use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
+use App\Models\Form;
 use App\Models\Gallery;
 use App\Models\MediaAsset;
 use App\Models\MenuItem;
@@ -40,6 +41,7 @@ function auditableModels(): array
         MenuItem::class,
         Setting::class,
         ContactSetting::class,
+        Form::class,
     ];
 }
 

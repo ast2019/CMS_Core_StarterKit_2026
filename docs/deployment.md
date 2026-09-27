@@ -292,6 +292,11 @@ flooded with content. It has three defences, and only the first is enforced enti
 3. **A timing value** — when the form was presented, used to reject a submission that took
    no time at all.
 
+Since item 15 the same three defences cover every form built in the panel
+(`POST /api/v1/forms/{key}/submissions`), with one rate-limit budget per IP shared across all of
+them and the contact endpoint. They use the same two field names, so the frontend renders the
+same honeypot and timing inputs on every form — see [forms.md](forms.md).
+
 A submission failing 2 or 3 is **stored and flagged**, never refused. The sender gets the
 same `201` either way — telling them which check fired is how the next attempt avoids it —
 and the panel hides flagged rows behind the inbox's spam filter, where an editor can clear
