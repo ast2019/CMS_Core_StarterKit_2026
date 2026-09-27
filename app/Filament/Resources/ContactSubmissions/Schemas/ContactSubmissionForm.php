@@ -22,12 +22,13 @@ class ContactSubmissionForm
     {
         return $schema->components([
             Section::make()
-                ->columns(2)
+                ->columns(3)
                 ->schema([
-                    TextEntry::make('name')->label(__('cms.field.name')),
-                    TextEntry::make('email')->label(__('cms.field.email')),
-                    TextEntry::make('phone')->label(__('cms.field.phone')),
-                    TextEntry::make('subject')->label(__('cms.field.subject')),
+                    TextEntry::make('form.title')
+                        ->label(__('cms.forms.form'))
+                        ->state(fn (ContactSubmission $record): ?string => $record->form?->getTranslation('title', app()->getLocale()))
+                        ->badge()
+                        ->color('gray'),
                     TextEntry::make('created_at')
                         ->label(__('cms.field.publish_date'))
                         ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::format($state)),
@@ -37,12 +38,25 @@ class ContactSubmissionForm
                         ->placeholder(__('cms.table.unread')),
                 ]),
 
-            Section::make(__('cms.field.message'))
-                ->schema([
-                    TextEntry::make('message')
-                        ->label('')
-                        ->columnSpanFull(),
-                ]),
+            /*
+             * Item 15 — what the visitor sent, one entry per answered field, labelled from the
+             * form's schema in the reader's locale (FormSchema::describe). Built per record
+             * because the fields are data: two messages from two forms have nothing in common
+             * but the section they are shown in.
+             *
+             * Long answers keep their line breaks — a message split into paragraphs by its
+             * writer should not reach the editor as one run-on line.
+             */
+            Section::make(__('cms.forms.submission'))
+                ->columns(2)
+                ->schema(fn (ContactSubmission $record): array => array_map(
+                    fn (array $entry): TextEntry => TextEntry::make("payload_entry_{$entry['key']}")
+                        ->label($entry['label'])
+                        ->state($entry['value'])
+                        ->columnSpan($entry['multiline'] ? 'full' : 1)
+                        ->extraAttributes($entry['multiline'] ? ['class' => 'whitespace-pre-line'] : []),
+                    $record->readablePayload(),
+                )),
 
             Section::make(__('cms.section.diagnostics'))
                 ->collapsed()

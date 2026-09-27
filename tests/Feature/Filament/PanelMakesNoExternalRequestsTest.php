@@ -6,6 +6,8 @@ use App\Filament\Pages\AuditLog;
 use App\Filament\Pages\EditorialCalendar;
 use App\Filament\Pages\Settings;
 use App\Filament\Pages\TranslationReview;
+use App\Filament\Resources\Forms\FormResource;
+use App\Models\Form;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Model;
@@ -193,4 +195,19 @@ it('references no external host on any resource page', function (): void {
     // pages skipped silently; give it a factory, or seed it.
     expect($unvisited)->toBe([], 'No record to render: '.implode(', ', $unvisited))
         ->and($visited)->toBeGreaterThan(20);
+});
+
+it('references no external host in the editor of a custom form', function (): void {
+    /*
+     * The resource loop reaches the Forms editor through the seeded `contact` form, whose structure
+     * is locked, so the controls a custom form renders (type select, select options, add and remove)
+     * are never checked there. The factory's form has a select and a checkbox.
+     */
+    $this->actingAs($this->admin);
+
+    $form = Form::factory()->create();
+
+    $response = $this->get(FormResource::getUrl('edit', ['record' => $form]))->assertOk();
+
+    assertNoExternalReferences($response->getContent() ?: '', 'custom form editor');
 });

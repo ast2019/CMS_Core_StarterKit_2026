@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\ContactSubmission;
+use App\Models\Form;
 use Database\Factories\Concerns\GeneratesPersianText;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -20,13 +21,27 @@ class ContactSubmissionFactory extends Factory
     public function definition(): array
     {
         return [
+            // The seeded contact form, which the create_forms_table migration guarantees.
+            'form_id' => fn (): int => Form::contact()->getKey(),
+
             // Faker's fa_IR DOES provide Persian person names (it is only the Lorem
             // provider that is missing), so names are realistic without help.
             'name' => $this->faker->name(),
             'email' => $this->faker->safeEmail(),
             'phone' => $this->faker->phoneNumber(),
-            'subject' => $this->persianTitle(50),
-            'message' => $this->persianParagraph(400),
+
+            /*
+             * Built from the resolved columns, so a test overriding `name` gets a payload that
+             * says the same thing — the application copies these three FROM the payload, and a
+             * row where the two disagree is one it could never have written.
+             */
+            'payload' => fn (array $attributes): array => [
+                'name' => $attributes['name'],
+                'email' => $attributes['email'],
+                'phone' => $attributes['phone'],
+                'subject' => $this->persianTitle(50),
+                'message' => $this->persianParagraph(400),
+            ],
             'ip_address' => $this->faker->ipv4(),
             'user_agent' => $this->faker->userAgent(),
             'read_at' => null,

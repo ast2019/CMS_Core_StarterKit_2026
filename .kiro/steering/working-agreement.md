@@ -6,7 +6,7 @@ inclusion: always
 
 Handoff for AI assistants working on this repo. It records how the owner wants work done, what has
 already been decided, and the traps that caused real bugs. Read it before proposing or changing
-anything. It was last updated after PR #24.
+anything. It was last updated after PR #26.
 
 ## How to work
 
@@ -24,8 +24,8 @@ anything. It was last updated after PR #24.
      feature, `patch` when it only fixes.
   2. `php artisan scramble:export`, because the spec's `info.version` follows the release.
 
-  When two branches are in flight, whichever merges second is rebased onto `main` and
-  re-released on top of the first. Deployments pick releases up by themselves:
+  When two branches are in flight, whichever merges second is brought up to date with
+  `main` (rebase or merge) and re-released on top of the first. Deployments pick releases up by themselves:
   `cms:sync-release` runs at container start and brings `system_info` and `changelogs` up to
   `CHANGELOG.md`.
 - Present findings and trade-offs, then let the owner decide. If a decision changes an earlier
@@ -47,18 +47,21 @@ anything. It was last updated after PR #24.
 
 ## Remaining approved work
 
-**Done:** item 43, the editorial calendar (PR #21), and item 12, media usage and upload
-validation (PR #23).
+**Done:** item 43, the editorial calendar (PR #21); item 12, media usage and upload validation
+(PR #23); item 15, the form builder (PR #26, release 0.8.0). Forms live in `forms` with a JSON
+field schema (`App\Services\Forms\FormSchema`); submissions carry `form_id` and a JSON `payload`.
+`POST /api/v1/contact` is unchanged and records against the seeded `contact` form, whose field
+set is fixed by `ContactFormStructure`. The frontend contract is `docs/forms.md`.
 
-**Item 15 — form builder. In progress on branch `feat/form-builder`**; do not start it again
-elsewhere.
-- Store forms in a `forms` table holding a JSON field schema.
-- Submissions carry `form_id` plus a JSON `payload`, and keep `name`, `email` and `phone` as
-  indexed columns.
-- Turn the existing contact form into the seeded `contact` form. `POST /api/v1/contact`, its tests
-  and its spam flagging (`SpamInspector`) must keep working.
-- No email. No file uploads unless the owner asks.
-- Document the Next.js side, because the frontend must render forms from the schema.
+No approved work is outstanding. **Waiting on the owner** (ask, do not decide):
+- Whether the image should run the scheduler and queue worker itself, instead of Coolify
+  Scheduled Tasks (running both would execute every task twice).
+- Form builder follow-ups: retire the Settings "contact form labels" section, which duplicates
+  the contact form's schema. That is an API change, not a tidy-up: `GET /api/v1/contact` still
+  serves it as `form_labels`, so the frontend must move to `GET /api/v1/forms/contact` first and
+  the field needs a deprecation note in `docs/forms.md`. Also: let editors manage forms (a `form.manage` ability) rather than
+  admins only; a separate `forms` module switch (forms currently follow `cms.modules.contact`);
+  rename the "Contact messages" inbox, which now holds every form's submissions.
 
 ## Traps that caused real bugs here
 

@@ -7,6 +7,7 @@ namespace App\Observers;
 use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
+use App\Models\Form;
 use App\Models\Gallery;
 use App\Models\MediaAsset;
 use App\Models\MenuItem;
@@ -53,6 +54,9 @@ class DeliveryCacheObserver
         MenuItem::class => [DeliveryCache::TAG_NAVIGATION],
         Setting::class => [DeliveryCache::TAG_SETTINGS],
         ContactSetting::class => [DeliveryCache::TAG_SETTINGS],
+
+        // Item 15 — a form's schema is site chrome, served beside the contact details.
+        Form::class => [DeliveryCache::TAG_SETTINGS],
 
         /*
          * The redirect table is served to the frontend (GET /api/v1/redirects), so a

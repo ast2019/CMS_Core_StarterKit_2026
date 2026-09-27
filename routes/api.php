@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\V1\Delivery\CategoryController;
 use App\Http\Controllers\Api\V1\Delivery\ContactController;
 use App\Http\Controllers\Api\V1\Delivery\ContentController;
+use App\Http\Controllers\Api\V1\Delivery\FormController;
 use App\Http\Controllers\Api\V1\Delivery\GalleryController;
 use App\Http\Controllers\Api\V1\Delivery\PageController;
 use App\Http\Controllers\Api\V1\Delivery\RedirectController;
@@ -40,7 +41,7 @@ Route::prefix('v1')->group(function (): void {
     | Requirements 8.3, 8.4, 8.7. Decision D-9: public by default, with optional
     | API-key enforcement available per site.
     |
-    | Only GET routes are registered here apart from the contact form, so
+    | Only GET routes are registered here apart from the form submissions, so
     | "read-only" is a property of the route table rather than a convention a
     | future controller might break. An architecture test asserts it.
     |
@@ -131,6 +132,15 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('settings', [SiteController::class, 'settings'])->name('api.v1.settings');
         Route::get('contact', [SiteController::class, 'contact'])->name('api.v1.contact');
+
+        /*
+         * Item 15 — a form built in the panel, as a schema to render. The key pattern matches
+         * FormSchema::FORM_KEY_PATTERN, so a malformed key 404s at the router rather than
+         * reaching a query.
+         */
+        Route::get('forms/{key}', [FormController::class, 'show'])
+            ->where('key', '[a-z][a-z0-9-]*')
+            ->name('api.v1.forms.show');
         Route::get('not-found-page', [SiteController::class, 'notFoundPage'])->name('api.v1.not-found');
 
         /*
@@ -173,16 +183,27 @@ Route::prefix('v1')->group(function (): void {
         ->name('api.v1.redirects.resolve');
 
     /*
-     * The contact form is the one public write. It gets its own, much tighter
-     * throttle: the read endpoints allow 120/min, which would be an invitation to
-     * flood the submissions table.
+     * The public writes — the contact form and, since item 15, submissions to any
+     * form. They get their own, much tighter throttle: the read endpoints allow
+     * 120/min, which would be an invitation to flood the submissions table.
      */
     Route::middleware([
         'throttle:cms-contact',
         AuthenticateDeliveryApi::class,
         EnsureMaintenanceModeAllowsDelivery::class,
         ResolveApiLocale::class,
-    ])->post('contact', [ContactController::class, 'store'])->name('api.v1.contact.store');
+    ])->group(function (): void {
+        Route::post('contact', [ContactController::class, 'store'])->name('api.v1.contact.store');
+
+        /*
+         * Item 15 — submissions to any active form, under the SAME limiter. The limiter is keyed
+         * by client IP alone, so the budget is shared across every form and the legacy endpoint:
+         * a script cannot multiply its allowance by spreading itself over several forms.
+         */
+        Route::post('forms/{key}/submissions', [FormController::class, 'submit'])
+            ->where('key', '[a-z][a-z0-9-]*')
+            ->name('api.v1.forms.submissions.store');
+    });
 
     /*
     |----------------------------------------------------------------------

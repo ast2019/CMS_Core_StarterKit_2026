@@ -32,16 +32,24 @@ class SpamInspector
      * Checks run in order of confidence, and the FIRST one to fire is the one recorded.
      * A bot that fills the honeypot usually also submits instantly, and "honeypot" is the
      * more diagnostic of the two answers.
+     *
+     * Item 15 — `$formFieldKeys` are the fields of the form being submitted, when it is not the
+     * contact form. The honeypot and timing names must not collide with THOSE either: a builder
+     * form with a field named after the honeypot would otherwise flag every visitor who answered
+     * it. The panel refuses such a key (FormSchema::reservedFieldKeys); this is the runtime half,
+     * for a config value changed after the form was built.
+     *
+     * @param  list<string>  $formFieldKeys
      */
-    public function reasonFor(Request $request): ?string
+    public function reasonFor(Request $request, array $formFieldKeys = []): ?string
     {
-        $this->recordFieldSightings($request);
+        $this->recordFieldSightings($request, $formFieldKeys);
 
-        if ($this->honeypotWasFilled($request)) {
+        if ($this->honeypotWasFilled($request, $formFieldKeys)) {
             return 'honeypot';
         }
 
-        return $this->timingReason($request);
+        return $this->timingReason($request, $formFieldKeys);
     }
 
     /**
@@ -63,11 +71,13 @@ class SpamInspector
      * about the message.
      *
      * An upsert per submission, against a route limited to 3/minute — the cost is nil.
+     *
+     * @param  list<string>  $formFieldKeys
      */
-    private function recordFieldSightings(Request $request): void
+    private function recordFieldSightings(Request $request, array $formFieldKeys): void
     {
         foreach (['honeypot_field' => SystemHeartbeat::CONTACT_HONEYPOT, 'timing_field' => SystemHeartbeat::CONTACT_TIMING] as $configKey => $heartbeatKey) {
-            $field = $this->fieldName($configKey);
+            $field = $this->fieldName($configKey, $formFieldKeys);
 
             /*
              * `has()`, not `filled()`. An EMPTY honeypot is the normal, correct outcome for
@@ -92,10 +102,12 @@ class SpamInspector
      * Read from the request rather than from validated input, because the decoy is
      * deliberately absent from StoreContactSubmissionRequest::rules() — validating it would
      * publish its name in the OpenAPI spec, which is the one place a scraper would look.
+     *
+     * @param  list<string>  $formFieldKeys
      */
-    private function honeypotWasFilled(Request $request): bool
+    private function honeypotWasFilled(Request $request, array $formFieldKeys): bool
     {
-        $field = $this->fieldName('honeypot_field');
+        $field = $this->fieldName('honeypot_field', $formFieldKeys);
 
         if ($field === null) {
             return false;
@@ -106,10 +118,12 @@ class SpamInspector
 
     /**
      * Whether the form was submitted faster than a human could have filled it.
+     *
+     * @param  list<string>  $formFieldKeys
      */
-    private function timingReason(Request $request): ?string
+    private function timingReason(Request $request, array $formFieldKeys): ?string
     {
-        $field = $this->fieldName('timing_field');
+        $field = $this->fieldName('timing_field', $formFieldKeys);
 
         if ($field === null) {
             return null;
@@ -167,8 +181,10 @@ class SpamInspector
      * A typo lands on a name nobody sends, which fails open (the check stops firing) rather
      * than closed. That is the safer of the two directions and is what the honeypot-sighting
      * card on SystemStatusWidget exists to surface.
+     *
+     * @param  list<string>  $formFieldKeys
      */
-    private function fieldName(string $key): ?string
+    private function fieldName(string $key, array $formFieldKeys): ?string
     {
         $name = config("cms.contact.spam.{$key}");
 
@@ -176,7 +192,7 @@ class SpamInspector
             return null;
         }
 
-        return in_array($name, self::submissionFieldNames(), strict: true) ? null : $name;
+        return in_array($name, [...self::submissionFieldNames(), ...$formFieldKeys], strict: true) ? null : $name;
     }
 
     /**

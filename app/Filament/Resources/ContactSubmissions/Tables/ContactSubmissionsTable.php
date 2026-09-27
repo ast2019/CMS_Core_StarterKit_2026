@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\ContactSubmissions\Tables;
 
 use App\Models\ContactSubmission;
+use App\Models\Form;
 use App\Support\Dates\LocalizedDate;
 use App\Support\Plural;
 use Carbon\CarbonInterface;
@@ -17,6 +18,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,6 +29,11 @@ class ContactSubmissionsTable
     public static function configure(Table $table): Table
     {
         return $table
+            /*
+             * Item 15 — the form column reads each row's form, so it is loaded with the page
+             * rather than once per row (PanelQueryBudgetTest).
+             */
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('form'))
             ->columns([
                 IconColumn::make('read_at')
                     ->label(__('cms.field.read_status'))
@@ -39,9 +46,26 @@ class ContactSubmissionsTable
                     ->label(__('cms.field.name'))
                     ->searchable(),
 
-                TextColumn::make('subject')
-                    ->label(__('cms.field.subject'))
-                    ->searchable()
+                /*
+                 * Item 15 — which form the message came through. Only worth reading once a site
+                 * has more than the contact form, but a column that appears and disappears with
+                 * the number of forms would move every other column about.
+                 */
+                TextColumn::make('form.title')
+                    ->label(__('cms.forms.form'))
+                    ->getStateUsing(fn (ContactSubmission $record): ?string => $record->form?->getTranslation('title', app()->getLocale()))
+                    ->badge()
+                    ->color('gray'),
+
+                /*
+                 * What `subject` was before item 15 moved it into the payload: the contact form's
+                 * subject where there is one, otherwise the first free-text answer. Searched over
+                 * the whole payload, so an editor finds a message by anything the visitor wrote.
+                 */
+                TextColumn::make('summary')
+                    ->label(__('cms.forms.summary'))
+                    ->getStateUsing(fn (ContactSubmission $record): ?string => $record->summary())
+                    ->searchable(query: fn (Builder $query, string $search): Builder => self::searchPayload($query, $search))
                     ->limit(50),
 
                 TextColumn::make('email')
@@ -73,6 +97,16 @@ class ContactSubmissionsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                SelectFilter::make('form_id')
+                    ->label(__('cms.forms.form'))
+                    ->options(fn (): array => Form::query()
+                        ->orderBy('id')
+                        ->get()
+                        ->mapWithKeys(fn (Form $form): array => [
+                            $form->getKey() => (string) $form->getTranslation('title', app()->getLocale()),
+                        ])
+                        ->all()),
+
                 Filter::make('unread')
                     ->label(__('cms.filter.unread'))
                     ->query(function (Builder $query): Builder {
@@ -187,5 +221,35 @@ class ContactSubmissionsTable
              */
             ->persistFiltersInSession(false)
             ->defaultSort('created_at', 'desc');
+    }
+
+    /**
+     * A case-insensitive substring match over the payload's text.
+     *
+     * Not a plain `payload LIKE ?`. MySQL compares a JSON column as utf8mb4_bin, so "hello" would
+     * not find "Hello" — a regression from the `subject` column this search replaced, which had
+     * the table's case-insensitive collation. Casting to CHAR gives the text the connection's
+     * collation back; LOWER() on both sides covers SQLite, whose LIKE folds ASCII case only.
+     * Persian and Arabic have no case, so they match either way.
+     *
+     * The match runs over the serialised JSON, keys included: searching for a field key such
+     * as `message` matches every row that has that field. A values-only search needs
+     * engine-specific JSON functions (JSON_SEARCH / json_each) for one edge case, and was not
+     * worth two code paths.
+     *
+     * @param  Builder<ContactSubmission>  $query
+     * @return Builder<ContactSubmission>
+     */
+    private static function searchPayload(Builder $query, string $search): Builder
+    {
+        $column = in_array($query->getModel()->getConnection()->getDriverName(), ['mysql', 'mariadb'], true)
+            ? 'CAST(payload AS CHAR)'
+            : 'payload';
+
+        // `!` as the escape character because a backslash needs escaping differently in MySQL
+        // and SQLite string literals, and the wildcards in what an editor types are literal.
+        $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search));
+
+        return $query->whereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", ["%{$escaped}%"]);
     }
 }

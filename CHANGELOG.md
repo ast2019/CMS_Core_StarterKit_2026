@@ -9,6 +9,18 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.8.0] - 2026-09-27
+
+### Added
+
+- Form builder: forms with a per-locale field schema (text, email, tel, textarea, select, checkbox) built in the panel under System > Forms.
+- Delivery API: GET /api/v1/forms/{key} serves a form's schema in the request locale, and POST /api/v1/forms/{key}/submissions validates answers against it with the contact form's spam defences and shared rate limit.
+- The submissions inbox shows which form each submission came from, filters by form, and lists answers under their labels.
+
+### Changed
+
+- Contact submissions now belong to a form and store their answers in a payload; existing submissions are attached to the built-in contact form, and POST /api/v1/contact is unchanged.
+
 ## [0.7.0] - 2026-09-27
 
 ### Added
