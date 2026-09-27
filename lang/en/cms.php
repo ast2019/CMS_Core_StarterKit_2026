@@ -249,6 +249,8 @@ return [
         'scheduled' => 'Scheduled',
         'unread' => 'Unread',
         'missing_alt_text' => 'Missing alternative text',
+        'unattached' => 'Not attached to anything',
+        'unattached_indicator' => 'Not attached — images inside body text are not checked',
         'active' => 'Active',
         'spam' => 'Spam',
         'spam_all' => 'All messages',
@@ -376,6 +378,34 @@ return [
         'size' => 'Size',
         'size_kb' => ':size KB',
         'size_mb' => ':size MB',
+
+        // Item 12.
+        'usage' => [
+            'heading' => 'Where this is used',
+            'caveat' => 'Images placed inside body text (hero blocks and inline uploads) are not tracked and are not listed here.',
+            'none' => 'Not attached to any record, and not the site logo.',
+            'summary' => 'Used in one place:|Used in :count places:',
+            'logo' => 'Site logo',
+            'trashed' => 'In the trash',
+            'more' => '…and one more.|…and :count more.',
+        ],
+        'replace' => [
+            'action' => 'Replace file',
+            'heading' => 'Replace this file everywhere it is used',
+            'submit' => 'Replace file',
+            'done' => 'File replaced',
+            'locked_hint' => 'To swap the file, use “Replace file” at the top of the page. It shows where the file is used first.',
+            'unused' => 'This file is not attached to any record.',
+            'used' => 'This file is used by :usage, and all of them will show the new file straight away, published pages included.',
+            'logo' => 'It is also the site logo.',
+            'previous_deleted' => 'The current file is deleted and cannot be restored.',
+            'video' => 'The duration and dimensions are cleared and read again from the new file where the server can; check the poster frame, which is kept.',
+        ],
+        'validation' => [
+            'file_extension' => 'A :type must be one of: :extensions.',
+            'file_type' => 'This file’s content (:mime) is not an accepted :type.',
+            'type_mismatch' => 'A :type cannot hold this file (:mime). Choose the type that matches the file, or upload a different file.',
+        ],
     ],
 
     'seo' => [

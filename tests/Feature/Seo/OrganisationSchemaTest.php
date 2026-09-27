@@ -10,6 +10,7 @@ use App\Models\MediaAsset;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Seo\SchemaBuilder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
@@ -88,8 +89,12 @@ it('omits the logo when the chosen asset has been deleted', function (): void {
 
     Setting::put(Setting::ORGANISATION_SCHEMA, ['logo_media_asset_id' => $logo->getKey()]);
 
-    // MediaAsset is not soft-deleted, so an id stored here can genuinely stop existing.
-    $logo->delete();
+    /*
+     * The panel now refuses to delete the site logo (UsageInspector::isSiteLogo), so this is the
+     * state a delete that bypassed it would leave: the id still stored, the row gone. Removed at the
+     * database, because every model path is guarded.
+     */
+    DB::table('media_assets')->where('id', $logo->getKey())->delete();
 
     expect(app(SchemaBuilder::class)->organization('fa'))->not->toHaveKey('logo');
 });

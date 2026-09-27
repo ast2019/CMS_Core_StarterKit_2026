@@ -144,7 +144,9 @@ it('refuses to trash the site logo', function (): void {
      * reads for article markup, with nothing blocking it and nothing counting it.
      */
     $asset = MediaAsset::factory()->create();
-    Setting::put('logo_media_asset_id', $asset->getKey());
+    // Where the Settings page stores it: inside the organisation document. This test used to write a
+    // top-level key nothing reads, so it passed while the real logo could be trashed (item 12).
+    Setting::put(Setting::ORGANISATION_SCHEMA, ['logo_media_asset_id' => $asset->getKey()]);
 
     expect(fn () => $asset->delete())->toThrow(ValidationException::class);
 

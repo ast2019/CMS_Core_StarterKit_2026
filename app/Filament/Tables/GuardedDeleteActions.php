@@ -249,9 +249,11 @@ class GuardedDeleteActions
     /**
      * "۴ مطلب، ۲ زیردسته" — counts in the reader's own digits, labels from the lang files.
      *
+     * Public for the replace-file action (item 12), so a warning about the same usage reads the same.
+     *
      * @param  array<string, int>  $usage
      */
-    private static function describeUsage(array $usage): string
+    public static function describeUsage(array $usage): string
     {
         $parts = [];
 

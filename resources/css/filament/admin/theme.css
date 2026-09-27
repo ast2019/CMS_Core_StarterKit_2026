@@ -616,3 +616,62 @@ a.cms-editorial-calendar-entry-title:hover {
         }
     }
 }
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * "Where this is used" on a media asset (item 12, resources/views/filament/media/usage.blade.php)
+ * ---------------------------------------------------------------------------
+ */
+.cms-media-usage-summary,
+.cms-media-usage-none,
+.cms-media-usage-more {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--gray-600, #4b5563);
+}
+
+.cms-media-usage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin: 0.5rem 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cms-media-usage-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.cms-media-usage-type {
+    font-size: 0.75rem;
+    color: var(--gray-500, #6b7280);
+}
+
+a.cms-media-usage-title {
+    color: var(--primary-600, #0f766e);
+}
+
+a.cms-media-usage-title:hover {
+    text-decoration: underline;
+}
+
+.cms-media-usage {
+    @variant dark {
+        & .cms-media-usage-summary,
+        & .cms-media-usage-none,
+        & .cms-media-usage-more,
+        & .cms-media-usage-type {
+            color: var(--gray-400, #9ca3af);
+        }
+
+        & a.cms-media-usage-title {
+            color: var(--primary-400, #2dd4bf);
+        }
+    }
+}

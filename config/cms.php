@@ -459,6 +459,67 @@ return [
         // uploaded video. Absent it, the panel demands a manual thumbnail.
         // Decision D-6.
         'ffprobe_path' => env('CMS_FFPROBE_PATH', 'ffprobe'),
+
+        /*
+         * Item 12 — what each asset type may hold, checked against the file's CONTENT (finfo),
+         * not its extension, by every upload path: the library form, the replace-file action and
+         * the inline upload in the article form. MediaAsset::mimeTypesFor() is the one reader.
+         *
+         * Deliberately absent:
+         *  - image/svg+xml. An SVG is a document that can carry script, and the media disk is
+         *    served from the same origin as the panel. Image conversions cannot rasterise it
+         *    either, so it would reach the API with no variants.
+         *  - image/avif and image/heic, which the image conversions cannot read on every
+         *    install. Add them per project once the image driver is known to support them.
+         *
+         * Office formats are listed by their Open XML types. libmagic recognises a .docx/.xlsx only
+         * when `[Content_Types].xml` is the first entry in the zip, which Word and Excel write but
+         * some other producers do not; such a file is detected as application/zip and refused
+         * (the error names the detected type) rather than letting every zip file through. Phone
+         * videos detected as video/x-m4v or video/3gpp are likewise refused until added here.
+         */
+        'mime_types' => [
+            'image' => [
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+                'image/gif',
+            ],
+            'video' => [
+                'video/mp4',
+                'video/webm',
+                'video/quicktime',
+            ],
+            'document' => [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.oasis.opendocument.text',
+                'application/vnd.oasis.opendocument.spreadsheet',
+                'application/vnd.oasis.opendocument.presentation',
+                'text/plain',
+                'text/csv',
+            ],
+        ],
+
+        /*
+         * The file NAME extensions each type may be stored under — the other half of the check.
+         *
+         * Uploads keep the name the client chose, and the disk is served from the panel's origin
+         * with the MIME type the web server infers from that extension. Content detection alone
+         * cannot stop `evil.html`: libmagic reports HTML only when it sees markup in the first
+         * 4 KB, so plain text followed by a script is `text/plain`, which documents may be — and
+         * would then be served as text/html. Binding the extension closes that.
+         */
+        'extensions' => [
+            'image' => ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+            'video' => ['mp4', 'webm', 'mov'],
+            'document' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'txt', 'csv'],
+        ],
     ],
 
     /*

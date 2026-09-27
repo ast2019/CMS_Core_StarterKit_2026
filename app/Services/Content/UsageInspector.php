@@ -9,11 +9,16 @@ use App\Models\Category;
 use App\Models\Content;
 use App\Models\MediaAsset;
 use App\Models\MenuItem;
-use App\Models\Setting;
 use App\Models\Slide;
 use App\Models\Tag;
+use App\Support\OrganisationProfile;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * What depends on a record, and whether deleting it would break something.
@@ -351,22 +356,120 @@ class UsageInspector
     /**
      * Whether this asset is the site logo (a Setting value, not an attachment row).
      */
-    private function isSiteLogo(MediaAsset $asset): bool
+    public function isSiteLogo(MediaAsset $asset): bool
     {
         /*
-         * Setting::get(), not Setting::all().
-         *
-         * `all()` is Eloquent's — it returns a Collection of Setting MODELS, so indexing it by a
-         * setting key silently yielded null and this check never fired once. The settings map lives
-         * behind Setting::map()/get(), which is also cached, so this costs nothing.
-         *
-         * Caught by static analysis rather than by a test, which is worth noting: a test asserting
-         * "trashing the logo is refused" would have failed, but a check that always answers "no" is
-         * invisible to any test that does not specifically set a logo.
+         * Read through OrganisationProfile, which is where the Settings page STORES it — inside the
+         * organisation document. This used to ask for a top-level `logo_media_asset_id` setting
+         * that nothing writes, so it answered "no" for the real logo and the logo could be trashed;
+         * the test asserting the refusal wrote that same unused key and passed. (An earlier bug here
+         * read Setting::all(), Eloquent's collection, and also never fired — a check that always
+         * answers "no" is invisible to a test that sets up the state it expects instead of the state
+         * the application produces.)
          */
-        $logoId = Setting::get('logo_media_asset_id');
+        $logoId = OrganisationProfile::logoId();
 
-        return $logoId !== null && (int) $logoId === (int) $asset->getKey();
+        return $logoId !== null && $logoId === (int) $asset->getKey();
+    }
+
+    /**
+     * Where an asset is attached, record by record, for its "where is this used" list (item 12).
+     *
+     * `total` counts every attachment row; `items` holds at most $limit of them with their owners
+     * loaded, so an image on a thousand articles costs one query per record type, not a thousand.
+     * Owners in the trash are included and flagged, for the reason usage() counts them: restoring
+     * one must not find its image gone.
+     *
+     * NOT COMPLETE, and callers must say so: images placed inside body text — hero blocks and
+     * uploaded inline images — live in the rich-text document, not in `media_attachments`, and are
+     * not found here. The site logo is reported separately in `logo`.
+     *
+     * @return array{total: int, items: list<array{record: Model, role: MediaRole}>, logo: bool}
+     */
+    public function mediaReferences(MediaAsset $asset, int $limit = 50): array
+    {
+        $rows = DB::table('media_attachments')
+            ->where('media_asset_id', $asset->getKey())
+            ->orderBy('attachable_type')
+            ->orderByDesc('attachable_id')
+            ->limit($limit)
+            ->get(['attachable_type', 'attachable_id', 'role']);
+
+        $total = $rows->count() < $limit
+            ? $rows->count()
+            : DB::table('media_attachments')->where('media_asset_id', $asset->getKey())->count();
+
+        $owners = [];
+
+        foreach ($rows->groupBy('attachable_type') as $type => $group) {
+            $model = Relation::getMorphedModel((string) $type) ?? (string) $type;
+
+            if (! is_subclass_of($model, Model::class)) {
+                continue;
+            }
+
+            /** @var Model $instance */
+            $instance = new $model;
+            $softDeletes = in_array(SoftDeletes::class, class_uses_recursive($model), true);
+
+            // Only what the list shows and what the policy reads to decide on a link. A body is a
+            // rich-text document in three locales; fifty of them is megabytes the list never shows.
+            /** @var list<string> $columns */
+            $columns = array_values(array_unique(array_filter([
+                $instance->getKeyName(),
+                'title',
+                self::ownerColumnFor($model),
+                // The SoftDeletes default; every soft-deleting model here uses it.
+                $softDeletes ? 'deleted_at' : null,
+            ], fn (?string $column): bool => $column !== null)));
+
+            /** @var Builder<Model> $query */
+            $query = $model::query();
+
+            if ($softDeletes) {
+                $query->withoutGlobalScope(SoftDeletingScope::class);
+            }
+
+            $owners[$type] = $query
+                ->whereKey($group->pluck('attachable_id')->all())
+                ->get($columns)
+                ->keyBy(fn (Model $record): int => (int) $record->getKey());
+        }
+
+        $items = [];
+
+        foreach ($rows as $row) {
+            $record = ($owners[$row->attachable_type] ?? collect())->get((int) $row->attachable_id);
+            $role = MediaRole::tryFrom((string) $row->role);
+
+            // A row whose owner is gone for good (polymorphic tables have no foreign keys) or whose
+            // role is unknown is still counted in `total`, but there is nothing to link to.
+            if ($record instanceof Model && $role !== null) {
+                $items[] = ['record' => $record, 'role' => $role];
+            }
+        }
+
+        return [
+            'total' => $total,
+            'items' => $items,
+            'logo' => $this->isSiteLogo($asset),
+        ];
+    }
+
+    /**
+     * The column the model's policy compares to decide ownership, if it has one.
+     */
+    private static function ownerColumnFor(string $model): ?string
+    {
+        $policy = Gate::getPolicyFor($model);
+
+        if (! is_object($policy) || ! method_exists($policy, 'ownerColumn')) {
+            return null;
+        }
+
+        $column = $policy->ownerColumn();
+
+        return is_string($column) && $column !== '' ? $column : null;
     }
 
     /**
