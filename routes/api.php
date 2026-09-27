@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Delivery\SeoController;
 use App\Http\Controllers\Api\V1\Delivery\SiteController;
 use App\Http\Controllers\Api\V1\Management\ManagementContentController;
 use App\Http\Controllers\Api\V1\Management\TranslationReviewController;
+use App\Http\Middleware\AddDeliveryCacheValidators;
 use App\Http\Middleware\AuthenticateDeliveryApi;
 use App\Http\Middleware\EnsureMaintenanceModeAllowsDelivery;
 use App\Http\Middleware\ResolveApiLocale;
@@ -49,6 +50,16 @@ Route::prefix('v1')->group(function (): void {
         AuthenticateDeliveryApi::class,
         EnsureMaintenanceModeAllowsDelivery::class,
         ResolveApiLocale::class,
+
+        /*
+         * INNERMOST, on purpose. Response middleware runs outward, so
+         * AuthenticateDeliveryApi gets the last word on Cache-Control and its
+         * `private, no-store` correctly overrides the public caching added here when
+         * key enforcement is on — responses then vary per client and must not sit in a
+         * shared cache. ResolveApiLocale likewise adds Vary/Content-Language after,
+         * which a 304 is allowed to carry.
+         */
+        AddDeliveryCacheValidators::class,
     ])->group(function (): void {
 
         Route::get('news', [ContentController::class, 'index'])->name('api.v1.news.index');
