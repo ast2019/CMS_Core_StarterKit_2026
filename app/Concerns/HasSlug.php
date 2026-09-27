@@ -99,11 +99,29 @@ trait HasSlug
 
     /**
      * Whether another record of this type already uses the slug in a locale.
+     *
+     * INCLUDING RECORDS IN THE TRASH, and that is the whole point of this method not being a
+     * one-line query.
+     *
+     * A soft-deleted row still occupies its slug: the MySQL unique index sits on a generated
+     * column extracting the JSON path (see the per-locale slug migration) and knows nothing
+     * about `deleted_at`. So checking `static::query()`, which the default scope narrows to
+     * live rows, produced the worst possible split — the application cheerfully accepted a
+     * slug and the database then rejected the INSERT with an integrity error naming a record
+     * the editor cannot see and has no way to act on.
+     *
+     * Worse for the automatic side: makeUniqueSlug() loops on this answer, so it would settle
+     * on the first "free" candidate and hand it to a write that could not succeed.
+     *
+     * Note this deliberately does NOT hide the collision. Silently suffixing to `-2` because
+     * something in the trash holds `-1` is the right outcome: the trashed record may be
+     * restored, and two records cannot share a URL segment in one locale. Page::systemKey
+     * uniqueness already worked this way (Page::otherPageWithSystemKey), for the same reason.
      */
     public function slugExistsForLocale(string $slug, string $locale): bool
     {
         /** @var Builder<static> $query */
-        $query = static::query()->where(
+        $query = static::slugUniquenessQuery()->where(
             fn (Builder $inner) => $inner->whereJsonContainsLocale('slug', $locale, $slug),
         );
 
@@ -112,6 +130,30 @@ trait HasSlug
         }
 
         return $query->exists();
+    }
+
+    /**
+     * The query slug uniqueness is judged against — the trash included.
+     *
+     * Unconditional `withTrashed()`, which rests on an invariant: every model using HasSlug also
+     * uses SoftDeletes. That holds for all five (Content, Page, Gallery, Category, Tag) and is
+     * not a coincidence — a record worth giving a public URL is a record worth being able to
+     * recover, and the per-locale unique index makes the two inseparable anyway, since a trashed
+     * row keeps occupying its slug.
+     *
+     * An earlier version probed `method_exists(static::class, 'bootSoftDeletes')` to cope with a
+     * hypothetical slugged model that had no trash. Static analysis pointed out the branch can
+     * never be taken, which was fair: dead code carrying a reassuring comment. The invariant is
+     * asserted in tests/Architecture/SoftDeletesAreCoherentTest.php instead, so a future slugged
+     * model without SoftDeletes fails a test that explains the problem rather than a runtime
+     * call to a method it does not have.
+     *
+     * @return Builder<static>
+     */
+    protected static function slugUniquenessQuery(): Builder
+    {
+        /** @var Builder<static> */
+        return static::withTrashed();
     }
 
     /*

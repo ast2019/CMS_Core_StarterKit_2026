@@ -6,11 +6,14 @@ namespace App\Models;
 
 use App\Concerns\InteractsWithLocales;
 use App\Concerns\IsAuditable;
+use App\Services\Content\UsageInspector;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Spatie\Image\Enums\Fit;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -23,6 +26,22 @@ use Spatie\Translatable\HasTranslations;
  * RULE #9 — every collection and conversion is stored on the local `public`
  * disk. Requirements 2.4, 2.6, 2.7.
  *
+ * Item 11 — soft-deleted, and this is the model where the trash earns its keep most and is
+ * most dangerous.
+ *
+ * Most, because an asset carries per-locale alt text and captions that somebody wrote, is
+ * reused across many records, and used to be destroyed along with its file by one click on a
+ * list row. Media Library's own `deleting` hook already distinguishes the two: it preserves
+ * the stored files on a soft delete and removes them on a force delete, so the trash is
+ * genuinely reversible rather than a row pointing at a file that is gone.
+ *
+ * Most dangerous, because a relation to a trashed asset resolves to NULL while the
+ * `media_attachments` row stays exactly where it was. A published article whose featured
+ * image had been trashed would be served with `featured_image: null` in a 200 response, and
+ * RULE #7 was enforced only in the panel's form (MediaAssetPicker) — no model guard, no
+ * policy check, no database constraint. Nobody would notice until a reader did. Hence
+ * guardFeaturedImageUse() below.
+ *
  * @property array<string, string>|string|null $alt_text
  */
 class MediaAsset extends Model implements HasMedia
@@ -32,6 +51,7 @@ class MediaAsset extends Model implements HasMedia
     use InteractsWithLocales;
     use InteractsWithMedia;
     use IsAuditable;
+    use SoftDeletes;
 
     /**
      * Per-locale descriptions. Describing an image once, on the asset, keeps it
@@ -65,12 +85,79 @@ class MediaAsset extends Model implements HasMedia
         ];
     }
 
+    protected static function booted(): void
+    {
+        /*
+         * ON `forceDeleting` AS WELL AS `deleting`, AND THE ORDER IS THE WHOLE POINT.
+         *
+         * Media Library registers its own `deleting` listener in bootInteractsWithMedia(), and
+         * Eloquent runs bootTraits() BEFORE booted() — so on the force path its listener fired
+         * first, deleted the media rows and the files from disk, and only then did this guard throw
+         * and abort the delete. The result was the worst of both: a surviving asset row pointing at
+         * a file that no longer existed, which is neither refusing nor deleting.
+         *
+         * `forceDeleting` fires before SoftDeletes::forceDelete() calls delete() at all, so the
+         * guard now gets there first regardless of trait boot order — which is a fact about
+         * Eloquent's API rather than about which trait happens to be listed first in this class.
+         */
+        static::forceDeleting(function (self $asset): void {
+            $asset->guardFeaturedImageUse();
+        });
+
+        static::deleting(function (self $asset): void {
+            $asset->guardFeaturedImageUse();
+        });
+    }
+
     /**
      * @return BelongsTo<User, $this>
      */
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    /**
+     * Refuse to delete an asset that is some record's featured image (RULE #7).
+     *
+     * ON THE MODEL, not only in the panel. RULE #7 was previously enforced by
+     * MediaAssetPicker::featured() — a form component — so it held for an editor filling in
+     * a form and for nobody else: not for a bulk action, not for the Management API, not for
+     * a seeder, and not for the delete action on the media list. Soft deletes make that gap
+     * matter, because the resulting state is a published article serving
+     * `featured_image: null` with a 200 status rather than anything that looks like an error.
+     *
+     * Counted from the pivot table directly rather than through the morph relations: that
+     * would mean one query per attachable type, and the pivot is the thing that actually
+     * holds the reference. Rows belonging to SOFT-DELETED records count too — a trashed
+     * article still holds its attachment, and restoring it must not find its image gone.
+     *
+     * A ValidationException rather than a bespoke exception, so the panel renders it as a
+     * form error and the API answers 422 with a message that names what to fix. It fires on
+     * a force delete as well, which is deliberate: permanence makes the problem worse, not
+     * exempt.
+     *
+     * Inline media inside a body is NOT protected. That is the intended asymmetry — a
+     * missing inline image leaves a gap in a paragraph, while a missing featured image breaks
+     * the card, the Open Graph tag, the JSON-LD and the image sitemap entry at once.
+     */
+    protected function guardFeaturedImageUse(): void
+    {
+        /*
+         * Delegated to UsageInspector rather than counted here, so the model and the panel cannot
+         * disagree about what "in use" means. This method used to carry its own copy of the pivot
+         * query — two definitions of one rule, with only one of them consulted by the confirmation
+         * dialog the editor actually reads.
+         */
+        $blocked = app(UsageInspector::class)->blockedReason($this);
+
+        if ($blocked === null) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'media' => __($blocked['key'], $blocked['parameters']),
+        ]);
     }
 
     public function registerMediaCollections(): void

@@ -269,6 +269,10 @@ return [
         'mark_read_selected' => 'Mark as read',
         'mark_read_selected_done' => 'Marked :count message(s) as read.',
         'mark_spam' => 'Move to spam',
+        // Item 11 — the bulk delete reports a COUNT because it may have kept some of the
+        // selection back; "deleted" with no number would hide that.
+        'delete_selected_done' => 'Moved :count record(s) to the trash.',
+        'delete_selected_blocked' => 'Part of the selection was kept back',
         'mark_not_spam' => 'Not spam',
         'reset_two_factor' => 'Reset two-factor authentication',
         'reset_two_factor_confirm' => 'This clears the user’s authenticator secret and recovery codes; they will set two-factor up again at their next sign-in. This is what somebody who lost their phone needs.',
@@ -442,6 +446,56 @@ return [
         'menu_parent_missing' => 'The chosen parent does not exist.',
         'menu_parent_cycle' => 'An item cannot sit under itself or under one of its own children — the whole branch would disappear from the menu.',
         'menu_depth' => 'A menu may be at most :depth levels deep, and this would go deeper.',
+    ],
+
+    /*
+    | Item 11 — what depends on a record, and why a delete was refused.
+    |
+    | Built by App\Services\Content\UsageInspector, which returns KEYS plus parameters rather
+    | than sentences, so the panel decides the presentation and the wording stays here.
+    |
+    | `blocked` messages all name what to change FIRST. "Cannot delete" on its own leaves an
+    | editor with no move except to give up or to go looking for a way around the rule.
+    */
+    'usage' => [
+        'blocked' => [
+            'media_featured' => 'This is the featured image of :count published record(s); deleting it would leave them with none. Set a different featured image on those records first.',
+            'category_primary' => 'This is the primary category of :count article(s) and decides their canonical URL and breadcrumb trail. Change the primary category on those articles first — check the Deleted filter on the article list too.',
+            // The site logo lives as an id inside a Setting document, not as an attachment row, so
+            // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
+            'media_logo' => 'This is the site logo; deleting it removes `logo` from the Organization structured data. Choose a different logo in Settings first.',
+            // Refused only for PERMANENT deletion: something in the trash still needs this, so
+            // destroying it would make that record come back wrong rather than not come back.
+            'restorable_dependents' => ':count record(s) in the trash still depend on this, so destroying it would make them come back incomplete. Restore or permanently delete those first.',
+        ],
+        'label' => [
+            'articles' => 'article(s)',
+            'child_categories' => 'child categor(ies)',
+            'navigation_links' => 'menu or slide link(s)',
+            'menu_children' => 'menu child item(s)',
+            'attached_to_content' => 'article attachment(s)',
+            'attached_to_page' => 'page attachment(s)',
+            'attached_to_gallery' => 'gallery attachment(s)',
+            'attached_to_slide' => 'slide attachment(s)',
+            'attached_to_other' => 'other attachment(s)',
+        ],
+        'in_use' => 'This record is in use: :usage. Deleting it takes it away from them.',
+    ],
+
+    /*
+    | Item 10 — the trash itself.
+    */
+    'trash' => [
+        'filter' => 'Deleted',
+        'cascade' => 'Deleting this also moves :count item(s) below it to the trash; restoring it brings them back.',
+        'only_trashed' => 'Deleted only',
+        'without_trashed' => 'Excluding deleted',
+        'with_trashed' => 'All, including deleted',
+        'pruned' => 'Permanently removed :count record(s) that had been in the trash for more than :days day(s).',
+        'nothing_pruned' => 'Nothing in the trash had reached the retention limit.',
+        'prune_blocked' => 'Kept :count record(s) that are still in use; they stay in the trash.',
+        // A different fact from `prune_blocked`: that was a decision, this was a surprise.
+        'prune_failed' => ':count record(s) could not be destroyed and stay in the trash; each error is listed above.',
     ],
 
     'system' => [

@@ -277,6 +277,10 @@ return [
         'mark_read_selected' => 'علامت‌گذاری به‌عنوان خوانده‌شده',
         'mark_read_selected_done' => ':count پیام خوانده‌شده علامت خورد.',
         'mark_spam' => 'انتقال به هرزنامه',
+        // Item 11 — the bulk delete reports a COUNT because it may have kept some of the
+        // selection back; "deleted" with no number would hide that.
+        'delete_selected_done' => ':count مورد به سطل زباله رفت.',
+        'delete_selected_blocked' => 'بخشی از انتخاب حذف نشد',
         'mark_not_spam' => 'هرزنامه نیست',
         'reset_two_factor' => 'ریست احراز دو مرحله‌ای',
         'reset_two_factor_confirm' => 'کلید و کدهای بازیابی این کاربر پاک می‌شود و در ورود بعدی باید دوباره احراز دو مرحله‌ای را تنظیم کند. برای کسی که گوشی‌اش را گم کرده همین لازم است.',
@@ -450,6 +454,56 @@ return [
         'menu_parent_missing' => 'والد انتخابشده وجود ندارد.',
         'menu_parent_cycle' => 'این مورد نمیتواند زیرمجموعهٔ خودش یا یکی از زیرمجموعههایش باشد؛ در آن صورت کل این شاخه از منو ناپدید میشود.',
         'menu_depth' => 'عمق منو حداکثر :depth سطح است و این انتخاب از آن فراتر میرود.',
+    ],
+
+    /*
+    | Item 11 — what depends on a record, and why a delete was refused.
+    |
+    | Built by App\Services\Content\UsageInspector, which returns KEYS plus parameters rather
+    | than sentences, so the panel decides the presentation and the wording stays here.
+    |
+    | `blocked` messages all name what to change FIRST. "Cannot delete" on its own leaves an
+    | editor with no move except to give up or to go looking for a way around the rule.
+    */
+    'usage' => [
+        'blocked' => [
+            'media_featured' => 'این تصویر، تصویر شاخص :count مورد منتشرشده است و حذفش آن‌ها را بی‌تصویر می‌کند. اول برای آن موارد تصویر شاخص دیگری بگذار.',
+            'category_primary' => 'این دستهٔ اصلی :count مطلب است و نشانی یکتا و مسیر راهنمای آن‌ها را تعیین می‌کند. اول دستهٔ اصلی آن مطالب را عوض کن. (فیلتر «حذف‌شده‌ها» در فهرست مطالب را هم ببین.)',
+            // The site logo lives as an id inside a Setting document, not as an attachment row, so
+            // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
+            'media_logo' => 'این تصویر، نشان (لوگو) سایت است و حذفش آن را از دادهٔ ساخت‌یافتهٔ سازمان برمی‌دارد. اول در تنظیمات نشان دیگری انتخاب کن.',
+            // Refused only for PERMANENT deletion: something in the trash still needs this, so
+            // destroying it would make that record come back wrong rather than not come back.
+            'restorable_dependents' => ':count مورد در سطل زباله هنوز به این وابسته است؛ حذف همیشگی باعث می‌شود آن‌ها ناقص بازگردند. اول آن‌ها را بازگردان یا برای همیشه حذف کن.',
+        ],
+        'label' => [
+            'articles' => 'مطلب',
+            'child_categories' => 'زیردسته',
+            'navigation_links' => 'پیوند در منو یا اسلاید',
+            'menu_children' => 'زیرمجموعهٔ منو',
+            'attached_to_content' => 'پیوست مطلب',
+            'attached_to_page' => 'پیوست صفحه',
+            'attached_to_gallery' => 'پیوست گالری',
+            'attached_to_slide' => 'پیوست اسلاید',
+            'attached_to_other' => 'پیوست موارد دیگر',
+        ],
+        'in_use' => 'این مورد جایی استفاده شده است: :usage. با حذف آن، آن‌ها این مورد را از دست می‌دهند.',
+    ],
+
+    /*
+    | Item 10 — the trash itself.
+    */
+    'trash' => [
+        'filter' => 'حذف‌شده‌ها',
+        'cascade' => 'با حذف این مورد، :count زیرمجموعهٔ آن هم به سطل زباله می‌رود و با بازگرداندنش برمی‌گردند.',
+        'only_trashed' => 'فقط حذف‌شده‌ها',
+        'without_trashed' => 'بدون حذف‌شده‌ها',
+        'with_trashed' => 'همه، شامل حذف‌شده‌ها',
+        'pruned' => ':count مورد که بیش از :days روز در سطل زباله بود برای همیشه حذف شد.',
+        'nothing_pruned' => 'چیزی در سطل زباله به حد نگهداری نرسیده بود.',
+        'prune_blocked' => ':count مورد حذف نشد چون هنوز جایی استفاده می‌شود؛ در سطل زباله می‌ماند.',
+        // A different fact from `prune_blocked`: that was a decision, this was a surprise.
+        'prune_failed' => 'حذف :count مورد با خطا روبه‌رو شد و در سطل زباله ماند؛ پیام خطای هر کدام در بالا آمده است.',
     ],
 
     'system' => [

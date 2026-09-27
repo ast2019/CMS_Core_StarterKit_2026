@@ -147,6 +147,7 @@ This is **not optional if you use scheduled publishing.** What is registered (se
 |---|---|---|
 | `cms:publish-due` | every minute | Refreshes the Delivery content and sitemap caches when a record's embargo elapses |
 | `cms:heartbeat` | every minute | Records that cron and a queue worker are alive, so the panel can say when they are not |
+| `cms:prune-trash` | daily, 03:10 | Permanently deletes records that have been in the trash past `CMS_TRASH_KEEP_DAYS` |
 | `queue:prune-batches --hours=48` | daily | `job_batches` grows on every batch |
 | `queue:prune-failed --hours=336` | weekly | `failed_jobs` grows on every failure |
 
@@ -185,6 +186,38 @@ Two things are deliberately **not** scheduled. The audit log is never pruned —
 makes it append-only with no opt-out, and a retention policy is that opt-out. Content
 versions need no task either: `cms.versions.keep` is enforced inside the write that
 creates a version, not nightly.
+
+### The trash, and emptying it
+
+Articles, pages, galleries, categories, tags, media assets, menu items and slides are all
+**soft-deleted**: deleting one hides it and nothing more. The panel's lists carry a *Deleted*
+filter (excluded by default) from which a record can be restored or destroyed permanently —
+permanent deletion is admin-only, because it destroys the audit subject along with the record.
+
+`cms:prune-trash` destroys anything that has been in the trash longer than
+`CMS_TRASH_KEEP_DAYS` (default 30). Without it, "delete" means "hide for ever": the tables grow
+without bound and so does the media disk, while an editor believes they have cleaned up.
+
+Two things it will **not** do, and both are deliberate:
+
+- It refuses to destroy a record that something still depends on, even when that something is
+  itself in the trash — the category a trashed article recorded as its primary one, or the asset
+  a trashed article uses as its featured image. Destroying either would leave that article
+  restorable but wrong, and nothing would report it. Those rows stay, and the command says how
+  many it kept.
+- It never prunes the **audit log**. RULE #8 makes it append-only, so the rows recording that a
+  record was destroyed outlive the record.
+
+Run it by hand to see what it would do:
+
+```bash
+php artisan cms:prune-trash --dry-run
+php artisan cms:prune-trash --days=90     # override the retention window for one run
+```
+
+Media is the reason this matters operationally: force-deleting an asset removes the original
+**and** its six conversions from disk, which a mass `DELETE` would not. That is why the command
+walks records one at a time rather than issuing one statement.
 
 ### Checking that any of this is actually running
 

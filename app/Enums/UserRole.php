@@ -42,6 +42,17 @@ enum UserRole: string
      * `content.update.own` / `content.update.any` are deliberately separate so
      * an Author cannot edit a colleague's article.
      *
+     * `media.restore` mirrors `content.restore` and exists because item 11 gave media assets
+     * a trash. It was missing while MediaAssetPolicy already inherited a restore() method
+     * from AuthorizesCmsAbilities that checked for it — so the ability no role could hold made
+     * the restore action permanently invisible, which is precisely the silently-unreachable
+     * feature the architecture test below guards against.
+     *
+     * Given to Admin and Editor, and NOT to Author. An Author holds `media.upload` but not
+     * `media.delete`, so they cannot put an asset in the trash; being able to take a
+     * colleague's asset out of it would be an odd asymmetry, and the reusable library is a
+     * shared resource whose contents are an editorial decision.
+     *
      * @return list<string>
      */
     public function abilities(): array
@@ -52,6 +63,7 @@ enum UserRole: string
                 'content.view', 'content.create', 'content.update.own', 'content.update.any',
                 'content.delete', 'content.publish', 'content.restore',
                 'media.view', 'media.upload', 'media.update.own', 'media.update.any', 'media.delete',
+                'media.restore',
                 'translation.view', 'translation.review',
                 'redirect.manage',
                 'menu.manage',
@@ -66,6 +78,7 @@ enum UserRole: string
                 'content.view', 'content.create', 'content.update.own', 'content.update.any',
                 'content.delete', 'content.publish', 'content.restore',
                 'media.view', 'media.upload', 'media.update.own', 'media.update.any', 'media.delete',
+                'media.restore',
                 'translation.view', 'translation.review',
                 'redirect.manage',
                 'menu.manage',

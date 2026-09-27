@@ -7,6 +7,7 @@ namespace App\Http\Requests\Management;
 use App\Enums\ContentStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 /**
  * Requirement 9.7 — every write validated through a Form Request.
@@ -39,12 +40,25 @@ class StoreContentRequest extends FormRequest
 
             'status' => ['sometimes', Rule::enum(ContentStatus::class)],
             'publish_date' => ['nullable', 'date'],
-            'primary_category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            /*
+             * Item 11 — `exists:` DOES NOT KNOW ABOUT SOFT DELETES.
+             *
+             * The rule runs a raw query builder, not Eloquent, so the SoftDeletes global
+             * scope never applies: `exists:categories,id` happily accepts the id of a
+             * category in the trash. That is not a harmless nicety — a trashed primary
+             * category decides an article's canonical URL and breadcrumb trail, and both
+             * would resolve to nothing while the API answered 201.
+             *
+             * `whereNull('deleted_at')` on the rule restores the invariant the panel already
+             * had, since the panel's Selects read Eloquent relations and so exclude the trash
+             * for free. Without it the Management API was the one door left open.
+             */
+            'primary_category_id' => ['nullable', 'integer', $this->existsAndNotTrashed('categories')],
 
             'categories' => ['sometimes', 'array'],
-            'categories.*' => ['integer', 'exists:categories,id'],
+            'categories.*' => ['integer', $this->existsAndNotTrashed('categories')],
             'tags' => ['sometimes', 'array'],
-            'tags.*' => ['integer', 'exists:tags,id'],
+            'tags.*' => ['integer', $this->existsAndNotTrashed('tags')],
         ];
 
         // Only the configured locales are accepted as keys. Without this, a payload
@@ -64,6 +78,20 @@ class StoreContentRequest extends FormRequest
         $rules['body.*'] = ['nullable', 'array'];
 
         return $rules;
+    }
+
+    /**
+     * An `exists` rule that respects soft deletes (item 11).
+     *
+     * Laravel's `exists:` runs through the query builder rather than through Eloquent, so no
+     * global scope applies and a trashed row satisfies it. Every taxonomy this request accepts
+     * an id for is now soft-deletable, which turned that from a subtlety into a way for an API
+     * caller to attach a category nobody can see — and for a primary category, to decide an
+     * article's canonical URL with a record in the trash.
+     */
+    protected function existsAndNotTrashed(string $table): Exists
+    {
+        return Rule::exists($table, 'id')->whereNull('deleted_at');
     }
 
     /**

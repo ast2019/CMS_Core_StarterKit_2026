@@ -14,6 +14,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class MediaAssetResource extends Resource
 {
@@ -100,5 +102,24 @@ class MediaAssetResource extends Resource
             'create' => CreateMediaAsset::route('/create'),
             'edit' => EditMediaAsset::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Resolve a record for its edit page even when it is in the trash (item 10).
+     *
+     * Without this the restore and force-delete actions on the edit page are DEAD: Filament
+     * resolves the route binding through the model's default scope, so a soft-deleted record
+     * 404s and the page carrying the only buttons that could recover it cannot be opened. The
+     * actions were in the codebase and unreachable from the product.
+     *
+     * Trashed records are only reachable from the table's trash filter, and every action on the
+     * page is still policy-gated, so widening the binding does not widen access.
+     */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()
+            ->withoutGlobalScopes([
+                SoftDeletingScope::class,
+            ]);
     }
 }

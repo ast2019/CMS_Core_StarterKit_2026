@@ -274,6 +274,10 @@ return [
         'mark_read_selected' => 'تحديد كمقروء',
         'mark_read_selected_done' => 'تم تحديد :count رسالة كمقروءة.',
         'mark_spam' => 'نقل إلى المزعجة',
+        // Item 11 — the bulk delete reports a COUNT because it may have kept some of the
+        // selection back; "deleted" with no number would hide that.
+        'delete_selected_done' => 'تم نقل :count عنصرًا إلى المهملات.',
+        'delete_selected_blocked' => 'لم يُحذف جزء من التحديد',
         'mark_not_spam' => 'ليست مزعجة',
         'reset_two_factor' => 'إعادة تعيين التحقّق بخطوتين',
         'reset_two_factor_confirm' => 'سيُحذف مفتاح المستخدم ورموز الاسترداد، وسيُعيد الإعداد عند تسجيل الدخول التالي. هذا ما يحتاجه من فقد هاتفه.',
@@ -447,6 +451,56 @@ return [
         'menu_parent_missing' => 'الأصل المختار غير موجود.',
         'menu_parent_cycle' => 'لا يمكن أن يكون العنصر تابعًا لنفسه أو لأحد فروعه، وإلا فسيختفي هذا الفرع من القائمة بالكامل.',
         'menu_depth' => 'أقصى عمق للقائمة :depth مستويات، وهذا الاختيار يتجاوزه.',
+    ],
+
+    /*
+    | Item 11 — what depends on a record, and why a delete was refused.
+    |
+    | Built by App\Services\Content\UsageInspector, which returns KEYS plus parameters rather
+    | than sentences, so the panel decides the presentation and the wording stays here.
+    |
+    | `blocked` messages all name what to change FIRST. "Cannot delete" on its own leaves an
+    | editor with no move except to give up or to go looking for a way around the rule.
+    */
+    'usage' => [
+        'blocked' => [
+            'media_featured' => 'هذه هي الصورة البارزة لـ :count عنصرًا منشورًا، وحذفها يتركها بلا صورة. اضبط صورة بارزة أخرى لتلك العناصر أولًا.',
+            'category_primary' => 'هذا هو التصنيف الرئيسي لـ :count مقالًا ويحدّد رابطها المعياري ومسار التنقّل. غيّر التصنيف الرئيسي لتلك المقالات أولًا، وراجع مرشّح «المحذوفة» في قائمة المقالات.',
+            // The site logo lives as an id inside a Setting document, not as an attachment row, so
+            // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
+            'media_logo' => 'هذه صورة شعار الموقع، وحذفها يُسقِط `logo` من البيانات المنظّمة للمؤسسة. اختر شعارًا آخر في الإعدادات أولًا.',
+            // Refused only for PERMANENT deletion: something in the trash still needs this, so
+            // destroying it would make that record come back wrong rather than not come back.
+            'restorable_dependents' => 'لا يزال :count عنصرًا في المهملات يعتمد على هذا، والحذف النهائي يجعلها تعود ناقصة. استعدها أو احذفها نهائيًا أولًا.',
+        ],
+        'label' => [
+            'articles' => 'مقالًا',
+            'child_categories' => 'تصنيفًا فرعيًا',
+            'navigation_links' => 'رابطًا في قائمة أو شريحة',
+            'menu_children' => 'عنصرًا فرعيًا في القائمة',
+            'attached_to_content' => 'مرفقًا في مقال',
+            'attached_to_page' => 'مرفقًا في صفحة',
+            'attached_to_gallery' => 'مرفقًا في معرض',
+            'attached_to_slide' => 'مرفقًا في شريحة',
+            'attached_to_other' => 'مرفقًا في عناصر أخرى',
+        ],
+        'in_use' => 'هذا العنصر مستخدم في: :usage. حذفه يسلبه منها.',
+    ],
+
+    /*
+    | Item 10 — the trash itself.
+    */
+    'trash' => [
+        'filter' => 'المحذوفة',
+        'cascade' => 'حذف هذا ينقل :count عنصرًا تحته إلى المهملات أيضًا، واستعادته تُعيدها.',
+        'only_trashed' => 'المحذوفة فقط',
+        'without_trashed' => 'بدون المحذوفة',
+        'with_trashed' => 'الكل، بما فيها المحذوفة',
+        'pruned' => 'تم الحذف النهائي لـ :count عنصرًا بقي في المهملات أكثر من :days يومًا.',
+        'nothing_pruned' => 'لا شيء في المهملات بلغ حدّ الاحتفاظ.',
+        'prune_blocked' => 'تم الإبقاء على :count عنصرًا لأنها لا تزال مستخدمة؛ تبقى في المهملات.',
+        // A different fact from `prune_blocked`: that was a decision, this was a surprise.
+        'prune_failed' => 'تعذّر حذف :count عنصرًا نهائيًا فبقيت في المهملات؛ رسالة كل خطأ مذكورة أعلاه.',
     ],
 
     'system' => [

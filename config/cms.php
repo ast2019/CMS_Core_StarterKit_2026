@@ -842,6 +842,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Trash retention
+    |--------------------------------------------------------------------------
+    |
+    | Item 10 — how long a deleted record stays recoverable before `cms:prune-trash`
+    | destroys it permanently.
+    |
+    | A trash with no retention is not a trash, it is a hidden archive: the tables grow for
+    | ever and — for media assets — so does the disk, while an editor believes they have
+    | cleaned up. A trash that empties immediately is not one either.
+    |
+    | Thirty days is chosen against how the mistake is actually discovered. Deleting the wrong
+    | record is noticed either at once or when somebody follows a link that used to work, and
+    | that second case is weeks rather than months. Past a month, a "restore" would put
+    | content back into a site that has moved on.
+    |
+    | The command floors this at one day, because a zero would destroy a record in the same
+    | run that deleted it — which is what somebody sets while testing and forgets to change
+    | back.
+    |
+    | Note what it does NOT govern: the audit log, which RULE #8 makes append-only with no
+    | retention policy at all. The rows recording that a record WAS destroyed outlive the
+    | record, by design.
+    |
+    */
+
+    'trash' => [
+        'keep_days' => (int) env('CMS_TRASH_KEEP_DAYS', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Frontend webhooks
     |--------------------------------------------------------------------------
     |

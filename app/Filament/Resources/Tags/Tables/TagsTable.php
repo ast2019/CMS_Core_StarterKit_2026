@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Tags\Tables;
 
+use App\Filament\Tables\GuardedDeleteActions;
+use App\Filament\Tables\TrashControls;
 use App\Models\Tag;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -35,9 +36,25 @@ class TagsTable
                     ->counts('contents')
                     ->sortable(),
             ])
-            ->recordActions([EditAction::make()])
+            ->filters([
+                /*
+                 * Item 10 — without this the trash is unreachable: a deleted record leaves the
+                 * only list that links to its edit page, so the restore action there has no route
+                 * to it. Defaults to excluding deleted rows, which is what this table already did
+                 * implicitly.
+                 */
+                TrashControls::filter(),
+            ])
+            ->recordActions([
+                EditAction::make(),
+                GuardedDeleteActions::record(),
+                ...TrashControls::recordActions(),
+            ])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    GuardedDeleteActions::bulk(),
+                    ...TrashControls::bulkActions(),
+                ]),
             ])
             ->defaultSort('id', 'desc');
     }
