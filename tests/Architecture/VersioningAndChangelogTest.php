@@ -181,3 +181,31 @@ it('ships a CHANGELOG.md in the repository', function (): void {
         'RULE #1 violated: CHANGELOG.md is missing.',
     );
 });
+
+it('names changelog sections in the panel language', function (): void {
+    /*
+     * The widget used to print ucfirst($category), so a Persian panel read "Added:" and
+     * "Fixed:" in front of every entry. CHANGELOG.md keeps the English headings Keep a
+     * Changelog defines; only the panel translates them.
+     */
+    $this->actingAs(User::factory()->role(UserRole::Admin)->create());
+
+    Changelog::query()->create([
+        'version' => '9.9.9',
+        'entries' => ['added' => ['Something new.'], 'fixed' => ['Something mended.']],
+        'released_at' => now(),
+    ]);
+
+    Livewire\Livewire::test(VersionWidget::class)
+        ->assertSee(__('cms.system.changelog_categories.added'))
+        ->assertSee(__('cms.system.changelog_categories.fixed'))
+        ->assertDontSee('Added:')
+        ->assertDontSee('Fixed:');
+
+    foreach (Changelog::CATEGORIES as $category) {
+        foreach (['fa', 'en', 'ar'] as $locale) {
+            expect(trans('cms.system.changelog_categories.'.$category, [], $locale))
+                ->not->toStartWith('cms.');
+        }
+    }
+});

@@ -8,8 +8,7 @@ use App\Enums\ContentStatus;
 use App\Models\ContactSetting;
 use App\Models\Page;
 use App\Models\Setting;
-use App\Models\SystemInfo;
-use App\Services\Release\ChangelogImporter;
+use App\Services\Release\ReleaseSync;
 use Illuminate\Database\Seeder;
 
 /**
@@ -44,15 +43,18 @@ class InstallSeeder extends Seeder
      */
     protected function seedSystem(): void
     {
-        SystemInfo::current();
-
         /*
          * `cms:release` writes CHANGELOG.md and a `changelogs` row together, but only for
          * releases cut in that database — so a fresh deployment had a file listing every
          * release and a table containing none. The panel's About page showed no history,
          * and `cms:audit-rules` reported RULE #1 violated on a correct install.
+         *
+         * The same ReleaseSync that `cms:sync-release` runs at container start, so a
+         * fresh install and an upgraded one reach the same state by the same code: the
+         * version row created at (or raised to) the newest release, and every release
+         * imported.
          */
-        app(ChangelogImporter::class)->import();
+        app(ReleaseSync::class)->sync();
     }
 
     /**

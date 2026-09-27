@@ -217,6 +217,16 @@ php artisan scout:import "App\Models\Content"
 Push to `main`, or press Redeploy. Migrations apply at startup and the media volume is
 untouched.
 
+The release comes along automatically: after the migrations, the container runs
+`php artisan cms:sync-release`, which imports any new release from `CHANGELOG.md` into the
+panel's changelog and raises the version shown in the panel to match. It never lowers the
+version and is safe to repeat. To run it by hand (for example after starting a container
+with migrations disabled), open **Terminal** on the application:
+
+```bash
+php artisan cms:sync-release
+```
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -225,6 +235,7 @@ untouched.
 | Cannot connect to the database | "Connect To Predefined Network" is not enabled |
 | Panel loads unstyled | Build Stage was set to something other than `web`/empty |
 | Migrations did not run | `AUTORUN_LARAVEL_MIGRATION` is not `true` |
+| Panel shows an old version or "no changes recorded" | `cms:sync-release` warned at startup — check the container log, then run it by hand |
 | Media empty after a redeploy | No persistent storage on `/var/www/html/storage/app/public` |
 | Uploads fail with a permission error | Bind-mounted host path not `chown 33:33` |
 | Thumbnails never appear | No queue worker running |

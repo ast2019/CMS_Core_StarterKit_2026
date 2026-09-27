@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\AvatarProviders\LocalAvatarProvider;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\ContentOverviewWidget;
@@ -152,6 +153,15 @@ class AdminPanelProvider extends PanelProvider
              * nothing is configured.
              */
             ->brandName(fn (): string => SiteIdentity::name())
+
+            /*
+             * Avatars drawn locally. Filament's default provider is ui-avatars.com, so
+             * every authenticated page — the MFA set-up page included — sent the admin's
+             * initials to a third party, and showed a broken image on a network with no
+             * outbound access. PanelMakesNoExternalRequestsTest renders every page and
+             * fails on any reference to another host.
+             */
+            ->defaultAvatarProvider(LocalAvatarProvider::class)
 
             // Custom branded theme. Brand colour is configurable per site so
             // the Core carries no client-specific value (Requirement 1.2).

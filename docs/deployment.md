@@ -592,6 +592,23 @@ php artisan cms:audit-rules      # confirms the release landed everywhere
 `CHANGELOG.md`. Editing `CHANGELOG.md` by hand makes the three disagree, and the tests
 assert they match.
 
+It runs on a developer's machine, so the version and the changelog row land in **that**
+database; only `CHANGELOG.md` travels to production with the code. Deployments catch up by
+themselves: the image runs `php artisan cms:sync-release` at every container start
+(`docker/entrypoint.d/60-cms-sync-release.sh`, after the migrations). It imports any
+release missing from the `changelogs` table and raises `system_info` to the newest version
+in `CHANGELOG.md`. It is idempotent and never lowers the version, so a rolled-back image
+keeps the newer version rather than claiming an older one. If the tables do not exist yet
+it warns and exits 0; if it fails for another reason the container still starts, with a
+warning in the log. Set `CMS_SYNC_RELEASE=false` to skip it.
+
+Outside the Docker image — or to check by hand — run it yourself after deploying:
+
+```bash
+php artisan cms:sync-release
+php artisan tinker --execute='echo App\Models\SystemInfo::version();'
+```
+
 `scramble:export` must follow **every** release, even one that changed no route. The
 spec's `info.version` is stamped from `system_info` (RULE #2), so a release always
 changes the document — and a spec that advertises the previous version tells integrators
