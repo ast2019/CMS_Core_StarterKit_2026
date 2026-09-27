@@ -44,7 +44,36 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/storage',
+
+            /*
+             * The PUBLIC base URL for media, and the single place that decides it.
+             *
+             * Every media URL this application emits comes from here through
+             * Media::getFullUrl() — the image and video sitemaps, the JSON-LD `image`
+             * and publisher `logo`, og:image and twitter:image, and the `url` on every
+             * MediaAsset in the Delivery API. So rebasing media onto another origin is
+             * one variable rather than an audit of every call site.
+             *
+             * CMS_MEDIA_URL is the optional upgrade. This Core is headless, so images
+             * are fetched by the same visitors who read the FRONTEND, and serving them
+             * from the frontend's origin buys three things: the images are same-host as
+             * the pages that embed them (which the sitemaps protocol asks for and Bing
+             * enforces more strictly than Google), the frontend's CDN edge caches them
+             * so this application stops paying for image bandwidth, and /storage/ can
+             * stay closed to crawlers here.
+             *
+             * Point it at a path the frontend rewrites back to this host, e.g.
+             * CMS_MEDIA_URL=https://www.example.com/media with a Next.js rewrite from
+             * /media/:path* to https://api.example.com/storage/:path* — see
+             * docs/deployment.md.
+             *
+             * UNSET is the default and must keep working on its own: media is then
+             * served from this host under /storage, and RobotsController KEEPS THAT PATH
+             * CRAWLABLE precisely because of this setting. Defaulting to the frontend
+             * would 404 every image on a deployment that had not added the rewrite yet.
+             */
+            'url' => rtrim((string) (env('CMS_MEDIA_URL')
+                ?: rtrim((string) env('APP_URL', 'http://localhost'), '/').'/storage'), '/'),
             'visibility' => 'public',
             'throw' => false,
             'report' => false,

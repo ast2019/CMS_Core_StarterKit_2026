@@ -61,11 +61,75 @@ it('advertises no sitemap when the sitemap module is off', function (): void {
     expect(get('/robots.txt')->assertOk()->getContent())->not->toContain('Sitemap:');
 });
 
-it('disallows the API, previews and media as well as the panel', function (): void {
+it('disallows the API, previews and panel plumbing as well as the panel', function (): void {
     $body = get('/robots.txt')->assertOk()->getContent();
 
-    foreach (['/api/', '/preview/', '/storage/', '/livewire/'] as $path) {
+    foreach (['/api/', '/preview/', '/livewire/'] as $path) {
         expect($body)->toContain('Disallow: '.$path);
+    }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Media has to be crawlable when it is served from here
+|--------------------------------------------------------------------------
+|
+| This file used to assert `Disallow: /storage/` unconditionally, which pinned a real
+| bug rather than a decision. Disallow does not make an image a lesser kind of result —
+| it stops the crawler fetching the file — so the rule silently broke every image
+| signal the application emits: the <image:loc> entries in sitemap-images.xml, the
+| Article JSON-LD `image` that Google must fetch for rich results, og:image and
+| twitter:image, the video sitemap thumbnails, and the publisher logo.
+|
+| So the rule is now conditional on where media actually lives.
+|
+*/
+
+it('keeps media crawlable when it is served from this host', function (): void {
+    // The default: no CMS_MEDIA_URL, so the public disk resolves to APP_URL/storage.
+    config()->set('filesystems.disks.public.url', rtrim((string) config('app.url'), '/').'/storage');
+
+    $body = get('/robots.txt')->assertOk()->getContent();
+
+    expect($body)->not->toContain('Disallow: /storage/');
+});
+
+it('disallows media once it is served from another origin', function (): void {
+    // CMS_MEDIA_URL pointing at the frontend, which rewrites /media back to this host.
+    // Nothing here needs crawling any more, so closing the path costs nothing.
+    config()->set('filesystems.disks.public.url', 'https://www.example.test/media');
+
+    $body = get('/robots.txt')->assertOk()->getContent();
+
+    expect($body)->toContain('Disallow: /storage/');
+});
+
+it('advertises image URLs it does not also forbid', function (): void {
+    /*
+     * The invariant behind the whole change, asserted end to end rather than argued:
+     * whatever host the image sitemap points at, robots.txt on that host must not
+     * forbid it. A sitemap that argues with its own robots.txt indexes nothing.
+     */
+    config()->set('filesystems.disks.public.url', rtrim((string) config('app.url'), '/').'/storage');
+
+    $robots = get('/robots.txt')->assertOk()->getContent();
+
+    $disallowed = [];
+
+    foreach (explode("\n", (string) $robots) as $line) {
+        if (str_starts_with($line, 'Disallow: ')) {
+            $disallowed[] = trim(substr($line, strlen('Disallow: ')));
+        }
+    }
+
+    $mediaPath = parse_url((string) config('filesystems.disks.public.url'), PHP_URL_PATH);
+
+    expect($mediaPath)->toBeString();
+
+    foreach ($disallowed as $rule) {
+        expect(str_starts_with((string) $mediaPath.'/', $rule))->toBeFalse(
+            "robots.txt forbids [{$rule}], which covers the media path the sitemaps advertise.",
+        );
     }
 });
 

@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\ContactSetting;
 use App\Models\Content;
 use App\Models\MediaAsset;
+use App\Support\OrganisationProfile;
 use App\Support\SiteIdentity;
 use App\Support\TipTap;
 use Spatie\SchemaOrg\BaseType;
@@ -209,7 +210,15 @@ class SchemaBuilder
 
         $home = $this->urls->localeHome($locale);
 
-        $organization = Schema::organization()
+        /*
+         * The TYPE is the administrator's choice (Settings → Organization), not a
+         * hardcoded Organization. A news agency, a university, a government body and a
+         * commercial company are four different entities to a search engine, and this
+         * Core is copied per client — so guessing here would bake one client's identity
+         * into the kit. OrganisationType::default() is the plain Organization, so an
+         * install that never chooses emits exactly what it emitted before.
+         */
+        $organization = OrganisationProfile::type()->newSchema()
             ->name((string) $name)
             ->url($home)
             /*
@@ -219,6 +228,58 @@ class SchemaBuilder
              * instead of describing a new one each time.
              */
             ->setProperty('@id', $this->urls->withFragment($home, self::ID_ORGANIZATION));
+
+        /*
+         * The publisher's LOGO. This is the property that turns a name-only publisher
+         * into an identified one: Google asks for it on article markup and uses it for a
+         * brand's knowledge panel.
+         *
+         * Emitted as a full ImageObject rather than a bare URL string so it carries its
+         * dimensions — both forms are valid, but a bare URL makes the consumer fetch the
+         * file to learn how big it is.
+         *
+         * Note this only works if the logo is CRAWLABLE. That is why RobotsController no
+         * longer disallows /storage/ unconditionally; a logo the crawler is forbidden to
+         * fetch is a property that costs bytes and proves nothing.
+         */
+        $logo = OrganisationProfile::logo();
+        $logoImage = $logo === null ? null : $this->imageObject($logo, $locale);
+
+        if ($logoImage !== null) {
+            $organization->setProperty('logo', $this->embedded($logoImage));
+        }
+
+        if (($legalName = OrganisationProfile::legalName()) !== null) {
+            $organization->setProperty('legalName', $legalName);
+        }
+
+        if (($alternateName = OrganisationProfile::alternateName($locale)) !== null) {
+            $organization->setProperty('alternateName', $alternateName);
+        }
+
+        if (($description = OrganisationProfile::description($locale)) !== null) {
+            $organization->setProperty('description', $description);
+        }
+
+        if (($foundingDate = OrganisationProfile::foundingDate()) !== null) {
+            $organization->setProperty('foundingDate', $foundingDate);
+        }
+
+        /*
+         * A contactPoint built from the Contact settings rather than a second phone
+         * field here — one number, one place to change it. Omitted entirely without a
+         * phone, because a contactPoint whose only property is its type says nothing.
+         */
+        $phone = ContactSetting::current()->phone;
+
+        if (is_string($phone) && trim($phone) !== '') {
+            $organization->setProperty('contactPoint', Schema::contactPoint()
+                ->setProperty('@type', 'ContactPoint')
+                ->contactType('customer support')
+                ->telephone(trim($phone))
+                ->setProperty('availableLanguage', array_values((array) config('cms.locales.supported', [])))
+                ->toArray());
+        }
 
         /*
          * Read through SiteIdentity, which owns the two awkward unwrapping rules the

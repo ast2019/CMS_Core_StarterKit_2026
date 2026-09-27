@@ -513,6 +513,20 @@ return [
             'social_add' => 'افزودن نشانی',
         ],
 
+        'organisation' => [
+            'section' => 'هویت سازمان (داده‌های ساخت‌یافته)',
+            'section_help' => 'این‌ها ناشرِ سایت را به موتور جستجو معرفی می‌کنند و در JSON-LD هر مطلب به‌عنوان publisher می‌آیند. همه اختیاری‌اند و هرکدام خالی بماند اصلاً منتشر نمی‌شود.',
+            'type' => 'نوع سازمان',
+            'type_help' => 'خبرگزاری، شرکت، ارگان دولتی و دانشگاه برای موتور جستجو چهار موجودیت متفاوت‌اند. اگر مطمئن نیستی «سازمان (عمومی)» را بگذار.',
+            'logo' => 'لوگوی سازمان',
+            'logo_help' => 'مهم‌ترین فیلد این بخش. گوگل لوگوی ناشر را برای نتایج غنی مطالب و پنل دانش استفاده می‌کند.',
+            'legal_name' => 'نام حقوقی (ثبتی)',
+            'legal_name_help' => 'اگر با نام تجاری سایت فرق دارد.',
+            'founding_date' => 'تاریخ تأسیس',
+            'founding_date_help' => 'به شکل میلادی YYYY-MM-DD، چون schema.org تاریخ ISO می‌خواهد.',
+            'alternate_name' => 'نام دیگر (:locale)',
+            'description' => 'معرفی سازمان (:locale)',
+        ],
         'discovery' => [
             'tab' => 'آمار و تأیید مالکیت',
             'analytics' => 'آمار بازدید',
@@ -578,6 +592,16 @@ return [
      * make the choice meaningful to an administrator, so each one says what the
      * service is rather than just naming it.
      */
+    'organisation_type' => [
+        'Organization' => 'سازمان (عمومی)',
+        'NewsMediaOrganization' => 'خبرگزاری / رسانهٔ خبری',
+        'Corporation' => 'شرکت',
+        'GovernmentOrganization' => 'ارگان دولتی',
+        'EducationalOrganization' => 'مؤسسهٔ آموزشی',
+        'NGO' => 'سازمان مردم‌نهاد',
+        'LocalBusiness' => 'کسب‌وکار محلی',
+    ],
+
     'ai_provider' => [
         'openrouter' => 'اوپن‌روتر (OpenRouter)',
         'openrouter_help' => 'دروازهٔ بین‌المللی با گسترده‌ترین فهرست مدل‌ها. پرداخت ارزی و دسترسی از ایران معمولاً نیازمند تنظیمات شبکه است.',

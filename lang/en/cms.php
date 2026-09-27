@@ -505,6 +505,20 @@ return [
             'social_add' => 'Add a URL',
         ],
 
+        'organisation' => [
+            'section' => 'Organisation identity (structured data)',
+            'section_help' => 'These describe the site’s publisher to search engines and appear as the publisher in every article’s JSON-LD. All optional; anything left blank is not emitted at all.',
+            'type' => 'Organisation type',
+            'type_help' => 'A news agency, a company, a government body and a university are four different entities to a search engine. Leave it as “Organisation (general)” if unsure.',
+            'logo' => 'Organisation logo',
+            'logo_help' => 'The most valuable field here. Google uses the publisher logo for article rich results and for a brand’s knowledge panel.',
+            'legal_name' => 'Legal (registered) name',
+            'legal_name_help' => 'If it differs from the site’s trading name.',
+            'founding_date' => 'Founding date',
+            'founding_date_help' => 'As YYYY-MM-DD, because schema.org expects an ISO date.',
+            'alternate_name' => 'Alternative name (:locale)',
+            'description' => 'Organisation description (:locale)',
+        ],
         'discovery' => [
             'tab' => 'Analytics & verification',
             'analytics' => 'Analytics',
@@ -570,6 +584,16 @@ return [
      * make the choice meaningful to an administrator, so each one says what the
      * service is rather than just naming it.
      */
+    'organisation_type' => [
+        'Organization' => 'Organisation (general)',
+        'NewsMediaOrganization' => 'News media organisation',
+        'Corporation' => 'Corporation',
+        'GovernmentOrganization' => 'Government organisation',
+        'EducationalOrganization' => 'Educational organisation',
+        'NGO' => 'NGO',
+        'LocalBusiness' => 'Local business',
+    ],
+
     'ai_provider' => [
         'openrouter' => 'OpenRouter',
         'openrouter_help' => 'International gateway with the widest model catalogue. Billed in foreign currency, and reaching it from Iran usually needs network configuration.',
