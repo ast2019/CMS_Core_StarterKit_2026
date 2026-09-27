@@ -1317,118 +1317,202 @@
                                     "properties": {
                                         "data": {
                                             "type": "object",
+                                            "additionalProperties": {}
+                                        },
+                                        "meta": {
+                                            "type": "object",
                                             "properties": {
-                                                "canonical": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "meta": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "title": {
-                                                            "type": "string"
-                                                        },
-                                                        "description": {
-                                                            "type": "string"
-                                                        },
-                                                        "robots": {
-                                                            "type": "string"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "title",
-                                                        "description",
-                                                        "robots"
-                                                    ]
-                                                },
-                                                "open_graph": {
-                                                    "type": "object",
-                                                    "additionalProperties": {}
-                                                },
-                                                "twitter": {
-                                                    "type": "object",
-                                                    "additionalProperties": {}
-                                                },
-                                                "hreflang": {
-                                                    "type": "object",
-                                                    "additionalProperties": {
-                                                        "type": "string"
-                                                    }
-                                                },
-                                                "json_ld": {
-                                                    "type": "object",
-                                                    "additionalProperties": {}
-                                                },
-                                                "seo_warnings": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "string"
-                                                    }
-                                                },
-                                                "seo_analysis": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "keyphrase": {
-                                                            "type": "string"
-                                                        },
-                                                        "score": {
-                                                            "type": [
-                                                                "integer",
-                                                                "null"
-                                                            ]
-                                                        },
-                                                        "band": {
-                                                            "type": [
-                                                                "string",
-                                                                "null"
-                                                            ]
-                                                        },
-                                                        "checks": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "id": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "status": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "value": {
-                                                                        "type": [
-                                                                            "string",
-                                                                            "null"
-                                                                        ]
-                                                                    }
-                                                                },
-                                                                "required": [
-                                                                    "id",
-                                                                    "status",
-                                                                    "value"
-                                                                ]
-                                                            }
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "keyphrase",
-                                                        "score",
-                                                        "band",
-                                                        "checks"
-                                                    ]
+                                                "locale": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
-                                                "canonical",
-                                                "meta",
-                                                "open_graph",
-                                                "twitter",
-                                                "hreflang",
-                                                "json_ld",
-                                                "seo_warnings",
-                                                "seo_analysis"
+                                                "locale"
                                             ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/pages/{slug}/seo": {
+            "get": {
+                "operationId": "v1.pages.seo",
+                "tags": [
+                    "Seo"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/categories/{slug}/seo": {
+            "get": {
+                "operationId": "v1.categories.seo",
+                "tags": [
+                    "Seo"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/galleries/{slug}/seo": {
+            "get": {
+                "operationId": "v1.galleries.seo",
+                "tags": [
+                    "Seo"
+                ],
+                "parameters": [
+                    {
+                        "name": "slug",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "locale": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "locale"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/home-page/seo": {
+            "get": {
+                "operationId": "v1.home-page.seo",
+                "description": "Separate from forPage() because the homepage is addressed by ROLE rather than by\nslug \u2014 a frontend rendering `/fa` has no slug to ask with, which is the same\nreason GET /api/v1/home-page exists. The graph is the WebSite one either way:\nSchemaBuilder::forPage() delegates for the page holding the homepage role, so both\ndoors describe the site identically.",
+                "summary": "The homepage's SEO payload",
+                "tags": [
+                    "Seo"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "description": "The cached value is the resource, matching how the news listing caches. The\n404 is thrown from INSIDE the callback, so a miss is never cached: a page\npublished a second after someone requested it must not stay missing for\nthe rest of the TTL."
                                         },
                                         "meta": {
                                             "type": "object",
