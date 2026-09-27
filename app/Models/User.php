@@ -64,6 +64,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     protected function casts(): array
     {
         return [
+            'last_login_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,

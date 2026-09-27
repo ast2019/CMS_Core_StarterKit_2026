@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\TranslationStatus;
+use App\Support\TranslationBacklog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +29,17 @@ use Illuminate\Support\Carbon;
  */
 class TranslationState extends Model
 {
+    protected static function booted(): void
+    {
+        /*
+         * Item 38 — every change to a state can move the panel's two backlog badges, which are
+         * cached because they render on every page. Forgotten here so the numbers are exact on the
+         * next render. See App\Support\TranslationBacklog.
+         */
+        static::saved(fn () => TranslationBacklog::forget());
+        static::deleted(fn () => TranslationBacklog::forget());
+    }
+
     protected $fillable = [
         'locale',
         'status',

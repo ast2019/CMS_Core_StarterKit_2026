@@ -36,6 +36,18 @@ class UsersTable
                     ->searchable()
                     ->extraAttributes(['class' => 'cms-ltr']),
 
+                /*
+                 * Item 52 — which accounts are still in use. "Three weeks ago" rather than a date,
+                 * because the question is how long, and an account nobody has used since spring is
+                 * one to deactivate. The exact time is in the audit log.
+                 */
+                TextColumn::make('last_login_at')
+                    ->label(__('cms.field.last_login'))
+                    ->formatStateUsing(fn (?CarbonInterface $state): ?string => LocalizedDate::human($state))
+                    ->placeholder(__('cms.field.never_signed_in'))
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('role')
                     ->label(__('cms.field.role'))
                     ->badge()

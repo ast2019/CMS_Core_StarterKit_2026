@@ -18,6 +18,9 @@ class CategoriesTable
     public static function configure(Table $table): Table
     {
         return $table
+            // The parent's name is the row's description; without this each child row lazy-loaded
+            // its parent separately.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('parent'))
             ->columns([
                 TextColumn::make('name')
                     ->label(__('cms.field.name'))

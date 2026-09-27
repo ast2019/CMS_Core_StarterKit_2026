@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Enums\UserRole;
 use App\Filament\Forms\Components\LocalizedDateTimePicker;
 use App\Listeners\ExtractVideoMetadata;
+use App\Listeners\RecordAuthenticationActivity;
 use App\Models;
 use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
@@ -19,6 +20,8 @@ use Dedoc\Scramble\Support\Generator\OpenApi;
 use Filament\Support\Assets\AlpineComponent;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentTimezone;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -139,6 +142,10 @@ class CmsServiceProvider extends ServiceProvider
     protected function registerVideoMetadataExtraction(): void
     {
         Event::listen(MediaHasBeenAddedEvent::class, ExtractVideoMetadata::class);
+
+        // Item 52 — sign-ins and rejected sign-ins go into the same audit trail as every write.
+        Event::listen(Login::class, [RecordAuthenticationActivity::class, 'handleLogin']);
+        Event::listen(Failed::class, [RecordAuthenticationActivity::class, 'handleFailed']);
     }
 
     /**

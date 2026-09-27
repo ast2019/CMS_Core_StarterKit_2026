@@ -174,6 +174,8 @@ return [
         'image_dimensions_help' => 'Required to prevent layout shift (CLS).',
         'read_at' => 'Read at',
         'spam_reason' => 'Spam reason',
+        'last_login' => 'Last sign-in',
+        'never_signed_in' => 'Never signed in',
         'preview' => 'Preview',
         'read_status' => 'Read status',
         'user_agent' => 'User agent',
@@ -557,6 +559,12 @@ return [
         ],
     ],
 
+    'slide' => [
+        // Requirement 7.6 — the first active slide's image is preloaded. This was the English word
+        // `preload`, hardcoded in the slides table.
+        'preloaded' => 'Preloaded on the homepage',
+    ],
+
     /*
     | Item 35 — someone else saved the record while this form was open.
     */
@@ -589,6 +597,19 @@ return [
         // Item 55 — the event filter and badge showed the raw event names in English. `restored`
         // and `destroyed` are new with the trash (items 10/11); without labels they appeared in the
         // log with no filter option to find them by.
+        'context' => [
+            'ip' => 'IP address',
+            'user_agent' => 'Browser',
+            'reason' => 'Reason',
+            'via_cookie' => 'Signed in',
+        ],
+        'via_cookie_yes' => 'From a “Remember me” cookie',
+        'via_cookie_no' => 'By entering the password',
+        'failure_reason' => [
+            'wrong_password' => 'Wrong password',
+            'account_disabled' => 'Account disabled (the password was correct)',
+            'wrong_second_factor' => 'Wrong two-factor code (the password was correct)',
+        ],
         'events' => [
             'created' => 'Created',
             'updated' => 'Updated',
@@ -598,6 +619,8 @@ return [
             'published' => 'Published',
             'archived' => 'Archived',
             'denied' => 'Access denied',
+            'login' => 'Signed in',
+            'login_failed' => 'Failed sign-in',
         ],
     ],
 

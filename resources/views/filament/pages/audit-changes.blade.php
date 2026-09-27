@@ -69,7 +69,37 @@
 @endphp
 
 <div class="cms-audit-diff">
-    @if ($keys->isEmpty())
+    {{--
+        Item 52 — a sign-in row has no before/after, it has a context: where it came from, and for a
+        failure, why. Without this block the modal said "no changes" for every sign-in, and "was this
+        account used last night, and from where?" could only be answered from the database.
+    --}}
+    @php
+        $context = collect(['ip', 'user_agent', 'reason', 'via_cookie'])
+            ->filter(fn (string $key): bool => array_key_exists($key, $activity->properties?->all() ?? []));
+    @endphp
+
+    @if ($context->isNotEmpty())
+        <dl class="cms-audit-context mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            @foreach ($context as $key)
+                @php $value = $activity->properties[$key]; @endphp
+                <dt class="font-medium">{{ __("cms.audit.context.{$key}") }}</dt>
+                <dd @class(['cms-ltr' => in_array($key, ['ip', 'user_agent'], true)])>
+                    @if ($key === 'reason')
+                        {{ __("cms.audit.failure_reason.{$value}") }}
+                    @elseif ($key === 'via_cookie')
+                        {{ $value ? __('cms.audit.via_cookie_yes') : __('cms.audit.via_cookie_no') }}
+                    @else
+                        {{ $value ?? '—' }}
+                    @endif
+                </dd>
+            @endforeach
+        </dl>
+    @endif
+
+    @if ($keys->isEmpty() && $context->isNotEmpty())
+        {{-- A sign-in has no changes to show, and saying "no changes" beneath its context reads as a fault. --}}
+    @elseif ($keys->isEmpty())
         <p>{{ __('cms.audit.no_changes') }}</p>
     @else
         <table class="w-full text-sm">
