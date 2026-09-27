@@ -46,8 +46,10 @@ use function Pest\Laravel\actingAs;
 it('finds a record by its title in the current locale', function (): void {
     actingAs(User::factory()->admin()->create());
 
-    Content::factory()->published()->create(['title' => ['fa' => 'انتخابات مجلس', 'en' => 'Parliament election']]);
-    Content::factory()->published()->create(['title' => ['fa' => 'قیمت مسکن']]);
+    // Excerpts pinned: search covers them too, and the factory's random Persian prose can contain
+    // the searched word, which made this test fail about once in a hundred runs.
+    Content::factory()->published()->create(['title' => ['fa' => 'انتخابات مجلس', 'en' => 'Parliament election'], 'excerpt' => ['fa' => 'خلاصه']]);
+    Content::factory()->published()->create(['title' => ['fa' => 'قیمت مسکن'], 'excerpt' => ['fa' => 'خلاصه']]);
 
     $results = ContentResource::getGlobalSearchResults('انتخابات');
 
@@ -415,7 +417,8 @@ it('lets an editor unpublish a page, not only an admin', function (): void {
 it('finds a record by two words in either order', function (): void {
     actingAs(User::factory()->admin()->create());
 
-    Content::factory()->published()->create(['title' => ['fa' => 'نتایج انتخابات مجلس ۱۴۰۵']]);
+    // Excerpt pinned: the random one sometimes contains «استعفا», the word asserted absent below.
+    Content::factory()->published()->create(['title' => ['fa' => 'نتایج انتخابات مجلس ۱۴۰۵'], 'excerpt' => ['fa' => 'خلاصه']]);
 
     /*
      * Filament splits a search term on whitespace and requires every word. The first
@@ -427,7 +430,10 @@ it('finds a record by two words in either order', function (): void {
     expect(ContentResource::getGlobalSearchResults('انتخابات نتایج'))->toHaveCount(1)
         ->and(ContentResource::getGlobalSearchResults('نتایج ۱۴۰۵'))->toHaveCount(1)
         // …and a word that is not there still excludes the record.
-        ->and(ContentResource::getGlobalSearchResults('نتایج استعفا'))->toHaveCount(0);
+        ->and(ContentResource::getGlobalSearchResults('نتایج استعفا'))->toHaveCount(0)
+        // The excerpt is searched too, and each word may match a different column.
+        ->and(ContentResource::getGlobalSearchResults('خلاصه'))->toHaveCount(1)
+        ->and(ContentResource::getGlobalSearchResults('نتایج خلاصه'))->toHaveCount(1);
 });
 
 it('searches a non-translatable column too', function (): void {
