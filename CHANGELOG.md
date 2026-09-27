@@ -9,6 +9,27 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.7.0] - 2026-09-27
+
+### Added
+
+- Editorial calendar of scheduled publishing (Content, Page, Gallery) in the panel's own calendar.
+- Media library: where-is-this-used on each asset, an unattached filter, a replace-file action, and uploads checked against the asset type by content and extension.
+- Releases and the changelog now reach deployed installs automatically: cms:sync-release runs at container start, imports CHANGELOG.md and never lowers the version.
+- Social links on the Settings page show which network each URL belongs to.
+
+### Changed
+
+- The admin panel makes no external requests: avatars are drawn locally and provider documentation is shown as text rather than linked.
+- The denial audit no longer records hidden-button checks made while a page renders.
+- Changelog sections in the panel are named in the panel language.
+
+### Fixed
+
+- The site logo could be deleted, because its delete guard read the wrong setting.
+- Stored social links showed as [object Object] in the Settings form.
+- Intermittent test failures from random Persian test data.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

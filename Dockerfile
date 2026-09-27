@@ -209,6 +209,11 @@ COPY --from=app --chown=www-data:www-data /var/www/html /var/www/html
 # otherwise a bad key surfaces as a confusing failure inside `php artisan config:cache`.
 COPY docker/entrypoint.d/15-validate-app-key.sh /etc/entrypoint.d/15-validate-app-key.sh
 
+# Import CHANGELOG.md and raise system_info to the release this image carries, so a
+# deployment picks up `cms:release` without a manual step (RULES #1 and #2). Numbered 60
+# so it runs after the image's Laravel automations (50-*), which run the migrations.
+COPY docker/entrypoint.d/60-cms-sync-release.sh /etc/entrypoint.d/60-cms-sync-release.sh
+
 # Additions to the image's own nginx server configuration. Named zz- so it is included
 # last from server-opts.d/.
 COPY docker/nginx-cms.conf /etc/nginx/server-opts.d/zz-cms.conf

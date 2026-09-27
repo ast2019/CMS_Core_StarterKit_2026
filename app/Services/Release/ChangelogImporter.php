@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Release;
 
 use App\Models\Changelog;
+use App\Models\SystemInfo;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 
 /**
@@ -30,7 +32,7 @@ class ChangelogImporter
      */
     public function import(?string $path = null): int
     {
-        $path ??= (string) config('cms.changelog_path') ?: base_path('CHANGELOG.md');
+        $path ??= SystemInfo::changelogPath();
 
         if (! is_file($path)) {
             return 0;
@@ -44,14 +46,26 @@ class ChangelogImporter
                 continue;
             }
 
-            Changelog::query()->create([
-                'version' => $release['version'],
-                'entries' => $release['entries'],
-                'released_at' => $release['released_at'],
-                // Nobody in this database cut the release; claiming a user did would be a
-                // false audit trail (RULE #8).
-                'released_by' => null,
-            ]);
+            try {
+                Changelog::query()->create([
+                    'version' => $release['version'],
+                    'entries' => $release['entries'],
+                    'released_at' => $release['released_at'],
+                    // Nobody in this database cut the release; claiming a user did would be a
+                    // false audit trail (RULE #8).
+                    'released_by' => null,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                /*
+                 * Another process inserted the same release between the pluck above and
+                 * this insert. `cms:sync-release` runs at every container start, so two
+                 * web containers booting together (replicas, or an old and a new one
+                 * overlapping during a rolling deploy) is an ordinary race,
+                 * and the loser has nothing left to do for this row — failing would
+                 * stop a container from starting over a row that is already correct.
+                 */
+                continue;
+            }
 
             $imported++;
         }
@@ -68,7 +82,7 @@ class ChangelogImporter
     {
         // Split on release headings, keeping the heading with its body.
         $parts = preg_split(
-            '/^##\s*\[(\d+\.\d+\.\d+)\](?:\s*-\s*(\d{4}-\d{2}-\d{2}))?\s*$/m',
+            SystemInfo::RELEASE_HEADING,
             $markdown,
             -1,
             PREG_SPLIT_DELIM_CAPTURE,

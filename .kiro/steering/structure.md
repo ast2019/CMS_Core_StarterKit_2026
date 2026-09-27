@@ -41,6 +41,7 @@ app/
 │   ├── Pages/                   # Dashboard, Settings singleton, AuditLog, TranslationReview
 │   ├── Widgets/                 # dashboard cards + VersionWidget (RULE #2)
 │   ├── Forms/Components/        # custom fields — LocalizedDateTimePicker (calendar-aware)
+│   ├── AvatarProviders/         # LocalAvatarProvider — inline SVG initials, no external host
 │   └── RichContent/Blocks/      # RULE #6 — Callout, Hero, Quote, GalleryEmbed
 │
 ├── Support/                     # stateless helpers, no state and no DB
@@ -59,6 +60,7 @@ app/
 
 resources/
 ├── fonts/vazirmatn/             # RULE #4 — local .woff2 only
+├── svg/                         # the `cms` Blade Icons set; svg/social = Simple Icons (CC0)
 ├── css/filament/admin/theme.css # @font-face + RTL + brand tokens
 ├── js/filament/                 # Alpine components for custom Filament fields.
 │                                # Plain ESM, no imports, published by `filament:assets`

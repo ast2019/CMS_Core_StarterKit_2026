@@ -13,6 +13,7 @@ use App\Models\ContactSetting;
 use App\Models\Setting as SettingModel;
 use App\Support\OrganisationProfile;
 use App\Support\SiteIdentity;
+use App\Support\SocialPlatform;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\KeyValue;
@@ -368,7 +369,19 @@ class Settings extends Page
                                     ->rule('url:http,https')
                                     ->required()
                                     ->placeholder('https://')
-                                    ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
+                                    ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr'])
+                                    /*
+                                     * Which network each URL is, derived from the URL
+                                     * itself (SocialPlatform), so the stored flat list of
+                                     * strings — and the API that publishes it — is
+                                     * unchanged. On blur rather than on every keystroke:
+                                     * the label only means something once the address is
+                                     * complete, and a round trip per character would
+                                     * flicker between "website" and the platform.
+                                     */
+                                    ->live(onBlur: true)
+                                    ->prefixIcon(fn (?string $state): string => SocialPlatform::fromUrl($state)->icon())
+                                    ->prefix(fn (?string $state): string => SocialPlatform::fromUrl($state)->label()),
                             )
                             ->addActionLabel(__('cms.settings.general.social_add'))
                             ->reorderable()
@@ -865,11 +878,16 @@ class Settings extends Page
     /**
      * Whether a key is already stored for this provider, plus where to get one.
      *
-     * The documentation link is part of the answer: an administrator who has just
+     * The documentation address is part of the answer: an administrator who has just
      * switched provider needs a key from a dashboard they may never have visited, and
-     * the provider's own quickstart is where it is issued. Returned as an HtmlString
-     * so the anchor renders as a link — Filament escapes a plain string, which would
-     * leave the admin a URL to retype by hand.
+     * the provider's own quickstart is where it is issued.
+     *
+     * Shown as copyable text, NOT as a link. The panel references no external host at
+     * all (tests/Feature/Filament/PanelMakesNoExternalRequestsTest): it has to work on a
+     * network with no outbound access, and a link is a request the admin's browser makes
+     * on the panel's behalf. The address is still one click to select (`select-all`) and
+     * LTR-isolated (`cms-ltr`) so it does not reverse inside the Persian sentence.
+     * Returned as an HtmlString only for that span; both parts are escaped.
      */
     private function apiKeyHelperText(AiProvider $provider): string|HtmlString
     {
@@ -883,13 +901,9 @@ class Settings extends Page
             return $status;
         }
 
-        $link = sprintf(
-            '<a href="%s" target="_blank" rel="noopener noreferrer" class="cms-ltr underline">%s</a>',
-            e($docs),
-            e($docs),
-        );
+        $address = sprintf('<span class="cms-ltr select-all font-mono">%s</span>', e($docs));
 
-        return new HtmlString(e($status).' '.__('cms.settings.ai.api_key_docs', ['url' => $link]));
+        return new HtmlString(e($status).' '.__('cms.settings.ai.api_key_docs', ['url' => $address]));
     }
 
     // -----------------------------------------------------------------------------
@@ -986,21 +1000,23 @@ class Settings extends Page
     }
 
     /**
-     * Social links as repeater ROWS.
+     * Social links as the flat list of URL strings a simple() repeater is filled with.
      *
      * Read through SiteIdentity because a single stored link comes back from the array
      * cast as a bare string, and filling a repeater with a string yields one row per
-     * character. Wrapped into ['url' => …] rows because that is a repeater's state
-     * shape even when simple() renders it as a single field.
+     * character.
      *
-     * @return list<array<string, string>>
+     * NOT pre-wrapped into ['url' => …] rows. A simple() repeater wraps each item into
+     * its row shape itself when it hydrates, so rows passed in were wrapped twice: every
+     * field's state became ['url' => ['url' => '…']], which the browser rendered as
+     * "[object Object]" in each input and which the platform prefix (SocialPlatform)
+     * could not read. Only a URL typed fresh in the session ever displayed correctly.
+     *
+     * @return list<string>
      */
     private function storedSocialLinks(): array
     {
-        return array_map(
-            static fn (string $url): array => ['url' => $url],
-            SiteIdentity::socialLinks(),
-        );
+        return SiteIdentity::socialLinks();
     }
 
     /**

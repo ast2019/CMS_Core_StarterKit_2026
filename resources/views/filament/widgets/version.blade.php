@@ -41,7 +41,7 @@
                             @foreach ($release->entries as $category => $items)
                                 @foreach ($items as $item)
                                     <li>
-                                        <span class="font-medium">{{ ucfirst($category) }}:</span>
+                                        <span class="font-medium">{{ __('cms.system.changelog_categories.'.$category) }}:</span>
                                         {{ $item }}
                                     </li>
                                 @endforeach
