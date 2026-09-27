@@ -728,4 +728,36 @@ return [
         'publish_lookback' => (int) env('CMS_PUBLISH_LOOKBACK', 90),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend webhooks
+    |--------------------------------------------------------------------------
+    |
+    | Tells the frontend that a record changed, so it can rebuild the affected
+    | pages instead of waiting out a timer. This is what makes a Next.js
+    | deployment's cached pages correct promptly rather than eventually.
+    |
+    | OFF by default: with no endpoint and no secret configured, nothing is sent
+    | and nothing is queued. Both are required — a deployment with an endpoint but
+    | no secret sends NOTHING rather than sending unsigned requests, because the
+    | receiver is a public endpoint that triggers work and a silent downgrade to no
+    | authentication is worse than a feature that is plainly switched off.
+    |
+    | The payload names what changed and its public URL per locale; the frontend
+    | re-fetches through the Delivery API. See docs/deployment.md for the receiver,
+    | including how to verify the signature.
+    |
+    */
+
+    'webhooks' => [
+        // Comma-separated, so a deployment can notify a preview build as well as
+        // production without this becoming an array in .env.
+        'endpoints' => env('CMS_WEBHOOK_ENDPOINTS'),
+
+        'secret' => env('CMS_WEBHOOK_SECRET'),
+
+        'connect_timeout' => (int) env('CMS_WEBHOOK_CONNECT_TIMEOUT', 5),
+        'timeout' => (int) env('CMS_WEBHOOK_TIMEOUT', 10),
+    ],
+
 ];

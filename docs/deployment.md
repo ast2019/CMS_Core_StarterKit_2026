@@ -219,6 +219,87 @@ Sitemap: https://api.example.com/sitemap.xml
 Do not copy this host's `robots.txt` to the frontend. It disallows `/api/` and the panel
 path, neither of which exists there, and it says nothing about the frontend's own routes.
 
+## Publish webhooks (telling the frontend to rebuild)
+
+A Next.js frontend caches rendered pages — that is the point of it — and without a
+webhook the only options are a fixed revalidation timer (so a correction waits out an
+interval unrelated to when anything changed) or rendering every request (throwing away
+the caching). Both are visible to readers.
+
+Off by default. **Both** variables are required: with an endpoint but no secret, nothing
+is sent, because a silent downgrade to unsigned requests on a public endpoint that
+triggers work is worse than a feature that is plainly switched off.
+
+```bash
+CMS_WEBHOOK_ENDPOINTS=https://www.example.com/api/revalidate
+CMS_WEBHOOK_SECRET=<a long random string>
+```
+
+Comma-separate the endpoints to notify a preview deployment as well as production.
+
+Fired when an article, page, gallery or category is saved, deleted or restored — and
+when a **scheduled** publish goes live, which no model observer can see because an
+elapsing embargo is not a write. That last one is dispatched by `cms:publish-due`, so the
+scheduler above is what makes scheduled publishing reach the frontend at all.
+
+The body names what changed and where it lives; it deliberately carries no content, so
+the Delivery API stays the single source of truth for what a record looks like:
+
+```json
+{
+  "event": "published",
+  "resource": "news",
+  "id": 42,
+  "occurred_at": "2026-09-26T12:00:00+00:00",
+  "urls": { "fa": "https://www.example.com/fa/news/…", "en": "…" }
+}
+```
+
+A receiver must verify the signature. The HMAC covers `timestamp + "." + rawBody`, not
+the body alone — otherwise a captured request could be replayed forever with a fresh
+timestamp header:
+
+```ts
+// app/api/revalidate/route.ts
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { revalidatePath } from 'next/cache'
+
+export async function POST(request: Request) {
+  const raw = await request.text()
+  const timestamp = request.headers.get('x-cms-timestamp') ?? ''
+  const signature = request.headers.get('x-cms-signature') ?? ''
+
+  const expected = 'sha256=' + createHmac('sha256', process.env.CMS_WEBHOOK_SECRET!)
+    .update(`${timestamp}.${raw}`)
+    .digest('hex')
+
+  const a = Buffer.from(signature)
+  const b = Buffer.from(expected)
+
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return new Response('invalid signature', { status: 401 })
+  }
+
+  // Reject anything older than five minutes, so a captured request cannot be replayed.
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
+    return new Response('stale timestamp', { status: 401 })
+  }
+
+  const { urls } = JSON.parse(raw) as { urls: Record<string, string> }
+
+  for (const url of Object.values(urls)) {
+    revalidatePath(new URL(url).pathname)
+  }
+
+  return new Response(null, { status: 204 })
+}
+```
+
+Answer **2xx** on success. A 4xx other than 429 is treated as a configuration error and
+logged once without retrying — retrying a rejected signature only delays you noticing.
+A 429 or 5xx is retried with spaced backoff (30s, 2m, 10m), sized for the usual cause: a
+deployment in progress.
+
 ## Media, crawlers and `CMS_MEDIA_URL`
 
 Every media URL this application emits — the image and video sitemaps, the JSON-LD

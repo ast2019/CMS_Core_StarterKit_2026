@@ -10,6 +10,7 @@ use App\Listeners\ExtractVideoMetadata;
 use App\Models;
 use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
+use App\Observers\FrontendWebhookObserver;
 use App\Observers\SearchIndexObserver;
 use App\Policies;
 use App\Support\Dates\LocalizedDate;
@@ -76,6 +77,7 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerAbilityGates();
         $this->registerPolicies();
         $this->registerDeliveryCacheInvalidation();
+        $this->registerFrontendWebhooks();
         $this->registerSearchIndexing();
         $this->registerSpecVersion();
         $this->registerVideoMetadataExtraction();
@@ -316,6 +318,21 @@ class CmsServiceProvider extends ServiceProvider
     {
         foreach (array_keys(DeliveryCacheObserver::MODEL_TAGS) as $model) {
             $model::observe(DeliveryCacheObserver::class);
+        }
+    }
+
+    /**
+     * Tell the frontend when a page it may be caching stops being correct.
+     *
+     * Registered separately from the cache observer above, on the narrower set of models
+     * that actually have public URLs: busting a local cache tag cannot fail, while
+     * calling a third party is queued, retried and switchable, so the two do not belong
+     * in one observer.
+     */
+    protected function registerFrontendWebhooks(): void
+    {
+        foreach (FrontendWebhookObserver::WATCHED as $model) {
+            $model::observe(FrontendWebhookObserver::class);
         }
     }
 
