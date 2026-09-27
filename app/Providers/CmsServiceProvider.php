@@ -14,6 +14,7 @@ use App\Observers\DeliveryCacheObserver;
 use App\Observers\FrontendWebhookObserver;
 use App\Observers\SearchIndexObserver;
 use App\Policies;
+use App\Support\AuthorisationProbe;
 use App\Support\Dates\LocalizedDate;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
@@ -284,6 +285,11 @@ class CmsServiceProvider extends ServiceProvider
             }
 
             if ($this->isNoisyAbility($ability)) {
+                return;
+            }
+
+            // A render-time probe (whether to draw a link), not an attempt; see AuthorisationProbe.
+            if (AuthorisationProbe::isQuiet()) {
                 return;
             }
 

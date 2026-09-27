@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\ContentStatus;
 use App\Enums\MediaRole;
 use App\Enums\TranslationStatus;
+use App\Filament\Pages\EditorialCalendar;
 use App\Filament\Pages\TranslationReview;
 use App\Filament\Resources\Categories\Pages\ListCategories;
 use App\Filament\Resources\ContactSubmissions\Pages\ListContactSubmissions;
@@ -29,6 +31,7 @@ use App\Models\Slide;
 use App\Models\Tag;
 use App\Models\User;
 use App\Support\TranslationBacklog;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
@@ -108,6 +111,31 @@ it('renders every list in a number of queries that does not grow with its rows',
     // Twice as many rows on the page and not one more query.
     expect(queriesToRender($page))->toBe($few, "the {$name} list issues a query per row");
 })->with(array_keys(listPagesWithRowFactories()));
+
+it('renders the editorial calendar in a number of queries that does not grow with its entries', function (): void {
+    // Item 43. Not a table, but a month of a daily newsroom is hundreds of entries, each with a
+    // type label, an edit link and an authorisation check — the same per-row trap as any list.
+    $this->travelTo(CarbonImmutable::parse('2026-09-27 09:00:00', 'UTC'));
+    actingAs(User::factory()->author()->create());
+
+    $makeRows = function (): void {
+        $date = fn (): CarbonImmutable => CarbonImmutable::parse('2026-10-0'.random_int(1, 9).' 08:00:00', 'UTC');
+
+        Content::factory()->create(['status' => ContentStatus::Published, 'publish_date' => $date()]);
+        Content::factory()->create(['status' => ContentStatus::Draft, 'publish_date' => $date()]);
+        Page::factory()->create(['status' => ContentStatus::Published, 'publish_date' => $date()]);
+        Gallery::factory()->create(['status' => ContentStatus::Published, 'publish_date' => $date()]);
+    };
+
+    $makeRows();
+    $few = queriesToRender(EditorialCalendar::class);
+
+    foreach (range(1, 4) as $i) {
+        $makeRows();
+    }
+
+    expect(queriesToRender(EditorialCalendar::class))->toBe($few, 'the editorial calendar issues a query per entry');
+});
 
 it('names the first active slide without asking the database per row', function (): void {
     // Item 37 family: the answer is the same for every row, so it is computed once per render.
