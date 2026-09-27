@@ -41,7 +41,21 @@ trait GeneratesPersianText
      */
     protected function persianTitle(int $maxChars = 70): string
     {
-        return $this->trimSentence($this->persianText($maxChars));
+        /*
+         * realText() occasionally returns nothing but "." (about 1 in 10,000 at 45 characters), which
+         * trims to an empty title, from which no slug can be made — and the insert then fails on
+         * `slug NOT NULL`. Rare per title, but the seeder makes enough of them that the suite failed
+         * intermittently (AllResourcesRenderTest, MenuTest). Retried, then a topic word.
+         */
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $title = $this->trimSentence($this->persianText($maxChars));
+
+            if ($title !== '') {
+                return $title;
+            }
+        }
+
+        return $this->persianTopic();
     }
 
     protected function persianSentence(int $maxChars = 140): string
