@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Schemas;
 
 use App\Models\MediaAsset;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -231,7 +232,10 @@ final class MediaAssetPicker
             FileUpload::make('file')
                 ->label(__('cms.field.file'))
                 ->required()
-                ->image()
+                // Item 12 — the library's image list, checked against the file's content. Not
+                // ->image(), which accepts image/* and so an SVG, which can carry script.
+                ->acceptedFileTypes(MediaAsset::mimeTypesFor('image'))
+                ->rule(fn (): Closure => MediaAsset::fileContentRule('image'))
                 // RULE #9 — local disk, named in config/cms.php, never here.
                 ->disk(self::disk())
                 ->directory('media-library/uploads')

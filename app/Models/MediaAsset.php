@@ -8,12 +8,17 @@ use App\Concerns\InteractsWithLocales;
 use App\Concerns\IsAuditable;
 use App\Services\Content\UsageInspector;
 use App\Support\Dates\LocalizedDate;
+use App\Support\OrganisationProfile;
 use App\Support\Plural;
+use Closure;
+use finfo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Spatie\Image\Enums\Fit;
@@ -21,6 +26,7 @@ use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\Translatable\HasTranslations;
+use SplFileInfo;
 
 /**
  * The reusable media library (Decision D-3, tier one).
@@ -109,6 +115,129 @@ class MediaAsset extends Model implements HasMedia
         static::deleting(function (self $asset): void {
             $asset->guardFeaturedImageUse();
         });
+
+        /*
+         * Item 12 — the type decides what the file may be, so changing the type of an asset that
+         * already holds a file must not turn a PDF into an "image". The form refuses it with a field
+         * error first; this is the same rule for every other writer (a seeder, a future API).
+         *
+         * Only on a type CHANGE. Rows written before the rule existed may disagree already, and an
+         * editor fixing their alt text must not be blocked by that.
+         */
+        static::updating(function (self $asset): void {
+            if (! $asset->isDirty('type')) {
+                return;
+            }
+
+            $mime = $asset->storedMimeType();
+
+            if ($mime !== null && ! self::typeAccepts((string) $asset->type, $mime)) {
+                throw ValidationException::withMessages([
+                    'type' => __('cms.media.validation.type_mismatch', [
+                        'type' => self::typeOptions()[(string) $asset->type] ?? (string) $asset->type,
+                        'mime' => $mime,
+                    ]),
+                ]);
+            }
+        });
+    }
+
+    /**
+     * The MIME types an asset of this type may hold (`cms.media.mime_types`). Empty for an unknown
+     * type, so an upload against it is refused rather than accepted as anything.
+     *
+     * @return list<string>
+     */
+    public static function mimeTypesFor(?string $type): array
+    {
+        $types = (array) config('cms.media.mime_types', []);
+        $list = $types[(string) $type] ?? [];
+
+        return is_array($list) ? array_values(array_map(strval(...), $list)) : [];
+    }
+
+    /**
+     * The file-name extensions an asset of this type may be stored under (`cms.media.extensions`).
+     *
+     * @return list<string>
+     */
+    public static function extensionsFor(?string $type): array
+    {
+        $types = (array) config('cms.media.extensions', []);
+        $list = $types[(string) $type] ?? [];
+
+        return is_array($list) ? array_values(array_map(fn (mixed $ext): string => strtolower((string) $ext), $list)) : [];
+    }
+
+    public static function typeAccepts(string $type, string $mime): bool
+    {
+        return in_array(strtolower($mime), self::mimeTypesFor($type), true);
+    }
+
+    /**
+     * A per-file validation rule: the uploaded file's CONTENT must be a type this asset type may
+     * hold, and an image must actually decode.
+     *
+     * In addition to Filament's `mimetypes` rule, not instead of it, because that one asks the upload
+     * object for its type — and Livewire's answer depends on Livewire (in a test it is the type the
+     * client claimed). This reads the bytes on disk with PHP's own finfo, so the guarantee does not
+     * rest on another library's internals. getimagesize() then refuses a file that claims to be a
+     * PNG but that the image conversions could never read.
+     *
+     * And the NAME: the file is stored under the extension the client chose and served by it, so a
+     * `.html` holding "plain text" (libmagic looks for markup only in the first 4 KB) would be
+     * served as a page on the panel's origin. `cms.media.extensions` lists what each type may use.
+     */
+    public static function fileContentRule(?string $type): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail) use ($type): void {
+            $path = $value instanceof SplFileInfo ? $value->getRealPath() : false;
+            $mime = is_string($path) && is_file($path) ? self::detectMimeType($path) : null;
+            $extension = $value instanceof UploadedFile
+                ? strtolower($value->getClientOriginalExtension())
+                : null;
+
+            if ($extension === null || ! in_array($extension, self::extensionsFor($type), true)) {
+                $fail(__('cms.media.validation.file_extension', [
+                    'type' => self::typeOptions()[(string) $type] ?? (string) $type,
+                    'extensions' => implode(', ', self::extensionsFor($type)),
+                ]));
+
+                return;
+            }
+
+            $accepted = $mime !== null
+                && self::typeAccepts((string) $type, $mime)
+                && ($type !== 'image' || @getimagesize((string) $path) !== false);
+
+            if (! $accepted) {
+                $fail(__('cms.media.validation.file_type', [
+                    'type' => self::typeOptions()[(string) $type] ?? (string) $type,
+                    'mime' => $mime ?? '?',
+                ]));
+            }
+        };
+    }
+
+    /**
+     * The MIME type of a file on disk, from its content.
+     */
+    public static function detectMimeType(string $path): ?string
+    {
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($path);
+
+        return is_string($mime) && $mime !== '' ? $mime : null;
+    }
+
+    /**
+     * The MIME type of the file this asset holds: the media row's, which Media Library read from
+     * the file, falling back to the copy on the asset row.
+     */
+    public function storedMimeType(): ?string
+    {
+        $mime = $this->getFirstMedia('file')->mime_type ?? $this->mime_type;
+
+        return is_string($mime) && $mime !== '' ? $mime : null;
     }
 
     /**
@@ -428,6 +557,32 @@ class MediaAsset extends Model implements HasMedia
         }
 
         return $media->getUrl();
+    }
+
+    /**
+     * Assets attached to nothing the CMS tracks — item 12's "unused media" filter.
+     *
+     * Tracked means a `media_attachments` row (featured image, gallery item, slide, social image;
+     * owners in the trash included, as UsageInspector counts them) or being the site logo, which is
+     * an id inside a Setting rather than a row.
+     *
+     * NOT "safe to delete": images placed inside body text (hero blocks, uploaded inline images) are
+     * stored in the rich-text document and are invisible here. The filter's label says so.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeUnattached(Builder $query): void
+    {
+        $query->whereNotExists(fn (QueryBuilder $attachments) => $attachments
+            ->selectRaw('1')
+            ->from('media_attachments')
+            ->whereColumn('media_attachments.media_asset_id', $this->getQualifiedKeyName()));
+
+        $logo = OrganisationProfile::logoId();
+
+        if ($logo !== null) {
+            $query->whereKeyNot($logo);
+        }
     }
 
     /**

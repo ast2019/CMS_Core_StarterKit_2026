@@ -90,13 +90,29 @@ final class OrganisationProfile
      */
     public static function logo(): ?MediaAsset
     {
+        $id = self::logoId();
+
+        return $id === null ? null : MediaAsset::query()->find($id);
+    }
+
+    /**
+     * The id of the asset chosen as the site logo, without loading it.
+     *
+     * For the callers that need to know WHETHER an asset is the logo — the delete guard, the
+     * "unused media" filter, the asset's "where is this used" list. The guard used to read a
+     * top-level `logo_media_asset_id` setting that nothing ever wrote, while the Settings page
+     * stores the id here, inside the organisation document; so the real logo could be trashed
+     * with nothing refusing it. One reader of the storage is the fix.
+     */
+    public static function logoId(): ?int
+    {
         $id = self::all()['logo_media_asset_id'] ?? null;
 
         if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
             return null;
         }
 
-        return MediaAsset::query()->find((int) $id);
+        return (int) $id;
     }
 
     /**

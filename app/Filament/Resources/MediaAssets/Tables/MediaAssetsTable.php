@@ -79,6 +79,20 @@ class MediaAssetsTable
                     }),
 
                 /*
+                 * Item 12 — assets nothing is attached to. The label and the active-filter chip both
+                 * say what is NOT checked, because this is the list someone cleans the library from:
+                 * an image placed inside an article's body text is not an attachment, and deleting it
+                 * leaves a hole in that article. The site logo counts as used.
+                 */
+                Filter::make('unattached')
+                    ->label(__('cms.filter.unattached'))
+                    ->indicator(__('cms.filter.unattached_indicator'))
+                    ->query(function (Builder $query): Builder {
+                        /** @var Builder<MediaAsset> $query */
+                        return $query->unattached();
+                    }),
+
+                /*
                  * Item 10 — without this the trash is unreachable: a deleted record leaves the
                  * only list that links to its edit page, so the restore action there has no route
                  * to it. Defaults to excluding deleted rows, which is what this table already did
