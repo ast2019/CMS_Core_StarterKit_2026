@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Tags;
 
+use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Tags\Pages\CreateTag;
 use App\Filament\Resources\Tags\Pages\EditTag;
 use App\Filament\Resources\Tags\Pages\ListTags;
@@ -16,11 +17,22 @@ use Filament\Tables\Table;
 
 class TagResource extends Resource
 {
+    use SearchesTranslatedRecords;
+
     protected static ?string $model = Tag::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTag;
 
     protected static ?int $navigationSort = 21;
+
+    /**
+     * Where this resource sits in the global-search results.
+     *
+     * The PROPERTY, not a getGlobalSearchResultSort() method — that name is not a
+     * Filament hook, so an earlier version of this was six unreachable methods and the
+     * results came back in resource-registration order.
+     */
+    protected static ?int $globalSearchSort = 40;
 
     public static function getModelLabel(): string
     {
@@ -65,6 +77,20 @@ class TagResource extends Resource
         return [
             //
         ];
+    }
+
+    /**
+     * Item 21 — findable from the panel's global search.
+     *
+     * The search box found nothing at all before this: no resource declared any
+     * searchable attribute, so it rendered and returned empty for every query. The
+     * translated-column handling lives in SearchesTranslatedRecords.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name'];
     }
 
     public static function getPages(): array

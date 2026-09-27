@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Contents;
 
+use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Contents\Pages\CreateContent;
 use App\Filament\Resources\Contents\Pages\EditContent;
 use App\Filament\Resources\Contents\Pages\ListContents;
@@ -15,14 +16,26 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class ContentResource extends Resource
 {
+    use SearchesTranslatedRecords;
+
     protected static ?string $model = Content::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedNewspaper;
 
     protected static ?int $navigationSort = 10;
+
+    /**
+     * Where this resource sits in the global-search results.
+     *
+     * The PROPERTY, not a getGlobalSearchResultSort() method — that name is not a
+     * Filament hook, so an earlier version of this was six unreachable methods and the
+     * results came back in resource-registration order.
+     */
+    protected static ?int $globalSearchSort = 10;
 
     public static function getModelLabel(): string
     {
@@ -83,6 +96,32 @@ class ContentResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    /**
+     * Item 21 — findable from the panel's global search.
+     *
+     * The search box found nothing at all before this: no resource declared any
+     * searchable attribute, so it rendered and returned empty for every query. The
+     * translated-column handling lives in SearchesTranslatedRecords.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['title', 'excerpt'];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Content $record */
+        return [
+            __('cms.field.status') => $record->status->label(),
+            __('cms.field.primary_category') => $record->primaryCategory?->getTranslation('name', app()->getLocale()),
+        ];
     }
 
     public static function getPages(): array

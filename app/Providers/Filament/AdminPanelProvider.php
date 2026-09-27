@@ -134,6 +134,11 @@ class AdminPanelProvider extends PanelProvider
              * bell updates on the next page load, which for this workflow — queue a
              * translation, carry on translating something else — is soon enough.
              */
+            // Item 21 — the global search box existed and found nothing, because no
+            // resource declared a searchable attribute. Now that they do, give it the
+            // keystroke every editor already tries.
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
+
             ->databaseNotifications()
             ->databaseNotificationsPolling(null)
 

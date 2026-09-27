@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Pages\Tables;
 
 use App\Enums\ContentStatus;
+use App\Filament\Tables\PublishingBulkActions;
 use App\Models\Page;
+use App\Services\Api\DeliveryCache;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -57,8 +59,30 @@ class PagesTable
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    // Item 23 — the content.publish ability and the policy methods
+                    // already existed with nothing in the panel wired to them.
+                    ...PublishingBulkActions::make(),
+                    DeleteBulkAction::make(),
+                ]),
             ])
+            /*
+             * Item 30 — the column was here and sorted by, but ordering meant typing
+             * numbers into a form. reorderable() makes it drag-and-drop.
+             */
+            ->reorderable('position')
+            /*
+             * Reordering is a single UPDATE on the query builder, so no model is
+             * instantiated and no observer fires — no audit row, and crucially no
+             * Delivery cache invalidation, while `position` IS part of the public page
+             * payload. Without this the new order is served stale until the TTL expires,
+             * which is the same class of bug cms:publish-due exists to fix for scheduled
+             * publishing.
+             */
+            ->afterReordering(fn (DeliveryCache $cache) => $cache->invalidate([
+                DeliveryCache::TAG_CONTENT,
+                DeliveryCache::TAG_SITEMAP,
+            ]))
             ->defaultSort('position');
     }
 }

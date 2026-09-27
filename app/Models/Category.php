@@ -106,7 +106,17 @@ class Category extends Model implements HasSeoMetadata, TracksTranslationStatus
      */
     public function contents(): BelongsToMany
     {
-        return $this->belongsToMany(Content::class);
+        /*
+         * withPivot('is_primary'), matching Content::categories().
+         *
+         * The two sides describe the same pivot row, and only one of them selected the
+         * flag — so reading `$content->pivot->is_primary` from the CATEGORY side silently
+         * gave null, and any caller deciding something on it would decide it wrongly. The
+         * panel's category→articles list is the first such caller: it marks the primary
+         * article and protects that row from being detached, both of which need the flag
+         * to actually arrive.
+         */
+        return $this->belongsToMany(Content::class)->withPivot('is_primary');
     }
 
     /**

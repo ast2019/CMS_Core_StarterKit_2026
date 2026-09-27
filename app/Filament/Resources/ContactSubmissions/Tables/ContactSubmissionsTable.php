@@ -8,14 +8,17 @@ use App\Models\ContactSubmission;
 use App\Support\Dates\LocalizedDate;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class ContactSubmissionsTable
 {
@@ -71,7 +74,43 @@ class ContactSubmissionsTable
                     ->action(fn (ContactSubmission $record) => $record->markRead()),
             ])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    /*
+                     * Item 32 — reading the inbox is the whole workflow, so clearing
+                     * twenty messages should be one action rather than twenty.
+                     * markRead() is the only mutation the policy permits on a
+                     * submission, and it is authorised per record here as it is on the
+                     * row action.
+                     */
+                    BulkAction::make('markRead')
+                        ->label(__('cms.action.mark_read_selected'))
+                        ->icon('heroicon-o-envelope-open')
+                        ->action(function (Collection $records): void {
+                            $marked = 0;
+
+                            foreach ($records as $record) {
+                                /** @var ContactSubmission $record */
+                                if ($record->isRead()) {
+                                    continue;
+                                }
+
+                                if (! (auth()->user()?->can('markRead', $record) ?? false)) {
+                                    continue;
+                                }
+
+                                $record->markRead();
+                                $marked++;
+                            }
+
+                            Notification::make()
+                                ->title(__('cms.action.mark_read_selected_done', ['count' => $marked]))
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
+                    DeleteBulkAction::make(),
+                ]),
             ])
             ->defaultSort('created_at', 'desc');
     }

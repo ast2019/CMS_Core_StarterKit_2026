@@ -112,6 +112,7 @@ return [
     ],
 
     'field' => [
+        'two_factor' => 'التحقّق بخطوتين',
         'title' => 'العنوان',
         'name' => 'الاسم',
         'slug' => 'المعرّف (slug)',
@@ -222,7 +223,12 @@ return [
         'next_month' => 'الشهر التالي',
     ],
 
+    'category' => [
+        'cannot_detach_primary' => 'هذا هو التصنيف الرئيسي للمقال، وهو ما يحدّد رابطه المعياري ومسار التنقّل. غيّر التصنيف الرئيسي في المقال أولًا ثم افصله من هنا.',
+        'primary_skipped' => 'لم يُفصل :count مقالًا لأن هذا تصنيفها الرئيسي.',
+    ],
     'table' => [
+        'primary' => 'رئيسي',
         'scheduled' => 'مُجدول',
         'unread' => 'غير مقروء',
         'items' => 'عنصر',
@@ -238,6 +244,26 @@ return [
     ],
 
     'action' => [
+        'detach_selected' => 'فصل المحدد عن هذا التصنيف',
+        'detach_selected_done' => 'تم فصل :count مقالًا عن هذا التصنيف.',
+        'publish_selected' => 'نشر المحدد',
+        'publish_selected_confirm' => 'سيُنشَر ما حدّدته. وما لا يحمل تاريخ نشر يأخذ الوقت الحالي، أما التاريخ المستقبلي المحدَّد مسبقًا فيبقى كما هو.',
+        'publish_selected_done' => 'تم نشر :count عنصرًا.',
+        'unpublish_selected' => 'إلغاء نشر المحدد',
+        'unpublish_selected_confirm' => 'سيعود ما حدّدته إلى مسودة ويخرج من الموقع العام.',
+        'unpublish_selected_done' => 'تم إلغاء نشر :count عنصرًا.',
+        'bulk_skipped' => 'لم يتغيّر :count عنصرًا لعدم وجود صلاحية.',
+        'mark_read_selected' => 'تحديد كمقروء',
+        'mark_read_selected_done' => 'تم تحديد :count رسالة كمقروءة.',
+        'reset_two_factor' => 'إعادة تعيين التحقّق بخطوتين',
+        'reset_two_factor_confirm' => 'سيُحذف مفتاح المستخدم ورموز الاسترداد، وسيُعيد الإعداد عند تسجيل الدخول التالي. هذا ما يحتاجه من فقد هاتفه.',
+        'reset_two_factor_done' => 'أُعيد تعيين التحقّق بخطوتين للمستخدم :name.',
+        'activate_selected' => 'تنشيط المستخدمين المحدَّدين',
+        'activate_selected_done' => 'تم تنشيط :count مستخدمًا.',
+        'deactivate_selected' => 'تعطيل المستخدمين المحدَّدين',
+        'deactivate_selected_done' => 'تم تعطيل :count مستخدمًا.',
+        'own_account_skipped' => 'لم يتغيّر حسابك؛ تعطيل نفسك يُخرجك من هذه الشاشة.',
+        'edit' => 'تعديل',
         'preview' => 'معاينة',
         'publish' => 'نشر',
         'archive' => 'أرشفة',
