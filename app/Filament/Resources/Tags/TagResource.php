@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Tags;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Tags\Pages\CreateTag;
 use App\Filament\Resources\Tags\Pages\EditTag;
@@ -16,6 +17,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class TagResource extends Resource
 {
@@ -46,9 +48,9 @@ class TagResource extends Resource
         return __('cms.resource.tags');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.taxonomy');
+        return PanelNavigationGroup::Taxonomy;
     }
 
     /**

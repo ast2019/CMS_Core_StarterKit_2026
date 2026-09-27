@@ -11,6 +11,7 @@ use App\Concerns\IsAuditable;
 use App\Contracts\HasSeoMetadata;
 use App\Contracts\TracksTranslationStatus;
 use App\Services\Content\UsageInspector;
+use App\Support\Plural;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -130,7 +131,7 @@ class Category extends Model implements HasSeoMetadata, TracksTranslationStatus
         }
 
         throw ValidationException::withMessages([
-            'primary_category_id' => __($blocked['key'], $blocked['parameters']),
+            'primary_category_id' => Plural::trans($blocked['key'], $blocked['parameters']),
         ]);
     }
 

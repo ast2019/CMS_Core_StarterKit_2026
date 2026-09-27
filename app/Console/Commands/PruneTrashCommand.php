@@ -13,6 +13,8 @@ use App\Models\Page;
 use App\Models\Slide;
 use App\Models\Tag;
 use App\Services\Content\UsageInspector;
+use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Throwable;
@@ -150,21 +152,18 @@ class PruneTrashCommand extends Command
             return;
         }
 
-        $this->info(($dryRun ? '[dry-run] ' : '').__('cms.trash.pruned', [
-            'count' => $destroyed,
-            'days' => $days,
-        ]));
+        $this->info(($dryRun ? '[dry-run] ' : '').Plural::choice('cms.trash.pruned', $destroyed, ['days' => LocalizedDate::number($days)]));
 
         if ($kept > 0) {
             // Surfaced as a warning rather than logged quietly: a record that keeps being kept
             // is a dangling reference somebody should look at, and a silent skip would let it
             // sit there for ever.
-            $this->warn(__('cms.trash.prune_blocked', ['count' => $kept]));
+            $this->warn(Plural::choice('cms.trash.prune_blocked', $kept));
         }
 
         if ($failed > 0) {
             // Distinct from `kept`: that was a decision, this was a surprise.
-            $this->warn(__('cms.trash.prune_failed', ['count' => $failed]));
+            $this->warn(Plural::choice('cms.trash.prune_failed', $failed));
         }
     }
 

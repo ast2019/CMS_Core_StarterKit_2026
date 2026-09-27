@@ -40,9 +40,10 @@ class TrashControls
      * existing table already did implicitly. So adding it changes nothing about the default
      * view and adds two states: deleted-only, and everything.
      *
-     * Labelled explicitly rather than left to Filament's own translations, because those ship
-     * in English and this panel is trilingual — a Persian table with an English "Deleted"
-     * option is the kind of seam that makes a panel feel half-translated.
+     * Labelled explicitly for WORDING, not for coverage: Filament does ship fa and ar translations
+     * for this filter. Its phrasing ("with trashed records") is generic, while every other place in
+     * this panel calls the same thing "deleted" and the restore flow is described in those terms —
+     * one concept should not have two names depending on which screen an editor is on.
      */
     public static function filter(): TrashedFilter
     {

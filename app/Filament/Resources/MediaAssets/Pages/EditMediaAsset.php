@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\MediaAssets\Pages;
 
+use App\Filament\Concerns\GuardsAgainstConcurrentEdits;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Resources\MediaAssets\MediaAssetResource;
 use App\Filament\Tables\GuardedDeleteActions;
@@ -13,6 +14,10 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditMediaAsset extends EditRecord
 {
+    /*
+     * Item 35 — refuse to silently overwrite someone else's save made while this form was open.
+     */
+    use GuardsAgainstConcurrentEdits;
     use InteractsWithTranslatableRecord;
 
     protected static string $resource = MediaAssetResource::class;

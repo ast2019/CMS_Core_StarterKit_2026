@@ -22,7 +22,9 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Colors\Color;
+use Filament\Tables\Table;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -43,6 +45,43 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  */
 class AdminPanelProvider extends PanelProvider
 {
+    public function boot(): void
+    {
+        /*
+         * Item 48 — a list remembers how it was left.
+         *
+         * Every table reset its filters, sort and search on each visit, so an editor who narrowed the
+         * article list to "needs translation, newest first", opened one article and came back found
+         * the full list again and had to rebuild the view — once per article, all afternoon.
+         *
+         * A global default rather than a call on each table, so a resource added later inherits it
+         * instead of being the one list that forgets. Session-scoped, per table, per user: nothing is
+         * persisted to the database, and signing out clears it.
+         *
+         * The trade worth naming: a persisted filter is still applied on return, including the
+         * Deleted filter. Filament renders active filters as removable indicators above the table,
+         * which is what keeps "only deleted records are showing" from reading as "everything is
+         * gone".
+         */
+        Table::configureUsing(function (Table $table): void {
+            /*
+             * NOT for relation managers. Filament keys the persisted state by Livewire component
+             * CLASS alone, so a relation manager has one slot shared across every owner record: a
+             * "draft" filter set on category A's article list arrived already applied on category
+             * B's, where it reads convincingly as "this category has no published articles". A view
+             * scoped to one record must start clean for each record.
+             */
+            if ($table->getLivewire() instanceof RelationManager) {
+                return;
+            }
+
+            $table
+                ->persistFiltersInSession()
+                ->persistSortInSession()
+                ->persistSearchInSession();
+        });
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -139,6 +178,21 @@ class AdminPanelProvider extends PanelProvider
             // resource declared a searchable attribute. Now that they do, give it the
             // keystroke every editor already tries.
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
+
+            /*
+             * Item 36 — warn before leaving a form with unsaved changes.
+             *
+             * An editor who closed a tab, clicked a menu item or hit Back mid-article lost the work
+             * without a word — the most basic safety a writing tool has, and the panel lacked it.
+             *
+             * Panel-wide rather than per page because there is no form in this panel where losing
+             * input silently is the right outcome, and a per-page opt-in is exactly the kind of flag
+             * the next new resource forgets. This panel does not run in SPA mode, so every way of
+             * leaving the page — a menu click, Back, closing or reloading the tab — is a real page
+             * unload, and the prompt is the browser's own beforeunload dialog. Its wording is the
+             * browser's to choose, not ours, which is why there is no lang key for it.
+             */
+            ->unsavedChangesAlerts()
 
             ->databaseNotifications()
             ->databaseNotificationsPolling(null)

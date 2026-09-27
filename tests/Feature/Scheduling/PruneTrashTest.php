@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Content;
 use App\Models\MediaAsset;
 use App\Models\Tag;
+use App\Support\Plural;
 use Illuminate\Support\Facades\Artisan;
 
 use function Pest\Laravel\artisan;
@@ -93,7 +94,7 @@ it('keeps back a category a trashed article still depends on', function (): void
     expect(Category::onlyTrashed()->whereKey($category->getKey())->exists())->toBeTrue()
         // And it says so, rather than skipping quietly: a record that keeps being kept is a
         // dangling reference somebody should look at.
-        ->and(Artisan::output())->toContain(__('cms.trash.prune_blocked', ['count' => 1]));
+        ->and(Artisan::output())->toContain(Plural::choice('cms.trash.prune_blocked', 1));
 });
 
 it('destroys the article first, which frees the category in the same run', function (): void {

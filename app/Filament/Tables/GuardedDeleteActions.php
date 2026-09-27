@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Tables;
 
 use App\Services\Content\UsageInspector;
-use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ForceDeleteAction;
@@ -33,10 +33,11 @@ use Illuminate\Support\LazyCollection;
  *   IN USE    — safe but not free (a tag on forty articles). Allowed, with the count, because
  *               "are you sure?" with no number attached is a question nobody can answer.
  *
- * The BLOCKED rule is also enforced on the models themselves (MediaAsset::guardFeaturedImageUse
- * and the refusal in UsageInspector), so a seeder, an import or the Management API cannot get
- * past it either. This class exists so that the panel refuses it with a sentence rather than
- * with a validation error on a page that has no form.
+ * The BLOCKED rule is also enforced on the models themselves — MediaAsset::guardFeaturedImageUse
+ * and Category::guardPrimaryCategoryUse, both consulting UsageInspector::blockedReason() — so a
+ * seeder, an import or the Management API cannot get past it either. UsageInspector itself refuses
+ * nothing; it only answers. This class exists so that the panel refuses with a sentence before the
+ * model is asked, rather than surfacing a validation error keyed on a field no list page has.
  */
 class GuardedDeleteActions
 {
@@ -64,7 +65,7 @@ class GuardedDeleteActions
                  * rule that was broken.
                  */
                 Notification::make()
-                    ->title(__($blocked['key'], $blocked['parameters']))
+                    ->title(Plural::trans($blocked['key'], $blocked['parameters']))
                     ->warning()
                     ->persistent()
                     ->send();
@@ -120,7 +121,7 @@ class GuardedDeleteActions
                  * all.
                  */
                 Notification::make()
-                    ->title(__($blocked['key'], $blocked['parameters']))
+                    ->title(Plural::trans($blocked['key'], $blocked['parameters']))
                     ->warning()
                     ->persistent()
                     ->send();
@@ -181,7 +182,7 @@ class GuardedDeleteActions
             if ($reason !== null) {
                 // Collected rather than counted, so the notification can say WHICH rule was hit.
                 // Two refusals for two different reasons are two different pieces of work.
-                $blocked[] = __($reason['key'], $reason['parameters']);
+                $blocked[] = Plural::trans($reason['key'], $reason['parameters']);
 
                 $action->reportBulkProcessingFailure();
 
@@ -231,10 +232,9 @@ class GuardedDeleteActions
         $cascading = $inspector->cascadingDescendantCount($record);
 
         if ($cascading > 0) {
-            // Through LocalizedDate, like the usage counts below. Passing the raw int put an
-            // ASCII "2" next to a Persian "۲" in the same paragraph, which reads as two
-            // different interfaces talking at once.
-            $notes[] = __('cms.trash.cascade', ['count' => LocalizedDate::number($cascading)]);
+            // Plural::choice localises the digits as well as the noun form. The raw int once put
+            // an ASCII "2" next to a Persian "۲" in the same paragraph.
+            $notes[] = Plural::choice('cms.trash.cascade', $cascading);
         }
 
         $usage = $inspector->usage($record);
@@ -256,7 +256,7 @@ class GuardedDeleteActions
         $parts = [];
 
         foreach ($usage as $label => $count) {
-            $parts[] = LocalizedDate::number($count).' '.__($label);
+            $parts[] = Plural::choice($label, $count);
         }
 
         // The Arabic comma reads correctly in Persian and Arabic and is tolerable in English,

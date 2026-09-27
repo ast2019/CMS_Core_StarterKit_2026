@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Redirects;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Resources\Redirects\Pages\CreateRedirect;
 use App\Filament\Resources\Redirects\Pages\EditRedirect;
 use App\Filament\Resources\Redirects\Pages\ListRedirects;
@@ -13,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class RedirectResource extends Resource
 {
@@ -32,9 +34,9 @@ class RedirectResource extends Resource
         return __('cms.resource.redirects');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.system');
+        return PanelNavigationGroup::System;
     }
 
     /**

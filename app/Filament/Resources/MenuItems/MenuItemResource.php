@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\MenuItems;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Resources\MenuItems\Pages\CreateMenuItem;
 use App\Filament\Resources\MenuItems\Pages\EditMenuItem;
 use App\Filament\Resources\MenuItems\Pages\ListMenuItems;
@@ -15,6 +16,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class MenuItemResource extends Resource
 {
@@ -34,9 +36,9 @@ class MenuItemResource extends Resource
         return __('cms.resource.menu_items');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.appearance');
+        return PanelNavigationGroup::Appearance;
     }
 
     /**

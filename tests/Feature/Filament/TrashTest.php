@@ -16,6 +16,7 @@ use App\Models\MenuItem;
 use App\Models\Tag;
 use App\Models\User;
 use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 
@@ -212,8 +213,8 @@ it('names what a category delete would cost, with a number', function (): void {
 
     $description = GuardedDeleteActions::describeConsequence($category);
 
-    expect($description)->toContain(__('cms.usage.label.articles'))
-        // In the reader's own digits, like every other number in this panel.
+    // The label carries its own number and plural form, in the reader's own digits.
+    expect($description)->toContain(Plural::choice('cms.usage.label.articles', 3))
         ->and($description)->toContain(LocalizedDate::number(3));
 });
 
@@ -224,7 +225,7 @@ it('says how many menu children a delete carries with it', function (): void {
     MenuItem::factory()->count(2)->create(['menu_key' => 'header', 'parent_id' => $parent->getKey()]);
 
     expect(GuardedDeleteActions::describeConsequence($parent))
-        ->toContain(__('cms.trash.cascade', ['count' => LocalizedDate::number(2)]));
+        ->toContain(Plural::choice('cms.trash.cascade', 2));
 });
 
 it('does not pad a harmless delete with a reassuring paragraph', function (): void {

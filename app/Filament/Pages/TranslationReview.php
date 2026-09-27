@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Contracts\TracksTranslationStatus;
+use App\Enums\PanelNavigationGroup;
 use App\Enums\TranslationStatus;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Jobs\TranslateRecordJob;
@@ -23,6 +24,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 /**
  * The translation backlog: one row per (record, locale) needing attention.
@@ -54,9 +56,9 @@ class TranslationReview extends Page implements HasTable
         return __('cms.translation_review.title');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.content');
+        return PanelNavigationGroup::Content;
     }
 
     public static function canAccess(): bool

@@ -180,6 +180,8 @@ return [
         'image_dimensions_help' => 'برای جلوگیری از جابه‌جایی چیدمان (CLS) الزامی است.',
         'read_at' => 'زمان مطالعه',
         'spam_reason' => 'دلیل هرزنامه',
+        'preview' => 'پیش‌نمایش',
+        'read_status' => 'وضعیت خواندن',
         'user_agent' => 'مرورگر فرستنده',
         'message' => 'پیام',
         'email' => 'ایمیل',
@@ -369,6 +371,17 @@ return [
         'inline_upload_heading' => 'بارگذاری تصویر در کتابخانهٔ رسانه',
         'inline_upload_description' => 'تصویر در کتابخانهٔ رسانه ثبت و همینجا انتخاب میشود؛ لازم نیست این صفحه را ترک کنید.',
         'inline_upload_submit' => 'بارگذاری و انتخاب',
+
+        // Item 55 — these were rendered as the raw English keys (`image`, `video`, `document`)
+        // in a panel that is otherwise Persian, Arabic or English throughout.
+        'type' => [
+            'image' => 'تصویر',
+            'video' => 'ویدیو',
+            'document' => 'سند',
+        ],
+        'size' => 'حجم',
+        'size_kb' => ':size کیلوبایت',
+        'size_mb' => ':size مگابایت',
     ],
 
     'seo' => [
@@ -467,7 +480,7 @@ return [
     */
     'usage' => [
         'blocked' => [
-            'media_featured' => 'این تصویر، تصویر شاخص :count مورد منتشرشده است و حذفش آن‌ها را بی‌تصویر می‌کند. اول برای آن موارد تصویر شاخص دیگری بگذار.',
+            'media_featured' => 'این تصویر، تصویر شاخص :count مورد است (شامل پیش‌نویس‌ها و موارد سطل زباله) و حذفش آن‌ها را بی‌تصویر می‌کند. اول برای آن موارد تصویر شاخص دیگری بگذار.',
             'category_primary' => 'این دستهٔ اصلی :count مطلب است و نشانی یکتا و مسیر راهنمای آن‌ها را تعیین می‌کند. اول دستهٔ اصلی آن مطالب را عوض کن. (فیلتر «حذف‌شده‌ها» در فهرست مطالب را هم ببین.)',
             // The site logo lives as an id inside a Setting document, not as an attachment row, so
             // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
@@ -476,16 +489,20 @@ return [
             // destroying it would make that record come back wrong rather than not come back.
             'restorable_dependents' => ':count مورد در سطل زباله هنوز به این وابسته است؛ حذف همیشگی باعث می‌شود آن‌ها ناقص بازگردند. اول آن‌ها را بازگردان یا برای همیشه حذف کن.',
         ],
+        /*
+         * Item 56 — each label carries its own number. Persian takes a singular noun after a
+         * numeral («۳ مطلب»), so one form is correct for every count.
+         */
         'label' => [
-            'articles' => 'مطلب',
-            'child_categories' => 'زیردسته',
-            'navigation_links' => 'پیوند در منو یا اسلاید',
-            'menu_children' => 'زیرمجموعهٔ منو',
-            'attached_to_content' => 'پیوست مطلب',
-            'attached_to_page' => 'پیوست صفحه',
-            'attached_to_gallery' => 'پیوست گالری',
-            'attached_to_slide' => 'پیوست اسلاید',
-            'attached_to_other' => 'پیوست موارد دیگر',
+            'articles' => ':count مطلب',
+            'child_categories' => ':count زیردسته',
+            'navigation_links' => ':count پیوند در منو یا اسلاید',
+            'menu_children' => ':count زیرمجموعهٔ منو',
+            'attached_to_content' => ':count پیوست مطلب',
+            'attached_to_page' => ':count پیوست صفحه',
+            'attached_to_gallery' => ':count تصویر گالری (گالری همین‌قدر تصویر کمتر نشان می‌دهد)',
+            'attached_to_slide' => ':count پیوست اسلاید',
+            'attached_to_other' => ':count پیوست در موارد دیگر',
         ],
         'in_use' => 'این مورد جایی استفاده شده است: :usage. با حذف آن، آن‌ها این مورد را از دست می‌دهند.',
     ],
@@ -548,6 +565,18 @@ return [
         ],
     ],
 
+    /*
+    | Item 35 — someone else saved the record while this form was open.
+    */
+    'concurrency' => [
+        'title' => 'این مورد در این فاصله ویرایش شده است',
+        'body' => ':who آن را :when ذخیره کرده است. اگر الان ذخیره کنی، تغییرات او پاک می‌شود. صفحه را دوباره بارگذاری کن تا تغییرات را ببینی، یا اگر مطمئنی، روی آن ذخیره کن.',
+        'reload' => 'بارگذاری دوباره',
+        'overwrite' => 'ذخیره روی تغییرات او',
+        // No audit row explains the change: an unaudited record, a quiet save or a background job.
+        'background' => 'یک فرایند خودکار',
+    ],
+
     'audit' => [
         'title' => 'گزارش فعالیت‌ها',
         'intro' => 'هر عملیات نوشتن در پنل به‌طور خودکار و بدون امکان غیرفعال‌سازی ثبت می‌شود. این گزارش فقط خواندنی است.',
@@ -564,6 +593,20 @@ return [
         'after' => 'مقدار جدید',
         'no_changes' => 'تغییری ثبت نشده است.',
         'denials' => 'دسترسی‌های رد‌شده',
+
+        // Item 55 — the event filter and badge showed the raw event names in English. `restored`
+        // and `destroyed` are new with the trash (items 10/11); without labels they appeared in the
+        // log with no filter option to find them by.
+        'events' => [
+            'created' => 'ایجاد',
+            'updated' => 'ویرایش',
+            'deleted' => 'انتقال به سطل زباله',
+            'restored' => 'بازگردانی',
+            'destroyed' => 'حذف همیشگی',
+            'published' => 'انتشار',
+            'archived' => 'بایگانی',
+            'denied' => 'دسترسی ردشده',
+        ],
     ],
 
     'version' => [
@@ -574,6 +617,8 @@ return [
         'restored' => 'نسخهٔ :number بازگردانی شد.',
         'not_found' => 'نسخهٔ انتخابی پیدا نشد.',
         'keep_notice' => 'تنها :count نسخهٔ آخر نگه داشته می‌شود.',
+        // cms.versions.keep <= 0 means no pruning at all (HasContentVersions::pruneVersions).
+        'keep_all' => 'همهٔ نسخه‌ها نگه داشته می‌شوند.',
     ],
 
     'contact' => [

@@ -9,6 +9,7 @@ use App\Filament\Resources\Contents\ContentResource;
 use App\Models\Category;
 use App\Models\Content;
 use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\AttachAction;
@@ -213,10 +214,10 @@ class ContentsRelationManager extends RelationManager
                             }
 
                             $notification = Notification::make()
-                                ->title(__('cms.action.detach_selected_done', ['count' => $detached]));
+                                ->title(Plural::choice('cms.action.detach_selected_done', $detached));
 
                             $skipped > 0
-                                ? $notification->body(__('cms.category.primary_skipped', ['count' => $skipped]))->warning()
+                                ? $notification->body(Plural::choice('cms.category.primary_skipped', $skipped))->warning()
                                 : $notification->success();
 
                             $notification->send();

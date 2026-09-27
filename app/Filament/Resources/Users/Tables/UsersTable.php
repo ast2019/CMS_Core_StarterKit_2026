@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Users\Tables;
 use App\Enums\UserRole;
 use App\Models\User;
 use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -196,9 +197,7 @@ class UsersTable
                 }
 
                 $notification = Notification::make()
-                    ->title(__('cms.action.'.($active ? 'activate' : 'deactivate').'_selected_done', [
-                        'count' => $changed,
-                    ]));
+                    ->title(Plural::choice('cms.action.'.($active ? 'activate' : 'deactivate').'_selected_done', $changed));
 
                 $skipped > 0
                     ? $notification->body(__('cms.action.own_account_skipped'))->warning()

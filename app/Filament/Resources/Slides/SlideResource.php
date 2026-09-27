@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Slides;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Resources\Slides\Pages\CreateSlide;
 use App\Filament\Resources\Slides\Pages\EditSlide;
 use App\Filament\Resources\Slides\Pages\ListSlides;
@@ -15,6 +16,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class SlideResource extends Resource
 {
@@ -34,9 +36,9 @@ class SlideResource extends Resource
         return __('cms.resource.slides');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.appearance');
+        return PanelNavigationGroup::Appearance;
     }
 
     /**

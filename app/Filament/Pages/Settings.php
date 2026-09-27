@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\AiProvider;
 use App\Enums\OrganisationType;
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Schemas\MediaAssetPicker;
 use App\Filament\Schemas\TranslatableTabs;
 use App\Models\ContactSetting;
@@ -31,6 +32,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
+use UnitEnum;
 
 /**
  * Site settings, edited from the panel and stored in the database.
@@ -86,9 +88,9 @@ class Settings extends Page
         return __('cms.settings.title');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.system');
+        return PanelNavigationGroup::System;
     }
 
     public static function canAccess(): bool

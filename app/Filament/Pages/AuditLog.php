@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Enums\PanelNavigationGroup;
 use App\Support\Dates\LocalizedDate;
 use BackedEnum;
 use Carbon\CarbonInterface;
@@ -18,6 +19,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Activitylog\Models\Activity;
+use UnitEnum;
 
 /**
  * RULE #8 — the audit trail, made readable.
@@ -36,7 +38,7 @@ class AuditLog extends Page implements HasTable
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShieldCheck;
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 55;
 
     protected string $view = 'filament.pages.audit-log';
 
@@ -50,14 +52,47 @@ class AuditLog extends Page implements HasTable
         return __('cms.audit.title');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.system');
+        return PanelNavigationGroup::System;
     }
 
     public static function canAccess(): bool
     {
         return auth()->user()?->can('audit.view') ?? false;
+    }
+
+    /**
+     * Every event this log records, value => label (item 55).
+     *
+     * The filter used to list five events by their raw English names and knew nothing of `restored`
+     * or `destroyed` — events the trash introduced — so an auditor had no way to filter for "what was
+     * permanently deleted", the one question the trash makes worth asking.
+     *
+     * @return array<string, string>
+     */
+    public static function eventLabels(): array
+    {
+        $labels = [];
+
+        foreach (['created', 'updated', 'deleted', 'restored', 'destroyed', 'published', 'archived', 'denied'] as $event) {
+            $labels[$event] = __("cms.audit.events.{$event}");
+        }
+
+        return $labels;
+    }
+
+    /**
+     * The label for one event, falling back to the raw name for an event nothing here knows about —
+     * a package writing its own, say — so the column shows something true rather than nothing.
+     */
+    public static function eventLabel(?string $event): ?string
+    {
+        if ($event === null) {
+            return null;
+        }
+
+        return self::eventLabels()[$event] ?? $event;
     }
 
     public function table(Table $table): Table
@@ -85,13 +120,15 @@ class AuditLog extends Page implements HasTable
 
                 TextColumn::make('event')
                     ->label(__('cms.audit.event'))
+                    ->formatStateUsing(fn (?string $state): ?string => self::eventLabel($state))
                     ->badge()
                     ->color(fn (?string $state): string => match ($state) {
-                        'created' => 'success',
+                        'created', 'published', 'restored' => 'success',
                         'updated' => 'info',
-                        'deleted' => 'danger',
-                        'published' => 'success',
-                        'archived' => 'warning',
+                        // A trash is reversible; a destruction is not. Colouring them alike would
+                        // hide the one distinction an auditor reads this column for.
+                        'deleted', 'archived' => 'warning',
+                        'destroyed', 'denied' => 'danger',
                         default => 'gray',
                     }),
 
@@ -112,13 +149,7 @@ class AuditLog extends Page implements HasTable
             ->filters([
                 SelectFilter::make('event')
                     ->label(__('cms.audit.event'))
-                    ->options([
-                        'created' => 'created',
-                        'updated' => 'updated',
-                        'deleted' => 'deleted',
-                        'published' => 'published',
-                        'archived' => 'archived',
-                    ]),
+                    ->options(fn (): array => self::eventLabels()),
 
                 SelectFilter::make('subject_type')
                     ->label(__('cms.audit.subject'))

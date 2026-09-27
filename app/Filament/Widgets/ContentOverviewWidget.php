@@ -9,6 +9,7 @@ use App\Models\ContactSubmission;
 use App\Models\Content;
 use App\Models\SystemHeartbeat;
 use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use App\Support\ScheduledPublishing;
 use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\StatsOverviewWidget;
@@ -221,7 +222,7 @@ class ContentOverviewWidget extends StatsOverviewWidget
             // The already-missed message wins when both apply: one describes a publish that
             // will be late, the other a page that is absent right now.
             ->description($missed > 0
-                ? __('cms.dashboard.scheduler_missed', ['count' => LocalizedDate::number($missed)])
+                ? Plural::choice('cms.dashboard.scheduler_missed', $missed)
                 : __('cms.dashboard.scheduler_stopped'))
             ->descriptionIcon(Heroicon::OutlinedExclamationTriangle)
             ->icon(Heroicon::OutlinedClock)

@@ -29,9 +29,9 @@ return [
         'permanent' => 'Permanent (301)',
         'temporary' => 'Temporary (302)',
         'slug_changed_title' => 'This record’s URL changed',
-        'slug_changed_body' => 'The slug changed for :count locale(s). Create a 301 redirect to avoid 404s on the old URL.',
+        'slug_changed_body' => 'The slug changed for one locale. Create a 301 redirect to avoid 404s on the old URL.|The slug changed for :count locales. Create a 301 redirect to avoid 404s on the old URL.',
         'create_action' => 'Create 301 redirect',
-        'created' => 'Created :count redirect(s).',
+        'created' => 'Created one redirect.|Created :count redirects.',
     ],
 
     /*
@@ -174,6 +174,8 @@ return [
         'image_dimensions_help' => 'Required to prevent layout shift (CLS).',
         'read_at' => 'Read at',
         'spam_reason' => 'Spam reason',
+        'preview' => 'Preview',
+        'read_status' => 'Read status',
         'user_agent' => 'User agent',
         'message' => 'Message',
         'email' => 'Email',
@@ -202,7 +204,7 @@ return [
         // Raised for records whose time has ALREADY passed while cron was down: they are
         // live by the database's reckoning but the Delivery cache was never refreshed, so
         // they are probably not on the public site.
-        'scheduler_missed' => 'The scheduler is stopped and :count record(s) fell due — they are probably not on the site.',
+        'scheduler_missed' => 'The scheduler is stopped and one record fell due — it is probably not on the site.|The scheduler is stopped and :count records fell due — they are probably not on the site.',
         'unread_messages' => 'Unread messages',
         'inbox_clear' => 'All messages read',
 
@@ -230,7 +232,7 @@ return [
 
     'category' => [
         'cannot_detach_primary' => 'This is the article’s primary category, which decides its canonical URL and breadcrumb trail. Change the primary category on the article first, then detach it here.',
-        'primary_skipped' => ':count article(s) were kept because this is their primary category.',
+        'primary_skipped' => 'One article was kept because this is its primary category.|:count articles were kept because this is their primary category.',
     ],
     'table' => [
         'primary' => 'Primary',
@@ -254,33 +256,33 @@ return [
 
     'action' => [
         'detach_selected' => 'Detach selected from this category',
-        'detach_selected_done' => 'Detached :count article(s) from this category.',
+        'detach_selected_done' => 'Detached one article from this category.|Detached :count articles from this category.',
         'publish_selected' => 'Publish selected',
         'publish_selected_confirm' => 'The selected records will be published. Any without a publish date get the current time; an existing future date is left alone.',
-        'publish_selected_done' => 'Published :count record(s).',
+        'publish_selected_done' => 'Published one record.|Published :count records.',
         'unpublish_selected' => 'Unpublish selected',
         'unpublish_selected_confirm' => 'The selected records return to draft and leave the public site.',
-        'unpublish_selected_done' => 'Unpublished :count record(s).',
-        'bulk_skipped' => ':count record(s) were left unchanged because you may not edit them.',
+        'unpublish_selected_done' => 'Unpublished one record.|Unpublished :count records.',
+        'bulk_skipped' => 'One record was left unchanged because you may not edit it.|:count records were left unchanged because you may not edit them.',
         // Already in the requested status. Distinct from bulk_skipped: nothing was refused,
         // there was simply nothing to do — and reporting it as a refusal would send an
         // editor looking for a permission problem that does not exist.
-        'bulk_unchanged' => ':count record(s) were already in that status.',
+        'bulk_unchanged' => 'One record was already in that status.|:count records were already in that status.',
         'mark_read_selected' => 'Mark as read',
-        'mark_read_selected_done' => 'Marked :count message(s) as read.',
+        'mark_read_selected_done' => 'Marked one message as read.|Marked :count messages as read.',
         'mark_spam' => 'Move to spam',
         // Item 11 — the bulk delete reports a COUNT because it may have kept some of the
         // selection back; "deleted" with no number would hide that.
-        'delete_selected_done' => 'Moved :count record(s) to the trash.',
+        'delete_selected_done' => 'Moved one record to the trash.|Moved :count records to the trash.',
         'delete_selected_blocked' => 'Part of the selection was kept back',
         'mark_not_spam' => 'Not spam',
         'reset_two_factor' => 'Reset two-factor authentication',
         'reset_two_factor_confirm' => 'This clears the user’s authenticator secret and recovery codes; they will set two-factor up again at their next sign-in. This is what somebody who lost their phone needs.',
         'reset_two_factor_done' => 'Reset two-factor authentication for :name.',
         'activate_selected' => 'Activate selected users',
-        'activate_selected_done' => 'Activated :count user(s).',
+        'activate_selected_done' => 'Activated one user.|Activated :count users.',
         'deactivate_selected' => 'Deactivate selected users',
-        'deactivate_selected_done' => 'Deactivated :count user(s).',
+        'deactivate_selected_done' => 'Deactivated one user.|Deactivated :count users.',
         'own_account_skipped' => 'Your own account was left unchanged — deactivating yourself signs you out of this screen.',
         'edit' => 'Edit',
         'preview' => 'Preview',
@@ -361,6 +363,17 @@ return [
         'inline_upload_heading' => 'Upload an image to the media library',
         'inline_upload_description' => 'The image is added to the media library and selected here, without leaving this page.',
         'inline_upload_submit' => 'Upload and select',
+
+        // Item 55 — these were rendered as the raw English keys (`image`, `video`, `document`)
+        // in a panel that is otherwise Persian, Arabic or English throughout.
+        'type' => [
+            'image' => 'Image',
+            'video' => 'Video',
+            'document' => 'Document',
+        ],
+        'size' => 'Size',
+        'size_kb' => ':size KB',
+        'size_mb' => ':size MB',
     ],
 
     'seo' => [
@@ -459,25 +472,29 @@ return [
     */
     'usage' => [
         'blocked' => [
-            'media_featured' => 'This is the featured image of :count published record(s); deleting it would leave them with none. Set a different featured image on those records first.',
-            'category_primary' => 'This is the primary category of :count article(s) and decides their canonical URL and breadcrumb trail. Change the primary category on those articles first — check the Deleted filter on the article list too.',
+            'media_featured' => 'This is the featured image of one record (drafts and trashed ones count too); deleting it would leave it with none. Set a different featured image on that record first.|This is the featured image of :count records, drafts and trashed ones included; deleting it would leave them with none. Set a different featured image on those records first.',
+            'category_primary' => 'This is the primary category of one article and decides its canonical URL and breadcrumb trail. Change the primary category on that article first — check the Deleted filter on the article list too.|This is the primary category of :count articles and decides their canonical URL and breadcrumb trail. Change the primary category on those articles first — check the Deleted filter on the article list too.',
             // The site logo lives as an id inside a Setting document, not as an attachment row, so
             // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
             'media_logo' => 'This is the site logo; deleting it removes `logo` from the Organization structured data. Choose a different logo in Settings first.',
             // Refused only for PERMANENT deletion: something in the trash still needs this, so
             // destroying it would make that record come back wrong rather than not come back.
-            'restorable_dependents' => ':count record(s) in the trash still depend on this, so destroying it would make them come back incomplete. Restore or permanently delete those first.',
+            'restorable_dependents' => 'One record in the trash still depends on this, so destroying it would make that record come back incomplete. Restore or permanently delete it first.|:count records in the trash still depend on this, so destroying it would make them come back incomplete. Restore or permanently delete those first.',
         ],
+        /*
+         * Item 56 — each label carries its own number and its own plural: "1 article", not
+         * "1 article(s)". Two forms, singular|plural, chosen by trans_choice().
+         */
         'label' => [
-            'articles' => 'article(s)',
-            'child_categories' => 'child categor(ies)',
-            'navigation_links' => 'menu or slide link(s)',
-            'menu_children' => 'menu child item(s)',
-            'attached_to_content' => 'article attachment(s)',
-            'attached_to_page' => 'page attachment(s)',
-            'attached_to_gallery' => 'gallery attachment(s)',
-            'attached_to_slide' => 'slide attachment(s)',
-            'attached_to_other' => 'other attachment(s)',
+            'articles' => ':count article|:count articles',
+            'child_categories' => ':count child category|:count child categories',
+            'navigation_links' => ':count menu or slide link|:count menu or slide links',
+            'menu_children' => ':count menu child item|:count menu child items',
+            'attached_to_content' => ':count article attachment|:count article attachments',
+            'attached_to_page' => ':count page attachment|:count page attachments',
+            'attached_to_gallery' => ':count gallery item — the gallery will show one image fewer|:count gallery items — the gallery will show that many fewer images',
+            'attached_to_slide' => ':count slide attachment|:count slide attachments',
+            'attached_to_other' => ':count other attachment|:count other attachments',
         ],
         'in_use' => 'This record is in use: :usage. Deleting it takes it away from them.',
     ],
@@ -487,15 +504,15 @@ return [
     */
     'trash' => [
         'filter' => 'Deleted',
-        'cascade' => 'Deleting this also moves :count item(s) below it to the trash; restoring it brings them back.',
+        'cascade' => 'Deleting this also moves one item below it to the trash; restoring it brings that back.|Deleting this also moves :count items below it to the trash; restoring it brings them back.',
         'only_trashed' => 'Deleted only',
         'without_trashed' => 'Excluding deleted',
         'with_trashed' => 'All, including deleted',
-        'pruned' => 'Permanently removed :count record(s) that had been in the trash for more than :days day(s).',
+        'pruned' => 'Permanently removed one record that had been in the trash longer than the retention period (:days days).|Permanently removed :count records that had been in the trash longer than the retention period (:days days).',
         'nothing_pruned' => 'Nothing in the trash had reached the retention limit.',
-        'prune_blocked' => 'Kept :count record(s) that are still in use; they stay in the trash.',
+        'prune_blocked' => 'Kept one record that is still in use; it stays in the trash.|Kept :count records that are still in use; they stay in the trash.',
         // A different fact from `prune_blocked`: that was a decision, this was a surprise.
-        'prune_failed' => ':count record(s) could not be destroyed and stay in the trash; each error is listed above.',
+        'prune_failed' => 'One record could not be destroyed and stays in the trash; the error is listed above.|:count records could not be destroyed and stay in the trash; each error is listed above.',
     ],
 
     'system' => [
@@ -540,6 +557,18 @@ return [
         ],
     ],
 
+    /*
+    | Item 35 — someone else saved the record while this form was open.
+    */
+    'concurrency' => [
+        'title' => 'This record was changed while you were editing it',
+        'body' => ':who saved it :when. Saving now would erase their changes. Reload to see what changed, or save over it if you are sure.',
+        'reload' => 'Reload',
+        'overwrite' => 'Save over their changes',
+        // No audit row explains the change: an unaudited record, a quiet save or a background job.
+        'background' => 'A background process',
+    ],
+
     'audit' => [
         'title' => 'Audit log',
         'intro' => 'Every write action in the panel is recorded automatically, with no opt-out. This log is read-only.',
@@ -556,6 +585,20 @@ return [
         'after' => 'After',
         'no_changes' => 'No changes recorded.',
         'denials' => 'Denied attempts',
+
+        // Item 55 — the event filter and badge showed the raw event names in English. `restored`
+        // and `destroyed` are new with the trash (items 10/11); without labels they appeared in the
+        // log with no filter option to find them by.
+        'events' => [
+            'created' => 'Created',
+            'updated' => 'Updated',
+            'deleted' => 'Moved to trash',
+            'restored' => 'Restored',
+            'destroyed' => 'Permanently deleted',
+            'published' => 'Published',
+            'archived' => 'Archived',
+            'denied' => 'Access denied',
+        ],
     ],
 
     'version' => [
@@ -565,7 +608,9 @@ return [
         'restore_warning' => 'The current content will be replaced by the selected version. The current state is itself saved as a new version, so this is reversible.',
         'restored' => 'Restored version :number.',
         'not_found' => 'The selected version could not be found.',
-        'keep_notice' => 'Only the most recent :count versions are kept.',
+        'keep_notice' => 'Only the most recent version is kept.|Only the most recent :count versions are kept.',
+        // cms.versions.keep <= 0 means no pruning at all (HasContentVersions::pruneVersions).
+        'keep_all' => 'Every version is kept.',
     ],
 
     'contact' => [

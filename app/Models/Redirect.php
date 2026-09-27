@@ -107,10 +107,19 @@ class Redirect extends Model
 
     public function recordHit(): void
     {
-        // Avoids a model event and a full save on a redirect hit, which happens
-        // on a hot path.
-        static::query()->whereKey($this->getKey())->update([
-            'hits' => $this->hits + 1,
+        /*
+         * Avoids a model event and a full save on a redirect hit, which happens on a hot path.
+         *
+         * Through the BASE query builder, deliberately. The Eloquent builder's update() adds
+         * `updated_at` to every UPDATE, so each public hit used to rewrite the redirect's "last
+         * modified" time — making it mean "last visited" instead, and making the panel's
+         * concurrent-edit guard (item 35) see a change underneath the form on every request while
+         * anybody was following the link. A hit is a statistic, not an edit.
+         *
+         * increment() rather than `hits + 1` from the loaded model: two hits in flight would both
+         * read the same count and one of them would be lost. The database does the arithmetic.
+         */
+        static::query()->whereKey($this->getKey())->toBase()->increment('hits', 1, [
             'last_hit_at' => now(),
         ]);
     }

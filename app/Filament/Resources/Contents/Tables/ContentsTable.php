@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Contents\Tables;
 
 use App\Enums\ContentStatus;
 use App\Enums\TranslationStatus;
+use App\Filament\Tables\Columns\FeaturedImageColumn;
 use App\Filament\Tables\GuardedDeleteActions;
 use App\Filament\Tables\PublishingBulkActions;
 use App\Filament\Tables\TrashControls;
@@ -26,7 +27,11 @@ class ContentsTable
     public static function configure(Table $table): Table
     {
         return $table
+            // Item 50 — the thumbnail's relations, so fifty rows cost one query rather than a hundred.
+            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query))
             ->columns([
+                FeaturedImageColumn::make(),
+
                 TextColumn::make('title')
                     ->label(__('cms.field.title'))
                     ->getStateUsing(fn (Content $record): string => $record->getTranslation(
