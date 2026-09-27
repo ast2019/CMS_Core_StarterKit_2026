@@ -122,6 +122,46 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping(2);
 
         /*
+         * SYSTEM HEARTBEAT (item 18).
+         *
+         * The scheduler and the queue worker both fail SILENTLY. A stopped scheduler does
+         * not error — scheduled articles simply never appear, while the dashboard goes on
+         * promising "next publish: 8am" for a publish that will not happen. A stopped
+         * worker does not error either: translations, search indexing and webhooks queue up
+         * and nothing says so. Before this, neither was answerable from inside the panel.
+         *
+         * Every minute, matching cms:publish-due — a heartbeat coarser than the task it
+         * vouches for could report healthy through several missed publishes.
+         *
+         * Deliberately WITHOUT withoutOverlapping. The mutex is the right call for
+         * publish-due, whose run can be slow, but here it would be the bug: a stale lock
+         * left by a hard-killed run would suppress the heartbeat and the dashboard would
+         * report the scheduler dead while cron was faithfully running it. The task is two
+         * writes and cannot overlap meaningfully.
+         */
+        $schedule->command('cms:heartbeat')->everyMinute();
+
+        /*
+         * TRASH RETENTION (item 10).
+         *
+         * Soft deletes make "delete" reversible; without this they make it meaningless. Nothing
+         * would ever leave the trash, the tables would grow for ever and — for media assets —
+         * so would the disk, while an editor believed they had cleaned up.
+         *
+         * Daily, at 03:10. Off-peak because a run can force-delete media assets, and that means
+         * Media Library removing the original plus six conversions per asset from disk; and
+         * offset from the hour because that is where every other daily task on a shared host is.
+         *
+         * withoutOverlapping(30): a large first run on an install that has been accumulating a
+         * trash for a year could take a while, and a second run starting beside it would walk the
+         * same rows. The expiry is bounded deliberately — Laravel's 1440-minute default would
+         * silence the task for a whole day after a hard-killed run.
+         */
+        $schedule->command('cms:prune-trash')
+            ->dailyAt('03:10')
+            ->withoutOverlapping(30);
+
+        /*
          * QUEUE HYGIENE. Both tables grow without bound otherwise: job_batches on
          * every batch, failed_jobs on every failure. Neither is content, and losing
          * old rows costs nothing once the failures in them have been read.

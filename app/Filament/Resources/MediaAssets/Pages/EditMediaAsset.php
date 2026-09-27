@@ -6,8 +6,9 @@ namespace App\Filament\Resources\MediaAssets\Pages;
 
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Resources\MediaAssets\MediaAssetResource;
+use App\Filament\Tables\GuardedDeleteActions;
 use App\Models\MediaAsset;
-use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
 use Filament\Resources\Pages\EditRecord;
 
 class EditMediaAsset extends EditRecord
@@ -33,7 +34,14 @@ class EditMediaAsset extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            DeleteAction::make(),
+            /*
+             * Item 11 — the guarded delete, which refuses a delete that would silently degrade
+             * published output and names the consequence of one that would not. Item 10 adds the
+             * two actions that make the trash a trash rather than a one-way door.
+             */
+            GuardedDeleteActions::record(),
+            GuardedDeleteActions::forceDeleteRecord(),
+            RestoreAction::make(),
         ];
     }
 }

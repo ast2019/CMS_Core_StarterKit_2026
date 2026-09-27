@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Delivery\Concerns\ResolvesDeliveryRequest;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreContactSubmissionRequest;
 use App\Models\ContactSubmission;
+use App\Services\Contact\SpamInspector;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -19,7 +20,7 @@ class ContactController extends Controller
 {
     use ResolvesDeliveryRequest;
 
-    public function store(StoreContactSubmissionRequest $request): JsonResponse
+    public function store(StoreContactSubmissionRequest $request, SpamInspector $spam): JsonResponse
     {
         /*
          * Requirement 1.1. Gated alongside the read endpoint that serves the form's
@@ -40,6 +41,21 @@ class ContactController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => substr((string) $request->userAgent(), 0, 255),
         ]);
+
+        /*
+         * Item 16. Inspected AFTER the row exists, and the response is identical either
+         * way — the sender is never told which check they failed, because telling them is
+         * how the next attempt avoids it.
+         *
+         * Flagged rather than refused so a false positive is recoverable: the panel hides
+         * spam behind a filter instead of deleting it, and an editor who finds a real
+         * enquiry there can clear the flag. See config('cms.contact.spam').
+         */
+        $reason = $spam->reasonFor($request);
+
+        if ($reason !== null) {
+            $submission->flagAsSpam($reason);
+        }
 
         /*
          * The created record is deliberately NOT echoed back. Returning it would

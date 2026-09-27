@@ -227,12 +227,24 @@ it('registers the scheduled tasks the deployment guide tells operators to run', 
 
     $output = Artisan::output();
 
+    /*
+     * Whitespace collapsed before matching. `schedule:list` pads the cron column so every
+     * expression lines up, so the moment a task with a two-character field was registered
+     * (cms:prune-trash at `10 3 * * *`) the every-minute rows rendered as `*  * * * *` and an
+     * assertion on the literal string failed — for a formatting reason, about a task that had
+     * not changed. The interval is what this test is about; the column width is not.
+     */
+    $normalised = (string) preg_replace('/ +/', ' ', $output);
+
     expect($output)->toContain('cms:publish-due')
         ->and($output)->toContain('queue:prune-batches')
         ->and($output)->toContain('queue:prune-failed')
+        // Item 10 — nothing ever leaves the trash without this, so the tables and the media
+        // disk grow for ever while an editor believes they have cleaned up.
+        ->and($output)->toContain('cms:prune-trash')
         // Every minute, because the panel lets an editor pick a publish time to the
         // minute and an hourly tick would make that precision a lie.
-        ->and($output)->toContain('* * * * *');
+        ->and($normalised)->toContain('* * * * *');
 
     /*
      * And the audit log is NOT pruned, deliberately: RULE #8 makes it append-only with

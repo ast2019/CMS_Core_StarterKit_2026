@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Translatable\HasTranslations;
 
 /**
@@ -36,11 +37,39 @@ class Slide extends Model implements HasFeaturedMedia
     use HasTranslations;
     use InteractsWithLocales;
     use IsAuditable;
+    use SoftDeletes;
 
     /**
      * @var list<string>
      */
     public array $translatable = ['title', 'subtitle', 'cta_label'];
+
+    protected static function booted(): void
+    {
+        /*
+         * Item 11 + Requirement 3.5 — a restored slide comes back INACTIVE.
+         *
+         * The five-active cap is enforced on creation (SlidePolicy::create) and in validation,
+         * and a restore reached neither: deleting an active slide, activating a replacement,
+         * then restoring the original produced six active slides — six large hero images
+         * preloaded on the homepage, which is the performance problem the cap exists to
+         * prevent (Requirement 7.6).
+         *
+         * Forced inactive rather than refused. Refusing would leave the editor unable to
+         * recover the slide's title, subtitle and call-to-action in three languages without
+         * first deactivating something else, and the work is the part worth rescuing. Coming
+         * back as a draft is what an editor would expect from a trash anyway; activating it
+         * then goes through the cap like any other change.
+         *
+         * Unconditional rather than "only when the cap is full". A slide that returned active
+         * sometimes and inactive other times, depending on how many siblings happened to be
+         * on, would be a rule nobody could predict — and the homepage would change as a side
+         * effect of a restore rather than as a decision.
+         */
+        static::restoring(function (self $slide): void {
+            $slide->is_active = false;
+        });
+    }
 
     protected $fillable = [
         'title',

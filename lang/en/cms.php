@@ -104,6 +104,7 @@ return [
         'analytics' => 'Analytics and verification',
         'social_card' => 'Social share card (optional)',
         'social_card_help' => 'Left blank, the meta title and description are used for social networks.',
+        'diagnostics' => 'Diagnostics',
     ],
 
     'field' => [
@@ -172,6 +173,8 @@ return [
         'image_dimensions' => 'Image dimensions',
         'image_dimensions_help' => 'Required to prevent layout shift (CLS).',
         'read_at' => 'Read at',
+        'spam_reason' => 'Spam reason',
+        'user_agent' => 'User agent',
         'message' => 'Message',
         'email' => 'Email',
         'phone' => 'Phone',
@@ -194,6 +197,12 @@ return [
         'scheduled' => 'Scheduled',
         'next_publish' => 'Next: :date',
         'nothing_scheduled' => 'Nothing scheduled',
+        // Item 18 — replaces the promised publish date when cron is not running.
+        'scheduler_stopped' => 'The scheduler is stopped — these will not publish.',
+        // Raised for records whose time has ALREADY passed while cron was down: they are
+        // live by the database's reckoning but the Delivery cache was never refreshed, so
+        // they are probably not on the public site.
+        'scheduler_missed' => 'The scheduler is stopped and :count record(s) fell due — they are probably not on the site.',
         'unread_messages' => 'Unread messages',
         'inbox_clear' => 'All messages read',
 
@@ -211,6 +220,7 @@ return [
     /*
      * Date picker chrome. Month and weekday names come from ICU, not from here.
      */
+
     'date' => [
         'today' => 'Today',
         'clear' => 'Clear',
@@ -236,6 +246,10 @@ return [
         'unread' => 'Unread',
         'missing_alt_text' => 'Missing alternative text',
         'active' => 'Active',
+        'spam' => 'Spam',
+        'spam_all' => 'All messages',
+        'spam_only' => 'Spam only',
+        'spam_excluded' => 'Excluding spam',
     ],
 
     'action' => [
@@ -248,8 +262,18 @@ return [
         'unpublish_selected_confirm' => 'The selected records return to draft and leave the public site.',
         'unpublish_selected_done' => 'Unpublished :count record(s).',
         'bulk_skipped' => ':count record(s) were left unchanged because you may not edit them.',
+        // Already in the requested status. Distinct from bulk_skipped: nothing was refused,
+        // there was simply nothing to do — and reporting it as a refusal would send an
+        // editor looking for a permission problem that does not exist.
+        'bulk_unchanged' => ':count record(s) were already in that status.',
         'mark_read_selected' => 'Mark as read',
         'mark_read_selected_done' => 'Marked :count message(s) as read.',
+        'mark_spam' => 'Move to spam',
+        // Item 11 — the bulk delete reports a COUNT because it may have kept some of the
+        // selection back; "deleted" with no number would hide that.
+        'delete_selected_done' => 'Moved :count record(s) to the trash.',
+        'delete_selected_blocked' => 'Part of the selection was kept back',
+        'mark_not_spam' => 'Not spam',
         'reset_two_factor' => 'Reset two-factor authentication',
         'reset_two_factor_confirm' => 'This clears the user’s authenticator secret and recovery codes; they will set two-factor up again at their next sign-in. This is what somebody who lost their phone needs.',
         'reset_two_factor_done' => 'Reset two-factor authentication for :name.',
@@ -424,6 +448,56 @@ return [
         'menu_depth' => 'A menu may be at most :depth levels deep, and this would go deeper.',
     ],
 
+    /*
+    | Item 11 — what depends on a record, and why a delete was refused.
+    |
+    | Built by App\Services\Content\UsageInspector, which returns KEYS plus parameters rather
+    | than sentences, so the panel decides the presentation and the wording stays here.
+    |
+    | `blocked` messages all name what to change FIRST. "Cannot delete" on its own leaves an
+    | editor with no move except to give up or to go looking for a way around the rule.
+    */
+    'usage' => [
+        'blocked' => [
+            'media_featured' => 'This is the featured image of :count published record(s); deleting it would leave them with none. Set a different featured image on those records first.',
+            'category_primary' => 'This is the primary category of :count article(s) and decides their canonical URL and breadcrumb trail. Change the primary category on those articles first — check the Deleted filter on the article list too.',
+            // The site logo lives as an id inside a Setting document, not as an attachment row, so
+            // nothing else here can see it — and losing it drops `logo` from the Organization JSON-LD.
+            'media_logo' => 'This is the site logo; deleting it removes `logo` from the Organization structured data. Choose a different logo in Settings first.',
+            // Refused only for PERMANENT deletion: something in the trash still needs this, so
+            // destroying it would make that record come back wrong rather than not come back.
+            'restorable_dependents' => ':count record(s) in the trash still depend on this, so destroying it would make them come back incomplete. Restore or permanently delete those first.',
+        ],
+        'label' => [
+            'articles' => 'article(s)',
+            'child_categories' => 'child categor(ies)',
+            'navigation_links' => 'menu or slide link(s)',
+            'menu_children' => 'menu child item(s)',
+            'attached_to_content' => 'article attachment(s)',
+            'attached_to_page' => 'page attachment(s)',
+            'attached_to_gallery' => 'gallery attachment(s)',
+            'attached_to_slide' => 'slide attachment(s)',
+            'attached_to_other' => 'other attachment(s)',
+        ],
+        'in_use' => 'This record is in use: :usage. Deleting it takes it away from them.',
+    ],
+
+    /*
+    | Item 10 — the trash itself.
+    */
+    'trash' => [
+        'filter' => 'Deleted',
+        'cascade' => 'Deleting this also moves :count item(s) below it to the trash; restoring it brings them back.',
+        'only_trashed' => 'Deleted only',
+        'without_trashed' => 'Excluding deleted',
+        'with_trashed' => 'All, including deleted',
+        'pruned' => 'Permanently removed :count record(s) that had been in the trash for more than :days day(s).',
+        'nothing_pruned' => 'Nothing in the trash had reached the retention limit.',
+        'prune_blocked' => 'Kept :count record(s) that are still in use; they stay in the trash.',
+        // A different fact from `prune_blocked`: that was a decision, this was a surprise.
+        'prune_failed' => ':count record(s) could not be destroyed and stay in the trash; each error is listed above.',
+    ],
+
     'system' => [
         'version' => 'Version',
         'changelog' => 'Changelog',
@@ -431,6 +505,39 @@ return [
         'installed_at' => 'Installed at',
         'about' => 'About this system',
         'no_changelog' => 'No releases recorded yet.',
+
+        /*
+         * Item 18 — RUNTIME state, nested under `status` to keep it apart from the install
+         * facts above. Both are legitimately "system", and a flat merge would put
+         * `scheduler` next to `version` with nothing saying that one is a fact about this
+         * release and the other changes every minute.
+         *
+         * Every string names a consequence or a remedy rather than a status word, because
+         * "stopped" alone sends an administrator looking for a switch in the panel that does
+         * not and should not exist.
+         */
+        'status' => [
+            'scheduler' => 'Scheduler (cron)',
+            'queue' => 'Queue worker',
+            'cache_store' => 'Cache store',
+            'running' => 'Running',
+            'stopped' => 'Stopped',
+            'unknown' => 'Unknown',
+            'last_seen' => 'Last reported :ago',
+            'queue_lag' => 'Queue lag: :seconds second(s)',
+            'scheduler_stopped_help' => 'Laravel’s scheduler is not running, so scheduled publishing is not happening either. See the crontab in docs/deployment.md.',
+            'queue_stopped_help' => 'No worker is consuming the queue, so translations, search indexing and webhooks are piling up. Start the queue:work service.',
+            'queue_unknown_help' => 'Nothing is dispatched while the scheduler is stopped, so the queue cannot be measured. Fix cron first.',
+            'cache_tags_ok' => 'Tagging supported — cache invalidation is targeted.',
+            'cache_tags_missing' => 'This store has no tag support, so every publish flushes the whole cache, rate-limiter counters included. Use Redis in production.',
+            // The web process and the cron process disagree about which cache they use. Each
+            // writes where the other never reads, so an editor's publish clears a store the
+            // API does not consult and the site serves stale pages indefinitely.
+            'cache_store_mismatch' => 'Configuration mismatch: the scheduler uses the “:store” store and the web process uses another. Cache invalidation never reaches the site. Align the environment of both.',
+            'contact_protection' => 'Contact form protection',
+            'contact_no_submissions' => 'Nothing has been submitted yet, so the honeypot cannot be confirmed working.',
+            'contact_honeypot_missing' => 'Recent submissions arrive without the honeypot field, so the frontend is not sending it and this defence is off. Align the field name with the frontend.',
+        ],
     ],
 
     'audit' => [
@@ -463,6 +570,15 @@ return [
 
     'contact' => [
         'received' => 'Your message has been received. Thank you for getting in touch.',
+
+        // Why a submission was flagged (item 16). `manual` is set by an editor, the rest
+        // by App\Services\Contact\SpamInspector.
+        'spam_reason' => [
+            'honeypot' => 'Hidden field was filled',
+            'too_fast' => 'Submitted instantly',
+            'missing_timing' => 'No form timing value',
+            'manual' => 'Flagged by an editor',
+        ],
     ],
 
     'user' => [

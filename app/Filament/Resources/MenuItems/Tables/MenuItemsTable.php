@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\MenuItems\Tables;
 
+use App\Filament\Tables\GuardedDeleteActions;
+use App\Filament\Tables\TrashControls;
 use App\Models\MenuItem;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -90,10 +91,25 @@ class MenuItemsTable
                     // The list lives on the model: it was already written out here
                     // and in the form, and this was about to be a third copy.
                     ->options(fn (): array => array_combine(MenuItem::menuKeys(), MenuItem::menuKeys())),
+
+                /*
+                 * Item 10 — without this the trash is unreachable: a deleted record leaves the
+                 * only list that links to its edit page, so the restore action there has no route
+                 * to it. Defaults to excluding deleted rows, which is what this table already did
+                 * implicitly.
+                 */
+                TrashControls::filter(),
             ])
-            ->recordActions([EditAction::make()])
+            ->recordActions([
+                EditAction::make(),
+                GuardedDeleteActions::record(),
+                ...TrashControls::recordActions(),
+            ])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    GuardedDeleteActions::bulk(),
+                    ...TrashControls::bulkActions(),
+                ]),
             ])
             /*
              * Grouping by menu is OFFERED but not the default, deliberately.

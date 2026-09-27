@@ -45,6 +45,24 @@ class ContactSubmissionPolicy
     }
 
     /**
+     * Move a submission into or out of the spam list (item 16).
+     *
+     * One method for both directions, because it is one judgement — "this is / is not
+     * worth reading" — and two methods with identical bodies would only invite them to
+     * drift apart.
+     *
+     * Gated on `contact.view` rather than on deletion: triage moves a row between two
+     * lists and is reversible either way, so it is part of reading the inbox. Requiring
+     * admin rights would mean the people who actually read the messages could not tidy
+     * them, and would leave a mis-flagged enquiry sitting in the spam list until an
+     * administrator happened to look.
+     */
+    public function triageSpam(User $user, Model $submission): bool
+    {
+        return $user->role->hasAbility('contact.view');
+    }
+
+    /**
      * Deletion is admin-only: submissions may contain personal data subject to a
      * retention policy, and that decision should not sit with every editor.
      */

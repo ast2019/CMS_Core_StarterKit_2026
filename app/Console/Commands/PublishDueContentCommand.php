@@ -6,12 +6,9 @@ namespace App\Console\Commands;
 
 use App\Enums\ContentStatus;
 use App\Jobs\NotifyFrontendOfChange;
-use App\Models\Content;
-use App\Models\Gallery;
-use App\Models\Page;
 use App\Services\Api\DeliveryCache;
+use App\Support\ScheduledPublishing;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * Let a scheduled record actually appear when its time comes.
@@ -61,18 +58,6 @@ class PublishDueContentCommand extends Command
 
     protected $description = 'Refresh Delivery caches for content whose scheduled publish time has just passed';
 
-    /**
-     * The publishable, cacheable models. Slide is absent deliberately: it has no
-     * publish_date, and MenuItem and the taxonomies are not scheduled either.
-     *
-     * @var list<class-string<Model>>
-     */
-    private const SCHEDULABLE = [
-        Content::class,
-        Page::class,
-        Gallery::class,
-    ];
-
     public function handle(DeliveryCache $cache): int
     {
         $lookback = $this->lookbackSeconds();
@@ -82,7 +67,13 @@ class PublishDueContentCommand extends Command
 
         $due = 0;
 
-        foreach (self::SCHEDULABLE as $model) {
+        /*
+         * The list moved to App\Support\ScheduledPublishing when the dashboard needed to
+         * warn about a stopped scheduler and counted Content only — so an editor whose
+         * pending work was a Page or a Gallery was told nothing was scheduled while the
+         * command that publishes them was not running. One list, read by both.
+         */
+        foreach (ScheduledPublishing::models() as $model) {
             $records = $model::query()
                 ->where('status', ContentStatus::Published)
                 /*

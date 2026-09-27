@@ -11,6 +11,7 @@ use App\Filament\Widgets\RecentActivityWidget;
 use App\Filament\Widgets\TranslationProgressWidget;
 use App\Models\ContactSubmission;
 use App\Models\Content;
+use App\Models\SystemHeartbeat;
 use App\Models\TranslationState;
 use App\Models\User;
 use App\Support\Dates\LocalizedDate;
@@ -64,6 +65,14 @@ it('counts live, unfinished and scheduled content separately', function (): void
 
     Content::factory()->count(2)->create(['status' => ContentStatus::Draft]);
     Content::factory()->create(['status' => ContentStatus::Review]);
+
+    /*
+     * Item 18 — the scheduled card only NAMES a publish date when the scheduler is proving
+     * it is alive. Without this stamp it correctly reports that cron is stopped and the
+     * queued records will not publish, which is a different assertion (see
+     * SystemStatusWidgetTest) and would make this test fail for the right reason.
+     */
+    SystemHeartbeat::record(SystemHeartbeat::SCHEDULER);
 
     Livewire::test(ContentOverviewWidget::class)
         ->assertOk()

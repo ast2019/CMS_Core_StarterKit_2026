@@ -30,6 +30,16 @@ trait HasTranslationStatus
         static::saved(function (self $model): void {
             $model->syncTranslationStatuses();
         });
+
+        /*
+         * Same reasoning as the version snapshots: `translation_states` is polymorphic with no
+         * foreign key, so a permanent delete used to leave its rows behind keyed to nothing. They
+         * survive a soft delete deliberately — a restored record must come back with its review
+         * state intact rather than looking untranslated.
+         */
+        static::forceDeleted(function (self $model): void {
+            $model->translationStates()->delete();
+        });
     }
 
     /**

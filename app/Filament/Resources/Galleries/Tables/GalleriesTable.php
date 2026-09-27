@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Galleries\Tables;
 
 use App\Enums\ContentStatus;
+use App\Filament\Tables\GuardedDeleteActions;
 use App\Filament\Tables\PublishingBulkActions;
+use App\Filament\Tables\TrashControls;
 use App\Models\Gallery;
 use App\Support\Dates\LocalizedDate;
 use Carbon\CarbonInterface;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -51,14 +52,27 @@ class GalleriesTable
                     ->options(fn (): array => collect(ContentStatus::cases())
                         ->mapWithKeys(fn (ContentStatus $s): array => [$s->value => $s->label()])
                         ->all()),
+
+                /*
+                 * Item 10 — without this the trash is unreachable: a deleted record leaves the
+                 * only list that links to its edit page, so the restore action there has no route
+                 * to it. Defaults to excluding deleted rows, which is what this table already did
+                 * implicitly.
+                 */
+                TrashControls::filter(),
             ])
-            ->recordActions([EditAction::make()])
+            ->recordActions([
+                EditAction::make(),
+                GuardedDeleteActions::record(),
+                ...TrashControls::recordActions(),
+            ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     // Item 23 — the content.publish ability and the policy methods
                     // already existed with nothing in the panel wired to them.
                     ...PublishingBulkActions::make(),
-                    DeleteBulkAction::make(),
+                    GuardedDeleteActions::bulk(),
+                    ...TrashControls::bulkActions(),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');

@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Spatie\Translatable\HasTranslations;
 
@@ -34,6 +36,7 @@ use Spatie\Translatable\HasTranslations;
  *    the read path caps traversal regardless).
  *
  * @property-read Collection<int, self> $children
+ * @property Carbon|null $deleted_at
  */
 class MenuItem extends Model
 {
@@ -48,6 +51,13 @@ class MenuItem extends Model
     use HasTranslations;
     use InteractsWithLocales;
     use IsAuditable;
+
+    /*
+     * Item 11. The subtree is carried down and back up explicitly — see booted(). The
+     * `cascadeOnDelete` on `parent_id` does not fire on a soft delete, and an orphaned branch
+     * disappears from the menu endpoint without an error.
+     */
+    use SoftDeletes;
 
     /**
      * Deepest nesting the tree may reach, counting the top level as 1.
@@ -109,6 +119,197 @@ class MenuItem extends Model
         static::saving(function (self $item): void {
             $item->guardMenuLocation();
         });
+
+        /*
+         * Item 11 — carry the subtree down, because the database will not.
+         *
+         * `menu_items.parent_id` is declared cascadeOnDelete, and that constraint does not
+         * fire on a soft delete: a soft delete is an UPDATE. So trashing a parent used to
+         * leave its children in place with a `parent_id` pointing at a row the default scope
+         * hides — which means `topLevel()` excludes them (they still have a parent) and the
+         * parent's `children` is unreachable (the parent is hidden). The entire branch
+         * disappears from GET /api/v1/menus/{key} with no error anywhere, which is exactly
+         * the failure this class's docblock describes for cycles.
+         *
+         * Only on a soft delete. A force delete lets the real cascade do its job, and doing
+         * both would soft-delete the children and then hard-delete them a moment later.
+         */
+        /*
+         * In `deleted`, not `deleting`, and that is a correctness fix rather than a tidy-up.
+         *
+         * Stamping the children in `deleting` meant reading the clock a second time: the parent is
+         * stamped a moment later by runSoftDelete() from its own freshTimestamp(), and `deleted_at`
+         * is stored to the second. Cross a second boundary between the two writes and the children
+         * carry T while the parent carries T+1 — at which point restoreDescendants(), which pairs
+         * them on an exact match, finds nothing and the restore cascade silently does nothing. The
+         * same failure, with the same silence, as the getOriginal() bug this code already replaced,
+         * and invisible to every test because travel() freezes the clock.
+         *
+         * `deleted` fires after performDeleteOnModel() has run runSoftDelete(), so `$this->deleted_at`
+         * is the value actually in the row and can simply be copied. One clock read, no race.
+         *
+         * (Not `trashed`: SoftDeletes has no such MODEL EVENT — `trashed()` is an instance method
+         * returning a bool, so registering a listener for it fails at boot with "cannot be called
+         * statically". The soft-delete events are restoring/restored/forceDeleting/forceDeleted.)
+         */
+        static::deleted(function (self $item): void {
+            if ($item->isForceDeleting()) {
+                return;
+            }
+
+            $item->trashDescendants();
+        });
+
+        /*
+         * And bring it back up. Without this, restoring a parent returns an item whose
+         * children are still in the trash — so the menu comes back visibly shorter than it
+         * was and an editor has to find and restore each child by hand, in the right order.
+         */
+        /*
+         * The timestamp has to be read BEFORE the restore, not after.
+         *
+         * Eloquent's restore() nulls `deleted_at`, saves, and only then fires `restored` — and
+         * the save has already called syncOriginal(), so by the time the `restored` handler runs
+         * both the attribute and getOriginal('deleted_at') are null. Reading it there found
+         * nothing and the cascade silently did nothing at all: the parent came back and its
+         * children stayed in the trash, which is the failure this pair of hooks exists to
+         * prevent. Caught by the test that asserts a whole branch returns.
+         */
+        static::restoring(function (self $item): void {
+            $item->deletedAtBeforeRestore = $item->deleted_at?->toDateTimeString();
+
+            /*
+             * Bring the ANCESTORS back first, or the restore produces a live item nobody can see.
+             *
+             * A child restored on its own keeps a `parent_id` pointing at a row the default scope
+             * hides: topLevel() excludes it (it has a parent) and the parent's `children` is
+             * unreachable (the parent is trashed), so the item vanishes from
+             * GET /api/v1/menus/{key} — failure #3 again, arriving from the restore direction
+             * instead of the delete direction. RestoreAction is visible on any trashed row, so this
+             * was one click away in the trash view.
+             *
+             * It also closes the sharper edge behind it: `menu_items.parent_id` IS a real
+             * cascadeOnDelete, so once a live child sat under a trashed parent, permanently deleting
+             * that parent — by hand, or by cms:prune-trash thirty days later — hard-deleted the live
+             * child's row.
+             *
+             * Restoring an ancestor is not a decision being made for the editor: an item cannot
+             * exist in a menu without its parents, so "restore this item" can only mean "restore the
+             * path to it".
+             */
+            $item->restoreAncestors();
+        });
+
+        static::restored(function (self $item): void {
+            $item->restoreDescendants();
+        });
+    }
+
+    /**
+     * The `deleted_at` this item carried a moment before it was restored.
+     *
+     * Transient, and deliberately not an attribute: it is bookkeeping for one operation, not a
+     * column, and putting it in $attributes would make every restored item look dirty and
+     * invite Eloquent to try to persist it. Same reasoning as Slide::$preloadDecision.
+     */
+    private ?string $deletedAtBeforeRestore = null;
+
+    /**
+     * Soft-delete every item below this one.
+     *
+     * Marked with the SAME `deleted_at` instant as the parent, which is what makes the
+     * restore side possible: restoreDescendants() can then identify precisely the items that
+     * went down with this parent, rather than sweeping up children an editor had deleted
+     * separately and deliberately earlier.
+     */
+    protected function trashDescendants(): void
+    {
+        $keys = array_values(array_diff($this->descendantKeys(), [(int) $this->getKey()]));
+
+        if ($keys === []) {
+            return;
+        }
+
+        /*
+         * A single UPDATE rather than iterating and calling delete(). The alternative would
+         * re-enter this same `deleting` hook once per node and walk the tree again from each
+         * one — quadratic on a branch, and it would stamp a different timestamp per level,
+         * breaking the restore pairing above.
+         *
+         * The trade is that no per-child audit row is written. That is the right call: the
+         * audited action is "the editor deleted this menu item", and one row per node would
+         * describe a decision nobody made about each child.
+         */
+        static::query()->whereKey($keys)->update(['deleted_at' => $this->deleted_at]);
+    }
+
+    /**
+     * Restore every trashed item on the path from this one up to the top level.
+     *
+     * Walked with withTrashed(), because the whole problem is that the scoped `parent` relation
+     * cannot see a trashed parent. Bounded by WALK_LIMIT like every other walk in this class, so a
+     * tree corrupted into a cycle breaks the loop rather than hanging the request.
+     *
+     * Each ancestor is restored through restore(), so its own hooks run — which means a partially
+     * trashed path is repaired from the top down and the `restored` cascade below does not then
+     * fight it: an ancestor that is already live is skipped, and one that is not is restored with
+     * the branch it took down.
+     */
+    protected function restoreAncestors(): void
+    {
+        $parentId = $this->parent_id;
+        $seen = [(int) $this->getKey() => true];
+
+        for ($step = 0; $step < self::WALK_LIMIT && $parentId !== null; $step++) {
+            if (isset($seen[(int) $parentId])) {
+                break;
+            }
+
+            $seen[(int) $parentId] = true;
+
+            $parent = static::withTrashed()->find($parentId);
+
+            if ($parent === null) {
+                break;
+            }
+
+            if ($parent->trashed()) {
+                $parent->restore();
+
+                // restore() on the ancestor walks the rest of the path itself, so continuing here
+                // would repeat the work for every level.
+                return;
+            }
+
+            $parentId = $parent->parent_id;
+        }
+    }
+
+    /**
+     * Restore the items that were trashed together with this one.
+     *
+     * Matched on the shared `deleted_at` instant rather than on `parent_id` alone, so a child
+     * the editor had deleted on its own last week stays deleted. Restoring it too would be a
+     * decision the editor never made, and it would silently put an item back into live
+     * navigation.
+     */
+    protected function restoreDescendants(): void
+    {
+        $deletedAt = $this->deletedAtBeforeRestore;
+        $this->deletedAtBeforeRestore = null;
+
+        if ($deletedAt === null) {
+            return;
+        }
+
+        static::withTrashed()
+            ->where('parent_id', $this->getKey())
+            ->where('deleted_at', $deletedAt)
+            ->get()
+            // Through restore() per item, not one UPDATE: each child may have a subtree of
+            // its own, and recursing through the `restored` event is what brings a
+            // three-level branch back whole.
+            ->each(fn (self $child) => $child->restore());
     }
 
     /**

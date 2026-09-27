@@ -37,6 +37,28 @@ use Illuminate\Support\Collection;
  */
 trait HasFeaturedImage
 {
+    public static function bootHasFeaturedImage(): void
+    {
+        /*
+         * Release the attachment rows when the owner is destroyed for good.
+         *
+         * `media_attachments` is polymorphic, so `morphs('attachable')` gives it an index and NO
+         * foreign key — nothing at the database level can cascade. Before this hook, force-deleting
+         * an article left its attachment rows behind for ever, and the consequence was not merely
+         * untidy: MediaAsset's featured-image guard counts straight off this pivot, so an orphaned
+         * row made the asset permanently undeletable by any path, while the refusal told the editor
+         * to change the featured image on records that no longer existed. A dead end with no exit
+         * through the product.
+         *
+         * `forceDeleted` only. A soft delete must leave the rows exactly where they are — that is
+         * what makes a restore whole, and what lets the guard know a trashed article still needs
+         * its image.
+         */
+        static::forceDeleted(function (self $model): void {
+            $model->mediaAssets()->detach();
+        });
+    }
+
     /**
      * Every media asset attached to this model, in any role.
      *

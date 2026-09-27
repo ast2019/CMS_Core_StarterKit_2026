@@ -513,6 +513,90 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Contact form
+    |--------------------------------------------------------------------------
+    |
+    | Item 16 — spam defences for the one public write this API accepts.
+    |
+    | Deliberately NOT reCAPTCHA or any hosted alternative. A CAPTCHA would make the
+    | contact form depend on a third party being reachable, which for the Iranian
+    | deployments this kit targets is a real availability problem rather than a
+    | theoretical one, and it would put a script from that third party on a frontend
+    | this repository does not control. Both checks below are local and cost nothing.
+    |
+    | What they are honestly worth: they stop automated submissions, not a determined
+    | human. A bot that renders the page fills the honeypot; a bot that POSTs straight
+    | at the endpoint sends no timing value. Neither signal is AUTHENTICATED — a client
+    | could forge both — so they raise the cost of bulk abuse and nothing more. The rate
+    | limiter (`throttle:cms-contact`) remains the actual ceiling.
+    |
+    | A submission failing either check is stored and flagged, never rejected. See the
+    | migration that adds `is_spam` for why.
+    |
+    | Requirement 3.1.
+    |
+    */
+
+    'contact' => [
+        'spam' => [
+            /*
+             * Name of the decoy input the frontend renders and a human never fills.
+             *
+             * Configurable because a fixed name is a fixed target: once a name ships in
+             * an open-source kit, it is in every scraper's skip-list. A deployment that
+             * starts seeing spam through changes this and its frontend together.
+             *
+             * The default avoids the names browsers and password managers autofill
+             * (`website`, `url`, `company`) — autofill does not care that the field is
+             * visually hidden, and a filled honeypot on a real visitor's submission is
+             * the one false positive this design cannot detect. See docs/deployment.md
+             * for the markup that keeps assistive technology and autofill away from it.
+             */
+            'honeypot_field' => env('CMS_CONTACT_HONEYPOT_FIELD', 'cms_reference'),
+
+            /*
+             * Name of the field carrying when the form was presented, as a Unix
+             * timestamp in SECONDS (the frontend writes it from JavaScript when the form
+             * mounts).
+             *
+             * Seconds rather than milliseconds because the value is compared against a
+             * threshold measured in seconds, and a frontend sending Date.now() unscaled
+             * is a mistake that would otherwise read as a timestamp in the year 57000 —
+             * i.e. "in the future", which is a case that has to be handled anyway.
+             */
+            'timing_field' => env('CMS_CONTACT_TIMING_FIELD', 'form_presented_at'),
+
+            /*
+             * Seconds a human needs, at minimum, between the form appearing and being
+             * submitted. Anything faster was not typed.
+             *
+             * Three is low on purpose. The message field requires ten characters, so a
+             * genuine submission is already several seconds of typing; the threshold only
+             * has to catch a submission that took no time at all. Raising it towards the
+             * time a real message takes would start rejecting people who prepared their
+             * text elsewhere and pasted it.
+             */
+            'min_fill_seconds' => (int) env('CMS_CONTACT_MIN_FILL_SECONDS', 3),
+
+            /*
+             * Whether a submission with NO timing value at all is flagged.
+             *
+             * Default off, and this is the important default in this section. The
+             * frontend is a separate deployment written by the client (steering:
+             * "not part of this repo"), so turning this on in the Core would flag every
+             * enquiry from every existing frontend the moment it upgraded — the whole
+             * inbox into the spam list, with the reason recorded but nobody looking.
+             *
+             * Switch it on once the frontend demonstrably sends the field. Until then the
+             * check still fires for a submission that DOES carry a timing value and
+             * submits impossibly fast, which is the strictly-better-than-nothing half.
+             */
+            'require_timing' => (bool) env('CMS_CONTACT_REQUIRE_TIMING', false),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Sitemaps
     |--------------------------------------------------------------------------
     |
@@ -726,6 +810,65 @@ return [
 
     'scheduling' => [
         'publish_lookback' => (int) env('CMS_PUBLISH_LOOKBACK', 90),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | System status
+    |--------------------------------------------------------------------------
+    |
+    | Item 18 — how long the dashboard waits before reporting a subsystem stopped.
+    |
+    | `cms:heartbeat` stamps the scheduler and the queue worker every minute (see
+    | bootstrap/app.php), and App\Filament\Widgets\SystemStatusWidget reads those stamps.
+    |
+    | The tolerance is several missed ticks rather than one, because a single tick can be
+    | missed for reasons that are not a fault — a deploy, a slow host, a container restart —
+    | and a monitor that goes red for that is a monitor people learn to ignore. Five minutes
+    | against a one-minute schedule means five consecutive failures before anything is
+    | claimed, which is long enough to be believed and short enough to matter.
+    |
+    | Lower it for a deployment that genuinely needs to know within a minute; raise it for
+    | one where restarts are frequent. The model enforces a 60-second floor, so a mis-set
+    | value cannot make every reading "stopped".
+    |
+    */
+
+    'system' => [
+        'heartbeat' => [
+            'stale_after' => (int) env('CMS_HEARTBEAT_STALE_AFTER', 300),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Trash retention
+    |--------------------------------------------------------------------------
+    |
+    | Item 10 — how long a deleted record stays recoverable before `cms:prune-trash`
+    | destroys it permanently.
+    |
+    | A trash with no retention is not a trash, it is a hidden archive: the tables grow for
+    | ever and — for media assets — so does the disk, while an editor believes they have
+    | cleaned up. A trash that empties immediately is not one either.
+    |
+    | Thirty days is chosen against how the mistake is actually discovered. Deleting the wrong
+    | record is noticed either at once or when somebody follows a link that used to work, and
+    | that second case is weeks rather than months. Past a month, a "restore" would put
+    | content back into a site that has moved on.
+    |
+    | The command floors this at one day, because a zero would destroy a record in the same
+    | run that deleted it — which is what somebody sets while testing and forgets to change
+    | back.
+    |
+    | Note what it does NOT govern: the audit log, which RULE #8 makes append-only with no
+    | retention policy at all. The rows recording that a record WAS destroyed outlive the
+    | record, by design.
+    |
+    */
+
+    'trash' => [
+        'keep_days' => (int) env('CMS_TRASH_KEEP_DAYS', 30),
     ],
 
     /*

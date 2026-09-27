@@ -7,7 +7,9 @@ namespace App\Filament\Widgets;
 use App\Enums\ContentStatus;
 use App\Models\ContactSubmission;
 use App\Models\Content;
+use App\Models\SystemHeartbeat;
 use App\Support\Dates\LocalizedDate;
+use App\Support\ScheduledPublishing;
 use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -127,6 +129,24 @@ class ContentOverviewWidget extends StatsOverviewWidget
         $count = Content::query()->scheduled()->count();
 
         /*
+         * Item 18 — the card stops promising a publish time the system cannot keep.
+         *
+         * Scheduled publishing depends on cms:publish-due running every minute, and when the
+         * scheduler is stopped this card was the most misleading thing on the dashboard: it
+         * named a date, in the editor's own calendar, for a publish that would not happen.
+         *
+         * Checked FIRST, before the next-publish date is looked up, because that lookup is a
+         * second query whose answer this branch throws away.
+         */
+        if (! SystemHeartbeat::isAlive(SystemHeartbeat::SCHEDULER)) {
+            $warning = $this->schedulerStoppedStat($count);
+
+            if ($warning !== null) {
+                return $warning;
+            }
+        }
+
+        /*
          * The record itself rather than min('publish_date'), so the value arrives
          * through the model's datetime cast instead of as whatever string the
          * driver happens to return. Both queries are served by the
@@ -149,9 +169,70 @@ class ContentOverviewWidget extends StatsOverviewWidget
             ->color($next === null ? 'gray' : 'info');
     }
 
+    /**
+     * The scheduled card, rewritten as a warning, or null when this editor has no stake in
+     * the scheduler being down.
+     *
+     * TWO conditions raise it, and the second one is the one that matters:
+     *
+     *  - something is still WAITING (`pendingCount`). These will miss their time.
+     *  - something already FELL DUE while the scheduler was stopped (`dueSince`). These
+     *    have already missed it, and the Delivery cache was never invalidated, so they are
+     *    probably not on the site.
+     *
+     * Without the second condition the warning was inverted: `scheduled()` means
+     * "publish_date still in the future", so a record LEAVES that set at the exact instant
+     * its embargo elapses — the instant the failure happens. The card warned while nothing
+     * was wrong and reverted to "nothing scheduled" once something was, which is worse than
+     * silence because it reassures.
+     *
+     * Both counts span Content, Page and Gallery (ScheduledPublishing), not Content alone:
+     * cms:publish-due schedules all three, so an editor whose pending work is a Page had no
+     * warning at all.
+     *
+     * Null when neither applies. An empty schedule with a stopped scheduler is an
+     * administrator's problem, reported on SystemStatusWidget; raising it on an editor's
+     * dashboard is a warning with no action attached.
+     */
+    protected function schedulerStoppedStat(int $contentScheduled): ?Stat
+    {
+        /*
+         * Measured from the scheduler's last heartbeat: records that fell due BEFORE it
+         * stopped were handled, so counting them would inflate the figure with completed
+         * work. With no heartbeat at all — a fresh install where cron was never wired up —
+         * the staleness window bounds the claim instead of reaching back over an entire
+         * imported archive.
+         */
+        $missed = ScheduledPublishing::dueSince(
+            SystemHeartbeat::lastSeen(SystemHeartbeat::SCHEDULER)
+                ?? now()->subSeconds(SystemHeartbeat::staleAfterSeconds()),
+        );
+
+        $pending = ScheduledPublishing::pendingCount();
+
+        if ($pending === 0 && $missed === 0) {
+            return null;
+        }
+
+        return Stat::make(
+            __('cms.dashboard.scheduled'),
+            LocalizedDate::number($contentScheduled),
+        )
+            // The already-missed message wins when both apply: one describes a publish that
+            // will be late, the other a page that is absent right now.
+            ->description($missed > 0
+                ? __('cms.dashboard.scheduler_missed', ['count' => LocalizedDate::number($missed)])
+                : __('cms.dashboard.scheduler_stopped'))
+            ->descriptionIcon(Heroicon::OutlinedExclamationTriangle)
+            ->icon(Heroicon::OutlinedClock)
+            ->color('danger');
+    }
+
     protected function inboxStat(): Stat
     {
-        $unread = ContactSubmission::query()->unread()->count();
+        // notSpam() first: a flagged submission is unread and stays unread, so counting it
+        // would give the editor a number they cannot get to zero by reading the inbox.
+        $unread = ContactSubmission::query()->notSpam()->unread()->count();
 
         return Stat::make(__('cms.dashboard.unread_messages'), LocalizedDate::number($unread))
             ->description($unread === 0 ? __('cms.dashboard.inbox_clear') : null)

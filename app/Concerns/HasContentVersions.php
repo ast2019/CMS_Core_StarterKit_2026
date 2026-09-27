@@ -28,6 +28,18 @@ trait HasContentVersions
         static::updated(function (self $model): void {
             $model->recordVersion();
         });
+
+        /*
+         * Snapshots die with the record they snapshot — but only on a PERMANENT delete.
+         *
+         * `content_versions` is a morphs() table with no foreign key, so nothing cascades. A
+         * trashed record keeps its versions, which is the point: restoring it restores its history.
+         * Destroying it used to leave the snapshots keyed to an id that no longer resolves, in a
+         * table whose growth is exactly what cms:prune-trash exists to bound.
+         */
+        static::forceDeleted(function (self $model): void {
+            $model->versions()->delete();
+        });
     }
 
     /**

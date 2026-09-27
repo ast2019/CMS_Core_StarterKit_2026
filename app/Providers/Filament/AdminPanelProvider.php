@@ -8,6 +8,7 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\ContentOverviewWidget;
 use App\Filament\Widgets\PublishingActivityWidget;
 use App\Filament\Widgets\RecentActivityWidget;
+use App\Filament\Widgets\SystemStatusWidget;
 use App\Filament\Widgets\TranslationProgressWidget;
 use App\Filament\Widgets\VersionWidget;
 use App\Http\Middleware\PreventPanelIndexing;
@@ -163,6 +164,11 @@ class AdminPanelProvider extends PanelProvider
                 PublishingActivityWidget::class,
                 TranslationProgressWidget::class,
                 RecentActivityWidget::class,
+
+                // Item 18 — whether cron and the queue worker are actually running. Last
+                // before the version card because it is admin-only (canView) and because
+                // an editor reads the dashboard for their own work, not for infrastructure.
+                SystemStatusWidget::class,
 
                 // RULE #2 — the version is shown in the panel, to every role: it is the
                 // first thing anyone needs when reporting a problem.

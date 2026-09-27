@@ -179,7 +179,22 @@ class Content extends Model implements HasFeaturedMedia, HasSeoMetadata, Publish
             return;
         }
 
-        if (! $this->categories()->whereKey($this->primary_category_id)->exists()) {
+        /*
+         * Item 11 — the membership probe looks through the TRASH.
+         *
+         * `$this->categories()` applies Category's global scope, so once categories became
+         * soft-deletable this check answered "no, it is not a member" for an article filed
+         * under a trashed category — while the pivot row was still sitting there. attach()
+         * then hit the composite primary key and threw a raw QueryException, surfacing to an
+         * editor as a database error on save with nothing in it to act on.
+         *
+         * withTrashed() makes the probe ask what it actually means: is there a pivot row.
+         * Deleting a primary category is refused outright (UsageInspector::blockedReason), so
+         * this path is reached only for a NON-primary trashed membership — where leaving the
+         * existing row alone is correct, because restoring the category should restore the
+         * filing exactly as it was.
+         */
+        if (! $this->categories()->withTrashed()->whereKey($this->primary_category_id)->exists()) {
             $this->categories()->attach($this->primary_category_id);
         }
 
