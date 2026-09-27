@@ -107,6 +107,7 @@ return [
     ],
 
     'field' => [
+        'two_factor' => 'Two-factor',
         'title' => 'Title',
         'name' => 'Name',
         'slug' => 'Slug',
@@ -217,7 +218,12 @@ return [
         'next_month' => 'Next month',
     ],
 
+    'category' => [
+        'cannot_detach_primary' => 'This is the article’s primary category, which decides its canonical URL and breadcrumb trail. Change the primary category on the article first, then detach it here.',
+        'primary_skipped' => ':count article(s) were kept because this is their primary category.',
+    ],
     'table' => [
+        'primary' => 'Primary',
         'scheduled' => 'Scheduled',
         'unread' => 'Unread',
         'items' => 'items',
@@ -233,6 +239,26 @@ return [
     ],
 
     'action' => [
+        'detach_selected' => 'Detach selected from this category',
+        'detach_selected_done' => 'Detached :count article(s) from this category.',
+        'publish_selected' => 'Publish selected',
+        'publish_selected_confirm' => 'The selected records will be published. Any without a publish date get the current time; an existing future date is left alone.',
+        'publish_selected_done' => 'Published :count record(s).',
+        'unpublish_selected' => 'Unpublish selected',
+        'unpublish_selected_confirm' => 'The selected records return to draft and leave the public site.',
+        'unpublish_selected_done' => 'Unpublished :count record(s).',
+        'bulk_skipped' => ':count record(s) were left unchanged because you may not edit them.',
+        'mark_read_selected' => 'Mark as read',
+        'mark_read_selected_done' => 'Marked :count message(s) as read.',
+        'reset_two_factor' => 'Reset two-factor authentication',
+        'reset_two_factor_confirm' => 'This clears the user’s authenticator secret and recovery codes; they will set two-factor up again at their next sign-in. This is what somebody who lost their phone needs.',
+        'reset_two_factor_done' => 'Reset two-factor authentication for :name.',
+        'activate_selected' => 'Activate selected users',
+        'activate_selected_done' => 'Activated :count user(s).',
+        'deactivate_selected' => 'Deactivate selected users',
+        'deactivate_selected_done' => 'Deactivated :count user(s).',
+        'own_account_skipped' => 'Your own account was left unchanged — deactivating yourself signs you out of this screen.',
+        'edit' => 'Edit',
         'preview' => 'Preview',
         'publish' => 'Publish',
         'archive' => 'Archive',

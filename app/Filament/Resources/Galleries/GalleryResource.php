@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Galleries;
 
+use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Galleries\Pages\CreateGallery;
 use App\Filament\Resources\Galleries\Pages\EditGallery;
 use App\Filament\Resources\Galleries\Pages\ListGalleries;
@@ -18,11 +19,22 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class GalleryResource extends Resource
 {
+    use SearchesTranslatedRecords;
+
     protected static ?string $model = Gallery::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPhoto;
 
     protected static ?int $navigationSort = 12;
+
+    /**
+     * Where this resource sits in the global-search results.
+     *
+     * The PROPERTY, not a getGlobalSearchResultSort() method — that name is not a
+     * Filament hook, so an earlier version of this was six unreachable methods and the
+     * results came back in resource-registration order.
+     */
+    protected static ?int $globalSearchSort = 25;
 
     public static function getModelLabel(): string
     {
@@ -67,6 +79,20 @@ class GalleryResource extends Resource
         return [
             //
         ];
+    }
+
+    /**
+     * Item 21 — findable from the panel's global search.
+     *
+     * The search box found nothing at all before this: no resource declared any
+     * searchable attribute, so it rendered and returned empty for every query. The
+     * translated-column handling lives in SearchesTranslatedRecords.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['title'];
     }
 
     public static function getPages(): array

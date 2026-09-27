@@ -30,6 +30,14 @@ class MediaAssetsTable
                     ->label(__('cms.field.alt_text'))
                     ->getStateUsing(fn (MediaAsset $record): string => $record->altTextFor(app()->getLocale()))
                     ->placeholder(__('cms.table.no_alt_text'))
+                    /*
+                     * Item 22 — the library had NO searchable column, so finding one
+                     * image among thousands meant paging. Alt text is the right thing to
+                     * search: Requirement 2.7 makes it mandatory, so every asset has one,
+                     * and it describes the picture in the editor's own words.
+                     */
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query
+                        ->whereJsonContainsLocale('alt_text', app()->getLocale(), "%{$search}%", 'like'))
                     ->wrap()
                     ->limit(70),
 

@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * Requirement 3.1.
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
  * visitor traffic and bury the administrative actions RULE #8 exists to record.
  * Reading and deleting a submission by an admin IS audited, via the policy and
  * the panel action.
+ *
+ * @property Carbon|null $read_at
  */
 class ContactSubmission extends Model
 {
@@ -46,10 +49,27 @@ class ContactSubmission extends Model
         $query->whereNull('read_at');
     }
 
+    /**
+     * Mark this submission as read.
+     *
+     * Direct assignment then save(), NOT update(['read_at' => …]).
+     *
+     * This was a silent no-op: `read_at` is deliberately absent from $fillable — it is
+     * not something a public form submission may set — and update() applies
+     * mass-assignment rules, so Eloquent discarded the attribute and returned true. Both
+     * callers looked like they worked: the panel's "mark as read" action and the
+     * auto-mark on opening a submission reported success and changed nothing, so the
+     * unread count never went down and no test noticed because none existed.
+     *
+     * Assigning the attribute bypasses the fillable list without widening it, which is
+     * the right shape here: the column is written by the application, never by a
+     * submitter.
+     */
     public function markRead(): void
     {
         if ($this->read_at === null) {
-            $this->update(['read_at' => now()]);
+            $this->read_at = now();
+            $this->save();
         }
     }
 

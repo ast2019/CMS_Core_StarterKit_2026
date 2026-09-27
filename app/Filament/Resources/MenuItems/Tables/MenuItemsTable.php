@@ -11,6 +11,7 @@ use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -28,7 +29,38 @@ class MenuItemsTable
             ->columns([
                 TextColumn::make('label')
                     ->label(__('cms.field.name'))
-                    ->getStateUsing(fn (MenuItem $record): string => $record->getTranslation('label', app()->getLocale()))
+                    /*
+                     * Item 31 — the hierarchy, shown as one.
+                     *
+                     * The list was flat and a child's only clue to its place was its
+                     * parent's name repeated underneath, so reading the shape of a menu
+                     * meant reconstructing it from a column of names. A child is now
+                     * indented under its parent, which is the whole point of a menu
+                     * screen: you are arranging a tree, so you should be looking at one.
+                     *
+                     * An em-space rather than CSS padding because the panel is RTL and
+                     * LTR depending on locale, and a character indents correctly in both
+                     * without a direction-aware stylesheet.
+                     */
+                    ->getStateUsing(function (MenuItem $record): string {
+                        $label = $record->getTranslation('label', app()->getLocale());
+
+                        // level() is 1 for a root item, so the indent starts at zero.
+                        $depth = max(0, $record->level() - 1);
+
+                        return $depth === 0
+                            ? $label
+                            // An ideographic space rather than CSS padding: the panel is
+                            // RTL or LTR depending on locale, and a character indents
+                            // correctly in both without a direction-aware stylesheet.
+                            : str_repeat('　', $depth).'└ '.$label;
+                    })
+                    /*
+                     * The parent's name stays as the description alongside the indent.
+                     * Rows are ordered by `position`, which does not guarantee a child
+                     * renders directly under its parent, so the indent alone can point at
+                     * nothing — naming the parent is what makes a detached row readable.
+                     */
                     ->description(fn (MenuItem $record): ?string => $record->parent?->getTranslation('label', app()->getLocale())),
 
                 TextColumn::make('menu_key')
@@ -62,6 +94,26 @@ class MenuItemsTable
             ->recordActions([EditAction::make()])
             ->toolbarActions([
                 BulkActionGroup::make([DeleteBulkAction::make()]),
+            ])
+            /*
+             * Grouping by menu is OFFERED but not the default, deliberately.
+             *
+             * A site has a header, a footer and a sidebar interleaved in one list, so
+             * grouping them reads much better — but Filament's reorder assigns positions
+             * 1..N across every VISIBLE row, group boundaries included. Making it the
+             * default therefore produced a trap: the rows looked like per-menu lists, and
+             * one drag inside `header` silently renumbered a `footer` item. Relative order
+             * inside each menu survived, so nothing broke on the site; the numbers an
+             * editor saw simply drifted for menus they never touched.
+             *
+             * So: group when you want to read the shape, filter by menu_key when you want
+             * to reorder one. Nesting by drag would need a tree component this kit has no
+             * dependency for — see the item 31 note in the PR.
+             */
+            ->groups([
+                Group::make('menu_key')
+                    ->label(__('cms.field.menu_key'))
+                    ->collapsible(),
             ])
             ->reorderable('position')
             ->defaultSort('position');

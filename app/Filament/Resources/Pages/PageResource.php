@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Pages;
 
+use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Pages\Pages\CreatePage;
 use App\Filament\Resources\Pages\Pages\EditPage;
 use App\Filament\Resources\Pages\Pages\ListPages;
@@ -14,15 +15,27 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class PageResource extends Resource
 {
+    use SearchesTranslatedRecords;
+
     protected static ?string $model = Page::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
 
     protected static ?int $navigationSort = 11;
+
+    /**
+     * Where this resource sits in the global-search results.
+     *
+     * The PROPERTY, not a getGlobalSearchResultSort() method — that name is not a
+     * Filament hook, so an earlier version of this was six unreachable methods and the
+     * results came back in resource-registration order.
+     */
+    protected static ?int $globalSearchSort = 20;
 
     public static function getModelLabel(): string
     {
@@ -66,6 +79,31 @@ class PageResource extends Resource
     {
         return [
             //
+        ];
+    }
+
+    /**
+     * Item 21 — findable from the panel's global search.
+     *
+     * The search box found nothing at all before this: no resource declared any
+     * searchable attribute, so it rendered and returned empty for every query. The
+     * translated-column handling lives in SearchesTranslatedRecords.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['title'];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Page $record */
+        return [
+            __('cms.field.status') => $record->status->label(),
         ];
     }
 

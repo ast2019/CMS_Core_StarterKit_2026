@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Galleries\Tables;
 
 use App\Enums\ContentStatus;
+use App\Filament\Tables\PublishingBulkActions;
 use App\Models\Gallery;
 use App\Support\Dates\LocalizedDate;
 use Carbon\CarbonInterface;
@@ -53,7 +54,12 @@ class GalleriesTable
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    // Item 23 — the content.publish ability and the policy methods
+                    // already existed with nothing in the panel wired to them.
+                    ...PublishingBulkActions::make(),
+                    DeleteBulkAction::make(),
+                ]),
             ])
             ->defaultSort('created_at', 'desc');
     }

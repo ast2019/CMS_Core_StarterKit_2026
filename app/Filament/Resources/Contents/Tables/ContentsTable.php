@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Contents\Tables;
 
 use App\Enums\ContentStatus;
 use App\Enums\TranslationStatus;
+use App\Filament\Tables\PublishingBulkActions;
 use App\Models\Content;
 use App\Models\TranslationState;
 use App\Support\Dates\LocalizedDate;
@@ -124,6 +125,9 @@ class ContentsTable
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
+                    // Item 23 — the content.publish ability and ContentPolicy::publish()
+                    // already existed with nothing in the panel wired to them.
+                    ...PublishingBulkActions::make(),
                     DeleteBulkAction::make(),
                 ]),
             ])

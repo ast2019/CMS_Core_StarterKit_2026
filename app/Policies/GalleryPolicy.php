@@ -27,4 +27,19 @@ class GalleryPolicy
     {
         return $user->role->hasAbility('content.publish');
     }
+
+    /**
+     * The other half of publish(), and it was missing.
+     *
+     * Laravel resolves an absent policy method to a DENIAL, so every non-admin was
+     * refused — silently, because Gate::before still let an admin through. The panel's
+     * bulk unpublish reported "0 changed, N skipped" to an Editor who could publish the
+     * very same records, and each refusal wrote an authorisation-denial row into the
+     * audit trail. Taking something down is the same decision as putting it up, so it
+     * answers to the same ability.
+     */
+    public function unpublish(User $user, Gallery $gallery): bool
+    {
+        return $user->role->hasAbility('content.publish');
+    }
 }
