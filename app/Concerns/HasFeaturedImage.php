@@ -85,6 +85,25 @@ trait HasFeaturedImage
         return $this->assetInRole(MediaRole::Featured);
     }
 
+    /**
+     * The featured image as a RELATION of its own, for eager loading in a list.
+     *
+     * Separate from `mediaAssets` on purpose. The obvious move — eager-load `mediaAssets`
+     * constrained to the featured role — would poison assetInRole(): that method trusts
+     * `relationLoaded('mediaAssets')` to mean "every attachment is here", so a constrained load
+     * would make a gallery's items, an OG image and every other role silently resolve to nothing
+     * for the rest of the request. A distinct relation name cannot be mistaken for the full set.
+     *
+     * Constrained to one role because the unconstrained load is the expensive one: a gallery list
+     * would otherwise pull every item of every gallery on the page to show one thumbnail each.
+     *
+     * @return MorphToMany<MediaAsset, $this>
+     */
+    public function featuredImageAssets(): MorphToMany
+    {
+        return $this->mediaAssetsInRole(MediaRole::Featured);
+    }
+
     public function hasFeaturedImage(): bool
     {
         return $this->assetInRole(MediaRole::Featured) !== null;

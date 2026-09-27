@@ -7,6 +7,8 @@ namespace App\Models;
 use App\Concerns\InteractsWithLocales;
 use App\Concerns\IsAuditable;
 use App\Services\Content\UsageInspector;
+use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -156,7 +158,7 @@ class MediaAsset extends Model implements HasMedia
         }
 
         throw ValidationException::withMessages([
-            'media' => __($blocked['key'], $blocked['parameters']),
+            'media' => Plural::trans($blocked['key'], $blocked['parameters']),
         ]);
     }
 
@@ -210,6 +212,43 @@ class MediaAsset extends Model implements HasMedia
                 ->fit(Fit::Max, $width, $width * 4)
                 ->format('webp');
         }
+    }
+
+    /**
+     * The asset types, value => label in the active locale (item 55).
+     *
+     * One list for the form, the table badge and the filter. The three used to spell the types out
+     * separately — two of them as the raw English keys — so the panel showed `image` in a Persian
+     * interface, and a fourth type added to one place would have been missing from the other two.
+     *
+     * @return array<string, string>
+     */
+    public static function typeOptions(): array
+    {
+        return [
+            'image' => __('cms.media.type.image'),
+            'video' => __('cms.media.type.video'),
+            'document' => __('cms.media.type.document'),
+        ];
+    }
+
+    /**
+     * The stored size in the reader's own units and digits — «۳٫۲ مگابایت», not "3277".
+     *
+     * Null when the size was never recorded (the backfill command exists for exactly those rows), so
+     * the table shows its placeholder rather than a confident "0".
+     */
+    public function humanSize(): ?string
+    {
+        if ($this->size === null) {
+            return null;
+        }
+
+        $kb = $this->size / 1024;
+
+        return $kb >= 1024
+            ? __('cms.media.size_mb', ['size' => LocalizedDate::number(round($kb / 1024, 1))])
+            : __('cms.media.size_kb', ['size' => LocalizedDate::number((int) round($kb))]);
     }
 
     public function isImage(): bool

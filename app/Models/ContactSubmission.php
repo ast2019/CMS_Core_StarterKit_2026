@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Requirement 3.1.
@@ -25,6 +26,14 @@ use Illuminate\Support\Carbon;
 class ContactSubmission extends Model
 {
     use HasFactory;
+
+    /**
+     * Where the panel caches the unread count for the inbox's navigation badge.
+     *
+     * On the model rather than on the Filament resource, because the model is what clears it and a
+     * model depending on a panel class would invert the layering: the API writes submissions too.
+     */
+    public const UNREAD_COUNT_CACHE_KEY = 'cms:contact:unread-count';
 
     /**
      * `is_spam` and `spam_reason` are absent on purpose.
@@ -51,6 +60,25 @@ class ContactSubmission extends Model
             'read_at' => 'datetime',
             'is_spam' => 'boolean',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        /*
+         * Keep the inbox's navigation badge exact (item 58).
+         *
+         * The badge is cached because it renders on every panel page for every user; these hooks are
+         * what make that cache correct rather than approximately right. Every change that can move
+         * the unread count goes through them — a new submission, marking read, a spam flag either
+         * way, a delete — so the next page an editor opens shows the real number.
+         *
+         * Forgotten rather than recomputed: the count is only worth computing when somebody is about
+         * to look at it, and a burst of submissions should not run it once per row.
+         */
+        $forget = static fn () => Cache::forget(self::UNREAD_COUNT_CACHE_KEY);
+
+        static::saved($forget);
+        static::deleted($forget);
     }
 
     /**

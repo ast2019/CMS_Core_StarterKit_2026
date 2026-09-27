@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\MediaAssets;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\MediaAssets\Pages\CreateMediaAsset;
 use App\Filament\Resources\MediaAssets\Pages\EditMediaAsset;
@@ -16,6 +17,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class MediaAssetResource extends Resource
 {
@@ -23,7 +25,7 @@ class MediaAssetResource extends Resource
 
     protected static ?string $model = MediaAsset::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedFolder;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPhoto;
 
     protected static ?int $navigationSort = 25;
 
@@ -46,9 +48,9 @@ class MediaAssetResource extends Resource
         return __('cms.resource.media_assets');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.media');
+        return PanelNavigationGroup::Media;
     }
 
     /**

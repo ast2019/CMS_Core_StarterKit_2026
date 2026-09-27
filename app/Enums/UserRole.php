@@ -46,7 +46,7 @@ enum UserRole: string
      * a trash. It was missing while MediaAssetPolicy already inherited a restore() method
      * from AuthorizesCmsAbilities that checked for it — so the ability no role could hold made
      * the restore action permanently invisible, which is precisely the silently-unreachable
-     * feature the architecture test below guards against.
+     * feature tests/Architecture/SoftDeletesAreCoherentTest.php guards against.
      *
      * Given to Admin and Editor, and NOT to Author. An Author holds `media.upload` but not
      * `media.delete`, so they cannot put an asset in the trash; being able to take a

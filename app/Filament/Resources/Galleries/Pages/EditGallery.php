@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Galleries\Pages;
 
+use App\Filament\Concerns\GuardsAgainstConcurrentEdits;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesFeaturedImage;
 use App\Filament\Concerns\ManagesGalleryItems;
@@ -16,6 +17,10 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditGallery extends EditRecord
 {
+    /*
+     * Item 35 — refuse to silently overwrite someone else's save made while this form was open.
+     */
+    use GuardsAgainstConcurrentEdits;
     use InteractsWithTranslatableRecord;
     use ManagesFeaturedImage;
     use ManagesGalleryItems;

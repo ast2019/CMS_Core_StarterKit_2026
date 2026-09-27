@@ -38,6 +38,9 @@
             </tbody>
         </table>
 
-        <p class="mt-4 text-sm">{{ __('cms.version.keep_notice', ['count' => config('cms.versions.keep')]) }}</p>
+        <p class="mt-4 text-sm">{{-- keep <= 0 disables pruning entirely, which is a different sentence from any count. --}}
+        {{ (int) config('cms.versions.keep') > 0
+            ? \App\Support\Plural::choice('cms.version.keep_notice', (int) config('cms.versions.keep'))
+            : __('cms.version.keep_all') }}</p>
     @endif
 </div>

@@ -6,6 +6,7 @@ namespace App\Filament\Tables;
 
 use App\Contracts\Publishable;
 use App\Enums\ContentStatus;
+use App\Support\Plural;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection;
@@ -161,18 +162,18 @@ class PublishingBulkActions
     private static function report(string $doneKey, int $changed, int $refused, int $unchanged): void
     {
         $notification = Notification::make()
-            ->title(__($doneKey, ['count' => $changed]));
+            ->title(Plural::choice($doneKey, $changed));
 
         $notes = [];
 
         if ($refused > 0) {
             // Named rather than swallowed: believing forty records changed when thirty
             // did is worse than the refusal itself.
-            $notes[] = __('cms.action.bulk_skipped', ['count' => $refused]);
+            $notes[] = Plural::choice('cms.action.bulk_skipped', $refused);
         }
 
         if ($unchanged > 0) {
-            $notes[] = __('cms.action.bulk_unchanged', ['count' => $unchanged]);
+            $notes[] = Plural::choice('cms.action.bulk_unchanged', $unchanged);
         }
 
         $notes === []

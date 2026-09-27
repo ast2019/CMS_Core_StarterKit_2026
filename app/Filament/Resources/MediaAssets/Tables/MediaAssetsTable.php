@@ -23,7 +23,7 @@ class MediaAssetsTable
         return $table
             ->columns([
                 SpatieMediaLibraryImageColumn::make('preview')
-                    ->label('')
+                    ->label(__('cms.field.preview'))
                     ->collection('file')
                     ->conversion('thumb'),
 
@@ -44,13 +44,20 @@ class MediaAssetsTable
 
                 TextColumn::make('type')
                     ->label(__('cms.field.type'))
-                    ->badge(),
+                    ->formatStateUsing(fn (?string $state): ?string => $state === null
+                        ? null
+                        : (MediaAsset::typeOptions()[$state] ?? $state))
+                    ->badge()
+                    ->color(fn (?string $state): string => match ($state) {
+                        'image' => 'success',
+                        'video' => 'info',
+                        default => 'gray',
+                    }),
 
                 TextColumn::make('size')
-                    ->label('KB')
-                    ->getStateUsing(fn (MediaAsset $record): ?string => $record->size === null
-                        ? null
-                        : number_format($record->size / 1024, 0))
+                    ->label(__('cms.media.size'))
+                    ->getStateUsing(fn (MediaAsset $record): ?string => $record->humanSize())
+                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('uploader.name')
@@ -60,11 +67,7 @@ class MediaAssetsTable
             ->filters([
                 SelectFilter::make('type')
                     ->label(__('cms.field.type'))
-                    ->options([
-                        'image' => 'image',
-                        'video' => 'video',
-                        'document' => 'document',
-                    ]),
+                    ->options(fn (): array => MediaAsset::typeOptions()),
 
                 Filter::make('missing_alt_text')
                     ->label(__('cms.filter.missing_alt_text'))

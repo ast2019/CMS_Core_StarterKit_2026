@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Contents\Pages;
 
+use App\Filament\Concerns\GuardsAgainstConcurrentEdits;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesContentVersions;
 use App\Filament\Concerns\ManagesFeaturedImage;
@@ -19,6 +20,10 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditContent extends EditRecord
 {
+    /*
+     * Item 35 — refuse to silently overwrite someone else's save made while this form was open.
+     */
+    use GuardsAgainstConcurrentEdits;
     use InteractsWithTranslatableRecord;
     use ManagesContentVersions;
     use ManagesFeaturedImage;

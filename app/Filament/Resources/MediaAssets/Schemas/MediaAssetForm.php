@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\MediaAssets\Schemas;
 
 use App\Filament\Schemas\TranslatableTabs;
+use App\Models\MediaAsset;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\Textarea;
@@ -22,11 +23,7 @@ class MediaAssetForm
                 ->schema([
                     Select::make('type')
                         ->label(__('cms.field.type'))
-                        ->options([
-                            'image' => __('cms.field.type').': image',
-                            'video' => __('cms.field.type').': video',
-                            'document' => __('cms.field.type').': document',
-                        ])
+                        ->options(fn (): array => MediaAsset::typeOptions())
                         ->default('image')
                         ->required()
                         ->live(),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Slides\Tables;
 
+use App\Filament\Tables\Columns\FeaturedImageColumn;
 use App\Filament\Tables\GuardedDeleteActions;
 use App\Filament\Tables\TrashControls;
 use App\Models\Slide;
@@ -22,8 +23,10 @@ class SlidesTable
         return $table
             // The link column resolves the morph, so without this the list costs an
             // extra query per slide.
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('linkable'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['linkable', ...FeaturedImageColumn::eagerLoad()]))
             ->columns([
+                FeaturedImageColumn::make(),
+
                 TextColumn::make('position')
                     ->label('#')
                     ->sortable(),

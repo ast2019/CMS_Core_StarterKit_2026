@@ -6,6 +6,7 @@ namespace App\Filament\Resources\ContactSubmissions\Tables;
 
 use App\Models\ContactSubmission;
 use App\Support\Dates\LocalizedDate;
+use App\Support\Plural;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -28,7 +29,7 @@ class ContactSubmissionsTable
         return $table
             ->columns([
                 IconColumn::make('read_at')
-                    ->label('')
+                    ->label(__('cms.field.read_status'))
                     ->boolean()
                     ->trueIcon('heroicon-o-envelope-open')
                     ->falseIcon('heroicon-s-envelope')
@@ -168,7 +169,7 @@ class ContactSubmissionsTable
                             }
 
                             Notification::make()
-                                ->title(__('cms.action.mark_read_selected_done', ['count' => $marked]))
+                                ->title(Plural::choice('cms.action.mark_read_selected_done', $marked))
                                 ->success()
                                 ->send();
                         })
@@ -177,6 +178,14 @@ class ContactSubmissionsTable
                     DeleteBulkAction::make(),
                 ]),
             ])
+            /*
+             * Opted out of the panel-wide filter persistence (item 48). The inbox's spam filter
+             * DEFAULTS to hiding spam, and that default is the feature: a persisted "spam only"
+             * choice outlived the visit and overrode it, so an editor arriving from the unread badge
+             * could see a list of spam while the badge counted real messages. The inbox opens as the
+             * inbox every time; sort and search still persist.
+             */
+            ->persistFiltersInSession(false)
             ->defaultSort('created_at', 'desc');
     }
 }

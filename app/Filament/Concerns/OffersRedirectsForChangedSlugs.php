@@ -7,6 +7,7 @@ namespace App\Filament\Concerns;
 use App\Contracts\HasSeoMetadata;
 use App\Services\Content\RedirectSuggestionService;
 use App\Services\Seo\UrlBuilder;
+use App\Support\Plural;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
@@ -78,7 +79,7 @@ trait OffersRedirectsForChangedSlugs
 
         Notification::make()
             ->title(__('cms.redirect.slug_changed_title'))
-            ->body(__('cms.redirect.slug_changed_body', ['count' => count($changes)]))
+            ->body(Plural::choice('cms.redirect.slug_changed_body', count($changes)))
             ->warning()
             ->persistent()
             ->actions([
@@ -89,7 +90,7 @@ trait OffersRedirectsForChangedSlugs
                         $created = app(RedirectSuggestionService::class)->create($record, $changes);
 
                         Notification::make()
-                            ->title(__('cms.redirect.created', ['count' => $created]))
+                            ->title(Plural::choice('cms.redirect.created', $created))
                             ->success()
                             ->send();
                     }),

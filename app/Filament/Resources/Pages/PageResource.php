@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Pages;
 
+use App\Enums\PanelNavigationGroup;
 use App\Filament\Concerns\SearchesTranslatedRecords;
 use App\Filament\Resources\Pages\Pages\CreatePage;
 use App\Filament\Resources\Pages\Pages\EditPage;
@@ -17,6 +18,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use UnitEnum;
 
 class PageResource extends Resource
 {
@@ -47,9 +49,9 @@ class PageResource extends Resource
         return __('cms.resource.pages');
     }
 
-    public static function getNavigationGroup(): ?string
+    public static function getNavigationGroup(): string|UnitEnum|null
     {
-        return __('cms.nav.content');
+        return PanelNavigationGroup::Content;
     }
 
     /**

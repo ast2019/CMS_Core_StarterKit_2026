@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Galleries\Tables;
 
 use App\Enums\ContentStatus;
+use App\Filament\Tables\Columns\FeaturedImageColumn;
 use App\Filament\Tables\GuardedDeleteActions;
 use App\Filament\Tables\PublishingBulkActions;
 use App\Filament\Tables\TrashControls;
@@ -23,7 +24,11 @@ class GalleriesTable
     public static function configure(Table $table): Table
     {
         return $table
+            // Item 50 — the thumbnail's relations, so fifty rows cost one query rather than a hundred.
+            ->modifyQueryUsing(fn (Builder $query): Builder => FeaturedImageColumn::withEagerLoad($query))
             ->columns([
+                FeaturedImageColumn::make(),
+
                 TextColumn::make('title')
                     ->label(__('cms.field.title'))
                     ->getStateUsing(fn (Gallery $record): string => $record->getTranslation('title', app()->getLocale()))

@@ -81,8 +81,12 @@ final class OrganisationProfile
      * with dimensions — Google's article markup wants a logo it can measure, and a bare
      * URL string forces it to fetch the file to find out.
      *
-     * A deleted asset degrades to null rather than to a broken URL: MediaAsset is not
-     * soft-deleted, so an id stored here can genuinely stop existing.
+     * A missing asset degrades to null rather than to a broken URL. Trashing the chosen logo is
+     * refused outright (UsageInspector::blockedReason), because the id lives inside a Setting
+     * document where no attachment count can see it — so null here means the setting points at an
+     * asset that was removed before that guard existed, or was destroyed by hand. Resolved through
+     * the default scope on purpose: a logo in the trash is not on the site, and advertising it in
+     * the Organization JSON-LD would point crawlers at a file the frontend no longer shows.
      */
     public static function logo(): ?MediaAsset
     {
