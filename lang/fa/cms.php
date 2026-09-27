@@ -565,6 +565,17 @@ return [
         'about' => 'دربارهٔ سیستم',
         'no_changelog' => 'هنوز تغییری ثبت نشده است.',
 
+        // Keep a Changelog section names (App\Models\Changelog::CATEGORIES), shown in
+        // the About widget. CHANGELOG.md itself keeps the English headings the format defines.
+        'changelog_categories' => [
+            'added' => 'افزوده‌شده',
+            'changed' => 'تغییریافته',
+            'deprecated' => 'منسوخ‌شده',
+            'removed' => 'حذف‌شده',
+            'fixed' => 'رفع‌شده',
+            'security' => 'امنیت',
+        ],
+
         /*
          * Item 18 — RUNTIME state, nested under `status` to keep it apart from the install
          * facts above. Both are legitimately "system", and a flat merge would put
@@ -904,6 +915,26 @@ return [
         'EducationalOrganization' => 'مؤسسهٔ آموزشی',
         'NGO' => 'سازمان مردم‌نهاد',
         'LocalBusiness' => 'کسب‌وکار محلی',
+    ],
+
+    /*
+     * App\Support\SocialPlatform — which network a social link on the Settings page
+     * points at. Brand names stay as each brand writes itself in this language.
+     */
+    'social_platform' => [
+        'instagram' => 'اینستاگرام',
+        'telegram' => 'تلگرام',
+        'x' => 'ایکس',
+        'linkedin' => 'لینکدین',
+        'youtube' => 'یوتیوب',
+        'facebook' => 'فیس‌بوک',
+        'whatsapp' => 'واتساپ',
+        'github' => 'گیت‌هاب',
+        'aparat' => 'آپارات',
+        'eitaa' => 'ایتا',
+        'bale' => 'بله',
+        'rubika' => 'روبیکا',
+        'website' => 'وب‌سایت',
     ],
 
     'ai_provider' => [

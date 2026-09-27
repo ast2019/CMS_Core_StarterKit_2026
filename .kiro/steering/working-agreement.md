@@ -6,7 +6,7 @@ inclusion: always
 
 Handoff for AI assistants working on this repo. It records how the owner wants work done, what has
 already been decided, and the traps that caused real bugs. Read it before proposing or changing
-anything. It was last updated after PR #19.
+anything. It was last updated after PR #24.
 
 ## How to work
 
@@ -19,6 +19,15 @@ anything. It was last updated after PR #19.
   3. Fix what it confirms.
 
   Every review so far has found real defects, several of them silent, so do not skip this step.
+- **Every PR that changes behaviour ends with a release, committed in the same PR:**
+  1. `php artisan cms:release minor|patch --added=… --fixed=…` — `minor` when the PR adds a
+     feature, `patch` when it only fixes.
+  2. `php artisan scramble:export`, because the spec's `info.version` follows the release.
+
+  When two branches are in flight, whichever merges second is rebased onto `main` and
+  re-released on top of the first. Deployments pick releases up by themselves:
+  `cms:sync-release` runs at container start and brings `system_info` and `changelogs` up to
+  `CHANGELOG.md`.
 - Present findings and trade-offs, then let the owner decide. If a decision changes an earlier
   answer, say so plainly.
 - New Composer or npm dependencies need the owner's approval first.
@@ -38,24 +47,11 @@ anything. It was last updated after PR #19.
 
 ## Remaining approved work
 
-**Item 43 — editorial calendar of scheduled publishing.**
-- It must cover Content, Page and Gallery. Use `App\Support\ScheduledPublishing::models()`, the same
-  list `cms:publish-due` uses.
-- The panel calendar is Jalali for `fa`. Build month grids from
-  `LocalizedDate::calendarTable()` / `monthNames()` rather than writing calendar arithmetic.
-- There is no calendar plugin, and adding one needs approval.
+**Done:** item 43, the editorial calendar (PR #21), and item 12, media usage and upload
+validation (PR #23).
 
-**Item 12 — media.** The agreed scope is only these four:
-1. An "unused media" filter.
-2. "Where is this used" on the asset's own page, with links to the records.
-3. A replace-file action that shows the usage warning.
-4. Upload MIME types validated against the chosen asset type.
-
-Not in scope: folders, crop or focal point, bulk upload. `UsageInspector::usage()` already counts
-usage. Inline images inside rich-text bodies are **not** in `media_attachments`, so say so rather
-than claim completeness.
-
-**Item 15 — form builder.**
+**Item 15 — form builder. In progress on branch `feat/form-builder`**; do not start it again
+elsewhere.
 - Store forms in a `forms` table holding a JSON field schema.
 - Submissions carry `form_id` plus a JSON `payload`, and keep `name`, `email` and `phone` as
   indexed columns.
@@ -93,6 +89,16 @@ than claim completeness.
   audit log, because User and Redirect are not audited.
 - **Deletes go through `GuardedDeleteActions` / `TrashControls`.** Model guards on `MediaAsset` and
   `Category` refuse deletes that would silently degrade published output.
+- **Render-time Gate checks are not audited.** `App\Support\AuthorisationProbe` keeps the
+  denial audit from recording display decisions (which buttons to draw). Checks inside a page's
+  `render()` or `getViewData()` run before Livewire's render stack exists, so wrap them in
+  `AuthorisationProbe::quietly()`, or every page view writes refusals nobody attempted.
+- **The site logo id is read only through `App\Support\OrganisationProfile::logoId()`.** The
+  delete guard once read a top-level setting nothing wrote, so the real logo could be deleted.
+- **The panel must not reference any external host** — no CDN, no third-party avatar (Filament's
+  default is ui-avatars.com; `LocalAvatarProvider` replaces it), no links to external docs (show
+  the address as copyable `cms-ltr` text). `PanelMakesNoExternalRequestsTest` renders every page
+  and enforces it.
 - **Polymorphic tables have no foreign keys.** These are `media_attachments`, `content_versions`
   and `translation_states`. Owners release their rows on `forceDeleted`.
 

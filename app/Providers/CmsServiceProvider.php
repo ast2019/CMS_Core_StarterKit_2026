@@ -16,6 +16,7 @@ use App\Observers\SearchIndexObserver;
 use App\Policies;
 use App\Support\AuthorisationProbe;
 use App\Support\Dates\LocalizedDate;
+use BladeUI\Icons\Factory as IconFactory;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Filament\Support\Assets\AlpineComponent;
@@ -42,6 +43,29 @@ class CmsServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->pruneForbiddenDisks();
+        $this->registerIcons();
+    }
+
+    /**
+     * The `cms` icon set: the application's own SVGs under resources/svg, starting with
+     * the social brand marks App\Support\SocialPlatform uses ("cms-social.instagram").
+     *
+     * Registered through Blade Icons (already installed with Filament) the way
+     * blade-heroicons registers its own set, so Filament's prefixIcon() resolves these
+     * like any Heroicon. The prefix is `cms` rather than `cms-social` because Blade Icons
+     * takes everything before the FIRST hyphen as the prefix; a hyphenated prefix is never
+     * matched and every lookup fails as "not found in set default". Subdirectories
+     * are addressed with a dot. Local files because the panel references no external
+     * host; see resources/svg/social/README.md for their source and licence.
+     */
+    protected function registerIcons(): void
+    {
+        $this->callAfterResolving(IconFactory::class, function (IconFactory $factory): void {
+            $factory->add('cms', [
+                'path' => resource_path('svg'),
+                'prefix' => 'cms',
+            ]);
+        });
     }
 
     /**
