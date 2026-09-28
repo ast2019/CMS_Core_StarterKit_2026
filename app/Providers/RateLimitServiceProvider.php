@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Services\Api\DeliveryCache;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -16,6 +17,15 @@ use Illuminate\Support\ServiceProvider;
  * generous read limit, while the Management API is used by a handful of
  * authenticated integrations and a high limit there only widens the blast radius of
  * a leaked token.
+ *
+ * Where the counters live: every limiter below stores its hit counters in the cache
+ * store named by config('cache.limiter'); when that is null they share the default
+ * store. In production that should point at a store the Delivery cache invalidation
+ * never flushes, otherwise a content publish that degrades to
+ * {@see DeliveryCache::invalidate()} => Cache::flush() on a tagless
+ * default store would reset these counters on every save. The limiter definitions
+ * themselves are correct and pinned by tests; only the backing store is a config
+ * concern.
  */
 class RateLimitServiceProvider extends ServiceProvider
 {
