@@ -5,8 +5,14 @@ the Delivery API serves. The frontend never hardcodes a form's fields: it fetche
 renders one input per field, and posts the answers back. The server validates against the same
 schema, so what the panel says is what the endpoint accepts.
 
-The whole feature belongs to the **contact** module (`CMS_MODULE_CONTACT`). With it off, every
-endpoint below answers `404`.
+The form builder has its own switch, `CMS_MODULE_FORMS`, and sits under the **contact** module
+(`CMS_MODULE_CONTACT`). With either off, every endpoint below answers `404`. With only forms off,
+the built-in contact form keeps working through `POST /api/v1/contact` and `GET /api/v1/contact`,
+and **System → Forms** stays in the panel showing just the contact form, so its wording can
+still be edited; no other form can be created or opened.
+
+Forms are built and edited by Admins, Editors and Authors (`form.manage`); Viewers can read the
+inbox but not change forms. The contact form's fields stay fixed whoever edits it.
 
 ## 1. Fetch the schema
 

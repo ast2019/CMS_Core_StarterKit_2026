@@ -9,13 +9,15 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Item 15 — who may build forms.
+ * Item 15 — who may build forms: anyone holding `form.manage`, which is Admin, Editor and Author.
  *
- * `settings.manage`, so Admin only, rather than a new ability. A form decides what personal data
- * the public site collects and what a public endpoint accepts, which is the same order of
- * decision as the contact details and analytics codes already behind that ability — and the
- * contact form's wording used to live on the Settings page (`form_labels`). Reading what was
- * SENT stays on `contact.view`, through the inbox; building the questions is a separate job.
+ * The owner's decision (after 0.9.0), replacing Admin-only `settings.manage`: a form's wording is
+ * editorial copy. Forms have no owner column, so there is no `.own` / `.any` split — any holder
+ * may edit, deactivate, re-key or (when it has no submissions) delete ANY form, a colleague's
+ * included. That is the first right an Author has over other people's work, and it was accepted
+ * knowingly: Form is audited, and the contact form's structure stays locked for everyone
+ * (ContactFormStructure). Do not narrow it to `.own` without asking the owner. Reading what was
+ * SENT stays on `contact.view`, through the inbox.
  *
  * Note that Gate::before lets Admins past every method here, so the rules that must hold even
  * for them — the contact form cannot be deleted, a form with submissions cannot be deleted — are
@@ -26,7 +28,7 @@ class FormPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->role->hasAbility('settings.manage');
+        return $user->role->hasAbility('form.manage');
     }
 
     public function view(User $user, Model $form): bool
@@ -36,17 +38,17 @@ class FormPolicy
 
     public function create(User $user): bool
     {
-        return $user->role->hasAbility('settings.manage');
+        return $user->role->hasAbility('form.manage');
     }
 
     public function update(User $user, Model $form): bool
     {
-        return $user->role->hasAbility('settings.manage');
+        return $user->role->hasAbility('form.manage');
     }
 
     public function delete(User $user, Model $form): bool
     {
-        return $user->role->hasAbility('settings.manage')
+        return $user->role->hasAbility('form.manage')
             && $form instanceof Form
             && $form->isDeletable();
     }

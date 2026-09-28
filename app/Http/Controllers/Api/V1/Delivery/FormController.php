@@ -18,8 +18,9 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 /**
  * Item 15 — forms built in the panel, served and submitted over the Delivery API.
  *
- * Gated on the CONTACT module: the form builder is the contact form generalised, and its
- * submissions land in the contact inbox. See docs/forms.md for the frontend side.
+ * Gated on Form::builderEnabled() — the `forms` switch under the `contact` module. The contact
+ * form's own endpoints (/api/v1/contact) belong to the contact module and stay up with forms
+ * off. See docs/forms.md for the frontend side.
  */
 class FormController extends Controller
 {
@@ -32,7 +33,10 @@ class FormController extends Controller
      */
     public function show(Request $request, string $key): FormResource
     {
-        $this->ensureModuleEnabled('contact');
+        // Before the cache lookup, so a cached schema cannot outlive the switch.
+        if (! Form::builderEnabled()) {
+            throw new NotFoundHttpException('The [forms] module is not enabled on this site.');
+        }
 
         $locale = $this->locale($request);
 

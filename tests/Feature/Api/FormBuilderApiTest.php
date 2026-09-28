@@ -349,3 +349,19 @@ it('never publishes a numeric key when the legacy labels are empty or malformed'
     'no entry for the locale or fa' => [['ar' => ['submit' => 'إرسال']]],
     'a bare string' => [['fa' => 'oops']],
 ]);
+
+it('switches the form endpoints off with the forms module, and leaves the contact form working', function (): void {
+    Form::factory()->create(['key' => 'live']);
+    config()->set('cms.modules.forms', false);
+
+    getJson('/api/v1/forms/live')->assertNotFound();
+    postJson('/api/v1/forms/live/submissions', validBuilderSubmission())->assertNotFound();
+
+    // The contact module's own endpoints are not the form builder's.
+    getJson('/api/v1/contact')->assertOk()->assertJsonStructure(['data' => ['form_labels']]);
+    postJson('/api/v1/contact', [
+        'name' => 'Visitor',
+        'email' => 'visitor@example.test',
+        'message' => 'A message long enough to pass.',
+    ])->assertCreated();
+});

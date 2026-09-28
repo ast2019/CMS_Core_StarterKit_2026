@@ -28,6 +28,10 @@ return [
         'slide' => env('CMS_MODULE_SLIDE', true),
         'page' => env('CMS_MODULE_PAGE', true),
         'contact' => env('CMS_MODULE_CONTACT', true),
+        // The form builder, and GET/POST /api/v1/forms. Depends on `contact`: forms off
+        // leaves the contact form and its inbox working; contact off turns both off. Read it
+        // through App\Models\Form::builderEnabled(), which applies that dependency.
+        'forms' => env('CMS_MODULE_FORMS', true),
         'menu' => env('CMS_MODULE_MENU', true),
         'settings' => env('CMS_MODULE_SETTINGS', true),
         'redirect' => env('CMS_MODULE_REDIRECT', true),
