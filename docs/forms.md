@@ -132,6 +132,22 @@ The legacy `POST /api/v1/contact` still works exactly as before and records agai
 `contact` form. New frontends can use either it or `POST /api/v1/forms/contact/submissions`;
 both apply the same rules.
 
+## Deprecated: `form_labels` in `GET /api/v1/contact`
+
+Before 0.9.0 the contact form's labels were a free key/value list on the Settings page, served
+as `form_labels` by `GET /api/v1/contact`. That list is gone from the panel; the contact form's
+wording is edited under **System → Forms** like any other form.
+
+`form_labels` is **still served, in the same shape** (`{ "<field key>": "<label>" }`), now built
+from the contact form's schema, so an existing frontend keeps its labels. Keys that were only
+ever on the old list (a `submit` label, for example) are still returned from what was stored,
+but can no longer be edited — move that text into the frontend. Like before, a locale without
+its own legacy labels gets the Persian ones for those keys; the schema's keys follow the form's
+own translations.
+
+New code should read `GET /api/v1/forms/contact` instead, which also carries placeholders, help
+text, field types and limits. `form_labels` will be removed in a future major version.
+
 ## 5. Handle the response
 
 | Status | Meaning | What to do |

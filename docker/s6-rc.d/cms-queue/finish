@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs each time the service exits. A non-zero exit (the database is down, say) is
+# otherwise restarted within a second, writing a stack trace each time; pausing
+# turns an hour-long outage into hundreds of log lines instead of thousands.
+# Not on a normal stop: S6 reports 256 when the service was ended by a signal.
+if [ "$1" -ne 0 ] && [ "$1" -ne 256 ]; then
+    sleep 3
+fi

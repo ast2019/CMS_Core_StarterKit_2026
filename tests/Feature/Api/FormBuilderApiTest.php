@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Requests\StoreContactSubmissionRequest;
+use App\Models\ContactSetting;
 use App\Models\ContactSubmission;
 use App\Models\Form;
 use App\Services\Forms\ContactFormStructure;
@@ -297,3 +298,54 @@ it('serves the edited schema as soon as the form is saved', function (): void {
 
     getJson('/api/v1/forms/partnership')->assertJsonPath('data.fields.0.label', 'نام و نام خانوادگی');
 });
+
+/*
+| `form_labels` in GET /api/v1/contact is deprecated but still served, in its old shape, from the
+| contact form's schema — so retiring the Settings list did not empty any frontend's labels.
+*/
+
+it('serves the contact form\'s labels as the deprecated form_labels', function (): void {
+    $contact = Form::contact();
+
+    $expected = [];
+    foreach ($contact->fields as $field) {
+        $expected[$field['key']] = $field['label']['fa'];
+    }
+
+    expect(getJson('/api/v1/contact?locale=fa')->assertOk()->json('data.form_labels'))
+        ->toEqual($expected);
+});
+
+it('keeps a frontend\'s extra legacy label keys, with the schema winning on shared keys', function (): void {
+    ContactSetting::current()->update([
+        'form_labels' => ['fa' => ['name' => 'قدیمی', 'submit' => 'ارسال پیام']],
+    ]);
+
+    getJson('/api/v1/contact?locale=fa')
+        ->assertJsonPath('data.form_labels.submit', 'ارسال پیام')
+        ->assertJsonPath('data.form_labels.name', Form::contact()->fields[0]['label']['fa']);
+});
+
+it('reflects an edit to the contact form in form_labels at once', function (): void {
+    getJson('/api/v1/contact?locale=fa')->assertOk();
+
+    $contact = Form::contact();
+    $fields = $contact->fields;
+    $fields[0]['label'] = ['fa' => 'نام و نام خانوادگی'];
+    $contact->update(['fields' => $fields]);
+
+    getJson('/api/v1/contact?locale=fa')
+        ->assertJsonPath('data.form_labels.'.$fields[0]['key'], 'نام و نام خانوادگی');
+});
+
+it('never publishes a numeric key when the legacy labels are empty or malformed', function (mixed $stored): void {
+    ContactSetting::current()->forceFill(['form_labels' => $stored])->save();
+
+    $labels = getJson('/api/v1/contact?locale=en')->assertOk()->json('data.form_labels');
+
+    expect(array_keys($labels))->toBe(Form::contact()->fieldKeys());
+})->with([
+    'empty column' => [[]],
+    'no entry for the locale or fa' => [['ar' => ['submit' => 'إرسال']]],
+    'a bare string' => [['fa' => 'oops']],
+]);

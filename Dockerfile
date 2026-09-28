@@ -198,6 +198,13 @@ RUN if [ "${WITH_FFMPEG}" = "true" ]; then \
         echo "ffmpeg omitted (WITH_FFMPEG=false); video duration will be entered manually"; \
     fi
 
+# The scheduler and a queue worker, as S6 services beside nginx and PHP-FPM, so a single
+# container is a complete deployment with nothing to add in Coolify. S6 starts them after
+# every /etc/entrypoint.d script (so after the migrations) and restarts them if they exit.
+# Switch either off with CMS_RUN_SCHEDULER=false / CMS_RUN_QUEUE=false when it runs
+# elsewhere — two schedulers run every task twice. See docs/coolify.md.
+COPY --chmod=755 docker/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+
 USER www-data
 
 WORKDIR /var/www/html

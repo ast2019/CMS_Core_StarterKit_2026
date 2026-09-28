@@ -16,7 +16,6 @@ use App\Support\SiteIdentity;
 use App\Support\SocialPlatform;
 use BackedEnum;
 use Filament\Actions\Action;
-use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -137,7 +136,6 @@ class Settings extends Page
             'contact' => [
                 'address' => $contact->getTranslations('address'),
                 'office_hours' => $contact->getTranslations('office_hours'),
-                'form_labels' => $contact->getTranslations('form_labels'),
                 'phone' => $contact->phone,
                 'email' => $contact->email,
                 'map_latitude' => $contact->map_latitude,
@@ -501,28 +499,6 @@ class Settings extends Page
                             ->requiredWith('contact.map_latitude')
                             ->extraInputAttributes(['dir' => 'ltr', 'class' => 'cms-ltr']),
                     ]),
-
-                Section::make(__('cms.settings.contact.form_labels'))
-                    ->description(__('cms.settings.contact.form_labels_help'))
-                    ->schema([
-                        /*
-                         * KeyValue rather than fixed inputs for name/email/message: the
-                         * column is free-form JSON that the Delivery API passes through
-                         * verbatim, so which labels exist is the frontend's contract,
-                         * not this panel's. Hardcoding a set here would silently drop
-                         * any key a frontend already relies on.
-                         */
-                        ...array_map(
-                            fn (string $locale): KeyValue => KeyValue::make("contact.form_labels.{$locale}")
-                                ->label(__('cms.settings.contact.form_labels_locale', [
-                                    'locale' => TranslatableTabs::localeLabel($locale),
-                                ]))
-                                ->keyLabel(__('cms.settings.contact.form_labels_key'))
-                                ->valueLabel(__('cms.settings.contact.form_labels_value'))
-                                ->reorderable(false),
-                            $this->locales(),
-                        ),
-                    ]),
             ]);
     }
 
@@ -744,7 +720,12 @@ class Settings extends Page
 
         $contact = ContactSetting::current();
 
-        foreach (['address', 'office_hours', 'form_labels'] as $attribute) {
+        /*
+         * `form_labels` is deliberately NOT written any more. The contact form's wording now lives
+         * in its schema (System > Forms), and the column is kept only so a frontend's own extra
+         * keys keep being served — see SiteController::contact().
+         */
+        foreach (['address', 'office_hours'] as $attribute) {
             /** @var array<string, mixed> $translations */
             $translations = is_array($contactData[$attribute] ?? null) ? $contactData[$attribute] : [];
 

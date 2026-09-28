@@ -24,12 +24,13 @@ It fails in the worst way available: nothing errors. The panel loads, uploads wo
 the library is simply empty — so the loss is usually noticed days later, by the client, on
 the public site.
 
-**3. A queue worker is required.** Image conversions, search indexing, sitemap
+**3. A queue worker is required — and the image runs one.** Image conversions, search indexing, sitemap
 regeneration, video metadata extraction and AI translation are all queued. Without one,
 uploads succeed and thumbnails are never generated — again, with no error anywhere. AI
 translation is the one case that does report itself: the panel says the translation was
 queued and then nothing arrives in the notification bell, because the job is sitting in
-the `jobs` table waiting for a worker that does not exist. See
+the `jobs` table waiting for a worker that does not exist. The image starts a worker and the
+scheduler itself; only a deployment that switched them off needs one elsewhere. See
 [Worker and scheduler](#worker-and-scheduler).
 
 ## Step 1 — MySQL
@@ -175,24 +176,34 @@ including when a deployment platform fails to substitute a placeholder.
 
 ## Worker and scheduler
 
-Both run inside the same container, as **Scheduled Tasks** —
-**Configuration → Scheduled Tasks → Add**:
+**Nothing to set up.** The image runs both itself, as S6 services beside nginx and PHP-FPM
+(`docker/s6-rc.d`), started after the migrations and restarted if they exit:
 
-| Name | Command | Frequency |
+| Service | Command | Off switch |
 |---|---|---|
-| Queue | `php artisan queue:work --stop-when-empty --max-time=55` | `* * * * *` |
-| Scheduler | `php artisan schedule:run` | `* * * * *` |
+| `cms-scheduler` | `php artisan schedule:work` | `CMS_RUN_SCHEDULER=false` |
+| `cms-queue` | `php artisan queue:work --tries=3 --max-time=3600` | `CMS_RUN_QUEUE=false` |
 
-The queue task drains whatever is waiting and exits, so the next minute's run starts
-cleanly; `--max-time=55` stops two runs from overlapping.
+The dashboard's **System status** card turns green within a minute or two of the first deploy.
 
-For a busy site, run a long-lived worker instead: a second application from the same repo
-with **Build Stage** `app`, no domain, no health check, the same environment and the same
-storage mount, and a start command of
-`php artisan queue:work --tries=3 --max-time=3600`. Set
-`AUTORUN_LARAVEL_MIGRATION=false` on it so only one process owns the schema.
+**If you added Coolify Scheduled Tasks for these before 0.9.0, delete them** (or set the two
+switches to `false`). Two schedulers run every scheduled task twice.
 
-Do not run more than one scheduler — two schedulers run every scheduled task twice.
+Several workers are safe — the queue's `retry_after` (3600 s by default) is longer than the
+longest job, so a running job is never handed to a second worker. Do not lower
+`DB_QUEUE_RETRY_AFTER` / `REDIS_QUEUE_RETRY_AFTER` below the AI translation job's timeout.
+
+A redeploy stops the worker within seconds. A job cut off that way is retried an hour later;
+for an AI translation that is a second paid attempt, so avoid redeploying while one runs.
+
+For a busy site, move the worker out: a second application from the same repo with **Build
+Stage** `app`, no domain, no health check, the same environment and the same storage mount,
+and a start command of `php artisan queue:work --tries=3 --max-time=3600`. Set
+`AUTORUN_LARAVEL_MIGRATION=false` on it so only one process owns the schema, and
+`CMS_RUN_QUEUE=false` on the web application.
+
+Never run more than one scheduler — including across web replicas: with two or more web
+containers, keep `CMS_RUN_SCHEDULER=true` on exactly one. Workers may run on all of them.
 
 ## Optional extras
 
@@ -238,12 +249,13 @@ php artisan cms:sync-release
 | Panel shows an old version or "no changes recorded" | `cms:sync-release` warned at startup — check the container log, then run it by hand |
 | Media empty after a redeploy | No persistent storage on `/var/www/html/storage/app/public` |
 | Uploads fail with a permission error | Bind-mounted host path not `chown 33:33` |
-| Thumbnails never appear | No queue worker running |
+| Thumbnails never appear | No queue worker running (`CMS_RUN_QUEUE=false` with no worker elsewhere) |
 | API returns 500 while `/up` is green | `CACHE_STORE`/`QUEUE_CONNECTION` point at a Redis that does not exist |
 | Login succeeds then returns to the form | Serving over plain HTTP; set `PHP_SESSION_COOKIE_SECURE=0` |
 | A changed variable seems ignored | Redeploy rather than restart — config is cached at container start |
 | Video duration is not filled in | ffprobe runs on the queue; check a worker is running |
 | "Translation queued" but no notification ever arrives | AI translation runs on the queue; check a worker is running |
+| Every scheduled task runs twice | A Coolify Scheduled Task still runs `schedule:run` beside the image's own scheduler; delete it |
 
 Do not use a **Post-deployment Command** for migrations. Coolify marks the deployment
 successful before running it, and a failure there does not change that status — so a broken

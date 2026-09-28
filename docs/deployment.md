@@ -136,6 +136,10 @@ php artisan horizon
 
 ## Scheduler
 
+**In the Docker image this is already running** (`cms-scheduler`, with a queue worker beside it
+as `cms-queue`; see [coolify.md](coolify.md#worker-and-scheduler)). The crontab below is for a
+server install without the image.
+
 ```cron
 * * * * * cd /var/www/cms && php artisan schedule:run >> /dev/null 2>&1
 ```
@@ -233,7 +237,7 @@ the dashboard's **System status** card (administrators only) reads them:
 |---|---|---|
 | Both running | cron and a worker are alive | — |
 | Scheduler running, queue stopped | cron is fine, no worker is consuming the queue | start `queue:work` |
-| Scheduler stopped | cron is not running `schedule:run` for this app; the queue reading is reported as *unknown* because nothing was dispatched to test it | fix the crontab above |
+| Scheduler stopped | nothing is running `schedule:run` for this app; the queue reading is reported as *unknown* because nothing was dispatched to test it | in the Docker image, check `CMS_RUN_SCHEDULER` is not `false` and read the container logs; otherwise fix the crontab above |
 | Cache store warning | the store has no tag support, so every publish flushes the whole cache | use Redis |
 
 An editor with content queued also sees the scheduler warning on their own **Scheduled**
