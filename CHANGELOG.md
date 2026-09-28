@@ -9,6 +9,21 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.9.0] - 2026-09-28
+
+### Added
+
+- The Docker image runs the Laravel scheduler and a queue worker itself, as supervised S6 services; switch either off with CMS_RUN_SCHEDULER=false or CMS_RUN_QUEUE=false when it runs elsewhere.
+
+### Changed
+
+- Queue retry_after defaults to 3600 seconds (was 90), longer than the AI translation job may run, so a running translation is never handed to a second worker and paid for twice.
+- The contact form's labels are edited only in its form schema: the Settings page's contact form labels list is removed, and form_labels in GET /api/v1/contact is now built from the contact form's schema.
+
+### Deprecated
+
+- form_labels in GET /api/v1/contact; read GET /api/v1/forms/contact instead.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added

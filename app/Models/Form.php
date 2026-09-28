@@ -111,6 +111,27 @@ class Form extends Model
     }
 
     /**
+     * Each field's label in one locale, keyed by field key — the shape `form_labels` has always had
+     * in `GET /api/v1/contact`.
+     *
+     * That endpoint used to read the labels from a free-form key/value list on the Settings page,
+     * which duplicated the contact form's schema once item 15 made the form editable. The Settings
+     * list is gone; the endpoint now answers from the schema, so the two cannot disagree.
+     *
+     * @return array<string, string>
+     */
+    public function labelsFor(string $locale): array
+    {
+        $labels = [];
+
+        foreach ($this->fields ?? [] as $field) {
+            $labels[$field['key']] = FormSchema::localised($field['label'], $locale) ?? $field['key'];
+        }
+
+        return $labels;
+    }
+
+    /**
      * The keys of this form's fields, in order.
      *
      * @return list<string>

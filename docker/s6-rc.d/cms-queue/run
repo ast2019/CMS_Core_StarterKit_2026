@@ -1,0 +1,28 @@
+#!/command/with-contenv sh
+# =============================================================================
+# A queue worker, supervised by S6 inside the web container.
+#
+# Image conversions, search indexing, video metadata, webhooks and AI translation
+# are all queued; without a worker none of them happens and the dashboard reports
+# the queue stopped.
+#
+# `--max-time=3600` makes the worker exit once an hour and S6 start a fresh one,
+# which bounds memory growth in a long-lived PHP process. On container stop S6
+# sends SIGTERM and the worker stops after its current job (pcntl is in the
+# image) — but only if that job ends within the container's stop grace period,
+# which is seconds. A job cut off by a redeploy is retried once retry_after has
+# passed; for an AI translation that retry is a second paid attempt, so avoid
+# redeploying while one is running.
+#
+# Set CMS_RUN_QUEUE=false when a worker runs somewhere else (a separate worker
+# container on a busy site, or a Coolify Scheduled Task).
+# =============================================================================
+
+if [ "${CMS_RUN_QUEUE:-true}" = "false" ]; then
+    echo "ℹ️ (cms-queue): not started because CMS_RUN_QUEUE=false."
+    exec sleep infinity
+fi
+
+cd "${APP_BASE_DIR:-/var/www/html}" || exit 1
+
+exec php artisan queue:work --tries=3 --max-time=3600 --no-interaction

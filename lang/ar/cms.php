@@ -594,9 +594,9 @@ return [
             'unknown' => 'غير معروف',
             'last_seen' => 'آخر تقرير :ago',
             'queue_lag' => 'تأخّر الطابور: :seconds ثانية',
-            'scheduler_stopped_help' => 'مُجدوِل لارافيل لا يعمل، لذا لا يحدث النشر المُجدول أيضًا. راجع أمر cron في docs/deployment.md.',
+            'scheduler_stopped_help' => 'مُجدوِل لارافيل لا يعمل، لذا لا يحدث النشر المُجدول أيضًا. في صورة Docker يعمل تلقائيًا: تحقّق من أن CMS_RUN_SCHEDULER ليس false واقرأ سجلات الحاوية. بدون الصورة، راجع أمر cron في docs/deployment.md.',
             'queue_stopped_help' => 'لا يوجد عامل يعالج الطابور، فتتراكم الترجمات وفهرسة البحث وخطافات الويب. شغّل خدمة queue:work.',
-            'queue_unknown_help' => 'لا يُرسَل شيء إلى الطابور أثناء توقف المُجدوِل، فلا يمكن قياس حالته. أصلح cron أولًا.',
+            'queue_unknown_help' => 'لا يُرسَل شيء إلى الطابور أثناء توقف المُجدوِل، فلا يمكن قياس حالته. أصلح المُجدوِل أولًا.',
             'cache_tags_ok' => 'الوسوم مدعومة — إبطال التخزين المؤقت مُوجَّه.',
             'cache_tags_missing' => 'هذا المخزن لا يدعم الوسوم، لذا يمسح كل نشر التخزين المؤقت بالكامل، بما فيه عدّادات تحديد المعدل. استخدم Redis في الإنتاج.',
             // The web process and the cron process disagree about which cache they use. Each
@@ -859,11 +859,6 @@ return [
             'map_help' => 'املأ القيمتين معًا أو اتركهما فارغتين. بوجودهما تُنتَج بيانات LocalBusiness المنظّمة.',
             'latitude' => 'خط العرض',
             'longitude' => 'خط الطول',
-            'form_labels' => 'تسميات نموذج الاتصال',
-            'form_labels_help' => 'المفاتيح تستهلكها الواجهة، فاستخدم المفاتيح التي تتوقّعها (مثل name وemail وmessage).',
-            'form_labels_locale' => 'التسميات (:locale)',
-            'form_labels_key' => 'المفتاح',
-            'form_labels_value' => 'التسمية',
         ],
 
         'maintenance' => [

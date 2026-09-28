@@ -587,9 +587,9 @@ return [
             'unknown' => 'Unknown',
             'last_seen' => 'Last reported :ago',
             'queue_lag' => 'Queue lag: :seconds second(s)',
-            'scheduler_stopped_help' => 'Laravel’s scheduler is not running, so scheduled publishing is not happening either. See the crontab in docs/deployment.md.',
+            'scheduler_stopped_help' => 'Laravel’s scheduler is not running, so scheduled publishing is not happening either. In the Docker image it runs by itself: check CMS_RUN_SCHEDULER is not false and read the container logs. Without the image, see the crontab in docs/deployment.md.',
             'queue_stopped_help' => 'No worker is consuming the queue, so translations, search indexing and webhooks are piling up. Start the queue:work service.',
-            'queue_unknown_help' => 'Nothing is dispatched while the scheduler is stopped, so the queue cannot be measured. Fix cron first.',
+            'queue_unknown_help' => 'Nothing is dispatched while the scheduler is stopped, so the queue cannot be measured. Fix the scheduler first.',
             'cache_tags_ok' => 'Tagging supported — cache invalidation is targeted.',
             'cache_tags_missing' => 'This store has no tag support, so every publish flushes the whole cache, rate-limiter counters included. Use Redis in production.',
             // The web process and the cron process disagree about which cache they use. Each
@@ -858,11 +858,6 @@ return [
             'map_help' => 'Fill both or neither. With both, LocalBusiness structured data is emitted.',
             'latitude' => 'Latitude',
             'longitude' => 'Longitude',
-            'form_labels' => 'Contact form labels',
-            'form_labels_help' => 'The keys are consumed by the frontend, so use the keys it expects (for example name, email, message).',
-            'form_labels_locale' => 'Labels (:locale)',
-            'form_labels_key' => 'Key',
-            'form_labels_value' => 'Label',
         ],
 
         'maintenance' => [

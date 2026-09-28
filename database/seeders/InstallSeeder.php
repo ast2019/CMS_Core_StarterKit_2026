@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\ContentStatus;
-use App\Models\ContactSetting;
 use App\Models\Page;
 use App\Models\Setting;
 use App\Services\Release\ReleaseSync;
@@ -77,10 +76,6 @@ class InstallSeeder extends Seeder
         Setting::put(Setting::GTM_CONTAINER_ID, null);
         Setting::put(Setting::GSC_VERIFICATION, null);
         Setting::put(Setting::BING_VERIFICATION, null);
-
-        ContactSetting::current()->update([
-            'form_labels' => ['fa' => ['name' => 'نام', 'email' => 'ایمیل', 'message' => 'پیام']],
-        ]);
     }
 
     /**

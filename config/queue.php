@@ -40,7 +40,15 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            /*
+             * Above TranslateRecordJob's worst-case timeout (about 2400 s with the shipped AI
+             * settings). A job still running when retry_after elapses is handed to ANOTHER
+             * worker, and with the image now running a worker per container that would be a
+             * second, paid translation of the same record. The cost of a high value is only
+             * that a job whose worker was hard-killed waits this long before its retry.
+             * tests/Architecture/QueueRetryAfterTest pins the relation.
+             */
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 3600),
             'after_commit' => false,
         ],
 
@@ -68,7 +76,15 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            /*
+             * Above TranslateRecordJob's worst-case timeout (about 2400 s with the shipped AI
+             * settings). A job still running when retry_after elapses is handed to ANOTHER
+             * worker, and with the image now running a worker per container that would be a
+             * second, paid translation of the same record. The cost of a high value is only
+             * that a job whose worker was hard-killed waits this long before its retry.
+             * tests/Architecture/QueueRetryAfterTest pins the relation.
+             */
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 3600),
             'block_for' => null,
             'after_commit' => false,
         ],

@@ -319,7 +319,6 @@ it('persists the contact details and publishes them to the Delivery API', functi
                 'email' => 'info@example.test',
                 'address' => ['fa' => 'تهران، خیابان نمونه'],
                 'office_hours' => ['fa' => 'شنبه تا چهارشنبه ۹ تا ۱۷'],
-                'form_labels' => ['fa' => ['name' => 'نام', 'email' => 'ایمیل']],
                 'map_latitude' => '35.6892',
                 'map_longitude' => '51.3890',
             ],
@@ -338,7 +337,6 @@ it('persists the contact details and publishes them to the Delivery API', functi
         ->assertOk()
         ->assertJsonPath('data.phone', '+982112345678')
         ->assertJsonPath('data.address', 'تهران، خیابان نمونه')
-        ->assertJsonPath('data.form_labels.name', 'نام')
         ->assertJsonPath('data.map.latitude', 35.6892);
 });
 

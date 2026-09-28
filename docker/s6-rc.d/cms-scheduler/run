@@ -1,0 +1,27 @@
+#!/command/with-contenv sh
+# =============================================================================
+# The Laravel scheduler, supervised by S6 inside the web container.
+#
+# Without it nothing runs `schedule:run`: scheduled publishing reaches the Delivery
+# cache late, the heartbeat never beats and the dashboard reports the scheduler
+# stopped. Coolify can run it as a Scheduled Task instead, but that is one more
+# manual step per install, and it was the step every install missed.
+#
+# `schedule:work` runs `schedule:run` once a minute, like cron. S6 restarts it if
+# it exits. Started only after every /etc/entrypoint.d script has finished, so the
+# migrations have already run.
+#
+# Set CMS_RUN_SCHEDULER=false when the scheduler runs somewhere else (a Coolify
+# Scheduled Task, a host crontab, a second container). Running TWO schedulers
+# executes every task twice.
+# =============================================================================
+
+if [ "${CMS_RUN_SCHEDULER:-true}" = "false" ]; then
+    echo "ℹ️ (cms-scheduler): not started because CMS_RUN_SCHEDULER=false."
+    # A longrun that exits is restarted every second; sleeping keeps it down quietly.
+    exec sleep infinity
+fi
+
+cd "${APP_BASE_DIR:-/var/www/html}" || exit 1
+
+exec php artisan schedule:work --no-interaction

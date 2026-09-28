@@ -10,6 +10,7 @@ use App\Http\Resources\V1\MenuItemResource;
 use App\Http\Resources\V1\PageResource;
 use App\Http\Resources\V1\SlideResource;
 use App\Models\ContactSetting;
+use App\Models\Form;
 use App\Models\MenuItem;
 use App\Models\Page;
 use App\Models\Setting;
@@ -229,10 +230,30 @@ class SiteController extends Controller
             function () use ($locale): array {
                 $contact = ContactSetting::current();
 
+                /*
+                 * Spatie answers '' — not null — for a column that exists but has nothing for
+                 * this locale or the fallback, and a hand-edited row can hold a bare string.
+                 * Cast, either would publish a "0" key; only a label map is merged.
+                 */
+                $legacyLabels = $contact->getTranslation('form_labels', $locale, true);
+
                 return [
                     'address' => $contact->getTranslation('address', $locale, true),
                     'office_hours' => $contact->getTranslation('office_hours', $locale, true),
-                    'form_labels' => $contact->getTranslation('form_labels', $locale, true),
+                    /*
+                     * DEPRECATED — use GET /api/v1/forms/contact, which carries placeholders,
+                     * help text and the field types too. Kept, in its old shape, so a frontend
+                     * built before 0.9.0 keeps its labels.
+                     *
+                     * The labels come from the contact form's schema. Keys a frontend once added
+                     * on the retired Settings list (a `submit` label, say) are still served from
+                     * the stored column underneath, but can no longer be edited; the schema's
+                     * wording wins wherever both have a key.
+                     */
+                    'form_labels' => [
+                        ...(is_array($legacyLabels) ? $legacyLabels : []),
+                        ...Form::contact()->labelsFor($locale),
+                    ],
                     'phone' => $contact->phone,
                     'email' => $contact->email,
                     'map' => $contact->hasGeoCoordinates() ? [
