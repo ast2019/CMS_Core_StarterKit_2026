@@ -280,17 +280,23 @@ class SiteController extends Controller
 
         $page = Page::notFoundPage();
 
-        if ($page === null) {
+        /*
+         * `isLive()` here and NOT in Page::notFoundPage(), matching homePage(). The
+         * model answers "which record is the branded 404"; whether it may be SERVED is
+         * this endpoint's question. Without the check, unpublishing the 404 page for an
+         * edit would keep publishing its draft TipTap body to every visitor.
+         */
+        if ($page === null || ! $page->isLive()) {
             /*
-             * A missing 404 page must not turn a 404 into a 500, so this reports the
-             * absence with a 404 of its own and lets the frontend fall back to its
-             * own unbranded message.
+             * A missing or unpublished 404 page must not turn a 404 into a 500, so this
+             * reports the absence with a 404 of its own and lets the frontend fall back
+             * to its own unbranded message.
              */
             return new JsonResponse(['message' => 'No 404 page is configured.'], 404);
         }
 
         return new JsonResponse([
-            'data' => PageResource::make($page->load('mediaAssets'))->toArray($request),
+            'data' => PageResource::make($page->load(['mediaAssets', 'translationStates']))->toArray($request),
             'meta' => ['locale' => $this->locale($request)],
         ]);
     }

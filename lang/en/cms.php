@@ -489,6 +489,7 @@ return [
         'menu_target_required' => 'A menu item needs exactly one destination: either a manual link or a target inside the site.',
         'menu_key_unknown' => 'The location [:key] is not declared in this site’s configuration. Available locations: :locations',
         'system_key_taken' => 'The [:key] role already belongs to the page “:title”. Clear it there first, then save this page — otherwise two pages compete for the same URL.',
+        'system_page_delete_blocked' => 'System pages (404, maintenance or home) cannot be deleted. Clear the system key first, or archive the page.',
         'menu_target_missing' => 'The chosen target does not exist, or is not of that type. Pick another one.',
         'menu_parent_missing' => 'The chosen parent does not exist.',
         'menu_parent_cycle' => 'An item cannot sit under itself or under one of its own children — the whole branch would disappear from the menu.',

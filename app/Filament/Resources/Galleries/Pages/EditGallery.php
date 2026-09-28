@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Galleries\Pages;
 
+use App\Filament\Concerns\AppliesPublishingWorkflow;
 use App\Filament\Concerns\GuardsAgainstConcurrentEdits;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesFeaturedImage;
@@ -17,6 +18,8 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditGallery extends EditRecord
 {
+    use AppliesPublishingWorkflow;
+
     /*
      * Item 35 — refuse to silently overwrite someone else's save made while this form was open.
      */
@@ -36,7 +39,9 @@ class EditGallery extends EditRecord
     {
         $this->captureSlugsBeforeSave();
 
-        return $this->normaliseTranslatablePayload($data);
+        $data = $this->normaliseTranslatablePayload($data);
+
+        return $this->extractStatusForWorkflow($data, $this->getRecord());
     }
 
     /**
@@ -48,6 +53,8 @@ class EditGallery extends EditRecord
         $this->syncGalleryItemsFromForm();
 
         $this->offerRedirectsForChangedSlugs();
+
+        $this->applyPendingStatusTransition();
     }
 
     protected function getHeaderActions(): array

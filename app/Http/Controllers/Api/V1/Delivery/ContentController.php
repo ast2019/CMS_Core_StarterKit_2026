@@ -40,6 +40,8 @@ class ContentController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $this->ensureModuleEnabled('content');
+
         $locale = $this->locale($request);
         $perPage = $this->perPage($request);
 
@@ -111,6 +113,8 @@ class ContentController extends Controller
      */
     public function show(Request $request, string $slug): ContentResource
     {
+        $this->ensureModuleEnabled('content');
+
         $locale = $this->locale($request);
 
         $content = $this->resolveBySlug(fn (): Builder => $this->baseQuery(), $locale, $slug);

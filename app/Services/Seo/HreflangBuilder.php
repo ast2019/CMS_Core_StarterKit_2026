@@ -80,16 +80,33 @@ class HreflangBuilder
         $supported = (array) config('cms.locales.supported', ['fa']);
         $source = (string) config('cms.locales.source', 'fa');
 
-        if (! $record instanceof TracksTranslationStatus) {
-            return array_values($supported);
-        }
-
         return array_values(array_filter(
             $supported,
-            // The source locale is always eligible: it is the content itself.
-            fn (string $locale): bool => $locale === $source
-                || $record->isSitemapEligibleFor($locale),
+            function (string $locale) use ($record, $source): bool {
+                // A noindex URL must not be advertised — the sitemap already drops it,
+                // and hreflang pointing at a noindex page is what Search Console flags.
+                if ($this->isNoindex($record, $locale)) {
+                    return false;
+                }
+
+                if (! $record instanceof TracksTranslationStatus) {
+                    return true;
+                }
+
+                // The source locale is the content itself, never a translation.
+                return $locale === $source
+                    || $record->isSitemapEligibleFor($locale);
+            },
         ));
+    }
+
+    private function isNoindex(Model $record, string $locale): bool
+    {
+        if (! method_exists($record, 'robotsMetaFor')) {
+            return false;
+        }
+
+        return str_contains(strtolower((string) $record->robotsMetaFor($locale)), 'noindex');
     }
 
     /**

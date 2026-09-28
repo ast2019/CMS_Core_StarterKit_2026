@@ -121,6 +121,16 @@ class Page extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishabl
         static::saving(function (self $page): void {
             $page->guardSystemKeyIsUnique();
         });
+
+        /*
+         * PagePolicy::delete() already returns false for system pages, but Gate::before
+         * answers true for admins before any policy runs — the same hole UserPolicy's
+         * self-delete rules used to have. Form::guardDeletion() is the pattern that
+         * survives an admin bypass: the model refuses the write for everyone.
+         */
+        static::deleting(function (self $page): void {
+            $page->guardSystemPageDeletion();
+        });
     }
 
     /**
@@ -214,6 +224,22 @@ class Page extends Model implements HasFeaturedMedia, HasSeoMetadata, Publishabl
                 'key' => (string) $this->system_key,
                 'title' => $existing->getTranslation('title', config('cms.locales.source', 'fa')) ?: '#'.$existing->getKey(),
             ]),
+        ]);
+    }
+
+    /**
+     * Refuse deletion of the 404, maintenance and homepage records.
+     *
+     * @throws ValidationException
+     */
+    protected function guardSystemPageDeletion(): void
+    {
+        if (! $this->isSystemPage()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'system_key' => __('cms.validation.system_page_delete_blocked'),
         ]);
     }
 }

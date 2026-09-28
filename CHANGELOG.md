@@ -9,6 +9,23 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.10.2] - 2026-09-28
+
+### Fixed
+
+- GET /api/v1/not-found-page serves the branded 404 only when it is live, the same rule as the homepage.
+- Reviewing a translation queues a search index sync and busts the Delivery content/sitemap caches, so the locale becomes searchable and robots stop saying noindex without waiting for TTL.
+- GET /api/v1/news and /api/v1/news/{slug} answer 404 when the content module is off.
+- Public search hydrates hits through live(), so a stale index cannot return a draft or archived article.
+- Hreflang omits locales whose robots directive is noindex, matching the sitemap.
+- A live homepage marked noindex no longer causes a synthetic locale-root sitemap entry.
+- The panel status dropdown routes through transitionTo() with the publish ability check, so Authors cannot publish from the form and illegal jumps (archived to published) are refused with an audit trail on a real publish.
+
+### Security
+
+- Management API: changing publish_date on a published or scheduled article needs the publish ability, so an Author cannot go live or take something offline by editing the date alone.
+- An administrator can no longer delete a system page (404, maintenance or home): Gate::before and a model guard both refuse, matching PagePolicy.
+
 ## [0.10.1] - 2026-09-28
 
 ### Fixed

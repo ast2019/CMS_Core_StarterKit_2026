@@ -58,7 +58,7 @@ class SearchController extends Controller
                 ->getModel()
                 ->forSearchLocale($locale)
                 ->search($term)
-                ->query(fn ($query) => $query->with([
+                ->query(fn ($query) => $query->live()->with([
                     'author:id,name',
                     'primaryCategory',
                     'categories',

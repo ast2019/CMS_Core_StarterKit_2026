@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Contents\Pages;
 
+use App\Filament\Concerns\AppliesPublishingWorkflow;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesFeaturedImage;
 use App\Filament\Resources\Contents\ContentResource;
@@ -12,6 +13,7 @@ use Filament\Resources\Pages\CreateRecord;
 
 class CreateContent extends CreateRecord
 {
+    use AppliesPublishingWorkflow;
     use InteractsWithTranslatableRecord;
     use ManagesFeaturedImage;
 
@@ -31,7 +33,8 @@ class CreateContent extends CreateRecord
         // or worse, assign work to a colleague who never wrote it.
         $data['author_id'] ??= auth()->id();
 
-        return $data;
+        // Status goes through transitionTo() after create — see AppliesPublishingWorkflow.
+        return $this->extractStatusForWorkflow($data);
     }
 
     protected function afterCreate(): void
@@ -46,5 +49,7 @@ class CreateContent extends CreateRecord
             // and guarantees the primary category is also a member of the set.
             $record->syncPrimaryCategory();
         }
+
+        $this->applyPendingStatusTransition();
     }
 }
