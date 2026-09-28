@@ -60,6 +60,19 @@ trait HasSlug
             $existing = $this->getTranslation('slug', $locale, useFallbackLocale: false);
 
             if (filled($existing)) {
+                /*
+                 * A typed slug is kept, but in the one spelling a generated slug has:
+                 * «۱۴۰۳» and «1403» are the same URL to a reader. Only when it is being
+                 * written, so an untouched record's live URL never shifts on a save.
+                 */
+                if ($this->isDirty('slug')) {
+                    $normalised = $generator->normalise((string) $existing, $locale);
+
+                    if ($normalised !== $existing) {
+                        $this->setTranslation('slug', $locale, $normalised);
+                    }
+                }
+
                 continue;
             }
 

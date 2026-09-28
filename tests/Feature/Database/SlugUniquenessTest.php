@@ -77,6 +77,19 @@ it('normalises Arabic input so it cannot slip past the uniqueness check', functi
     expect($generator->generate('كتابي', 'fa'))->toBe($generator->generate('کتابی', 'fa'));
 });
 
+it('folds alef maksura into Persian yeh, and leaves Arabic slugs alone', function (): void {
+    /*
+     * «موسى» (U+0649, what Arabic keyboards give for a final yeh) and «موسی» look the
+     * same in the address bar; unfolded, both passed the uniqueness check as two URLs.
+     * Arabic spells with alef maksura, so the Arabic map must not fold it.
+     */
+    $generator = app(SlugGenerator::class);
+
+    expect($generator->generate('موسى', 'fa'))->toBe($generator->generate('موسی', 'fa'))
+        ->and($generator->generate('موسى', 'fa'))->toBe('موسی')
+        ->and($generator->generate('موسى', 'ar'))->toBe('موسى');
+});
+
 it('creates a stored generated column and unique index per locale on MySQL', function (): void {
     if (! isMySql()) {
         $this->markTestSkipped('Generated columns are a MySQL feature; SQLite relies on the application-level check.');

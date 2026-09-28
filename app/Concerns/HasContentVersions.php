@@ -112,10 +112,31 @@ trait HasContentVersions
     {
         $restorable = array_intersect_key(
             $version->payload,
-            array_flip($this->versionedAttributes()),
+            array_flip(array_diff($this->versionedAttributes(), $this->attributesNotRestored())),
         );
 
         $this->forceFill($restorable)->save();
+    }
+
+    /**
+     * Columns a restore leaves alone, although snapshots still record them.
+     *
+     * A restore rolls back what the editor WROTE. Everything here has its own guarded
+     * path, and forceFill-ing it from an old snapshot skipped that path:
+     *
+     *  - status / publish_date: the workflow (transitionTo) and the `publish` ability.
+     *    Restoring the version taken just before an archive put the article live again
+     *    — Archived -> Published, a jump the transition map forbids.
+     *  - slug: the public URL. An old slug silently moved the page with no redirect,
+     *    and may since have been taken by another record.
+     *  - author_id / primary_category_id / system_key / position: ownership, the
+     *    canonical path, system-page identity and ordering — not the text.
+     *
+     * @return list<string>
+     */
+    protected function attributesNotRestored(): array
+    {
+        return ['status', 'publish_date', 'slug', 'author_id', 'primary_category_id', 'system_key', 'position'];
     }
 
     /**

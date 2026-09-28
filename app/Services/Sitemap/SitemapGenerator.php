@@ -507,16 +507,32 @@ class SitemapGenerator
             return false;
         }
 
-        // The source locale is the content itself, never a translation.
-        if ($locale === $this->sourceLocale()) {
-            return true;
+        // The source locale is the content itself, never a translation, so it has no
+        // review to pass — but it still answers to its robots directive below.
+        if ($locale !== $this->sourceLocale()
+            && $record instanceof TracksTranslationStatus
+            && ! $record->isSitemapEligibleFor($locale)) {
+            return false;
         }
 
-        if (! $record instanceof TracksTranslationStatus) {
-            return true;
+        return ! $this->isNoindex($record, $locale);
+    }
+
+    /**
+     * Whether the page itself tells crawlers not to index it.
+     *
+     * The sitemap has to agree with the page's own robots directive — the same
+     * robotsMetaFor() the Delivery API hands the frontend. An editor who set
+     * `noindex` on a live article still had it submitted here, and a sitemap listing
+     * pages marked noindex is exactly what Search Console reports as an error.
+     */
+    private function isNoindex(Model $record, string $locale): bool
+    {
+        if (! method_exists($record, 'robotsMetaFor')) {
+            return false;
         }
 
-        return $record->isSitemapEligibleFor($locale);
+        return str_contains(strtolower((string) $record->robotsMetaFor($locale)), 'noindex');
     }
 
     /**

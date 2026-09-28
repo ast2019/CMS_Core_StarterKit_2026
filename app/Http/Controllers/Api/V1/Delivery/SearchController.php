@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Delivery;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\ContentResource;
 use App\Models\Content;
+use App\Support\Digits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -29,7 +30,8 @@ class SearchController extends Controller
         }
 
         $locale = $this->locale($request);
-        $term = trim((string) $request->query('q', ''));
+        // ASCII digits, as the index stores them (IsSearchable), so «۱۴۰۳» finds 1403.
+        $term = Digits::toAscii(trim((string) $request->query('q', '')));
 
         if (mb_strlen($term) < self::MIN_QUERY_LENGTH) {
             /*

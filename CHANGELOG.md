@@ -9,6 +9,23 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.10.1] - 2026-09-28
+
+### Fixed
+
+- Restoring a version brings back the content only; status, publish date, slug, author, primary category and ordering are left as they are, so an archived article is not put live again.
+- A scheduled article is added to search once its publish time passes, instead of staying out of search until it is edited again.
+- Redirects for Persian URLs now match what browsers send (percent-encoded paths), and following a redirect no longer changes its last-modified time.
+- Sitemaps leave out pages an editor marked noindex.
+- Pagination links in GET /api/v1/news carry only the listing's own filters, not query parameters from whichever request filled the cache.
+- Persian slugs fold alef maksura (ى) into ی, like Arabic yeh.
+- Persian and ASCII digits are treated as the same number wherever digits identify something: slugs, redirect paths, phone numbers, page and per_page, search, and the sign-in code and number fields in the panel. Article text keeps the digits its author typed.
+
+### Security
+
+- Management API: an Author can no longer publish, archive or unpublish an article by sending a status on create or update; a status set on create goes through the publishing workflow and is audited.
+- An administrator can no longer delete, deactivate or change the role of their own account, so an install cannot be left with nobody able to manage users.
+
 ## [0.10.0] - 2026-09-28
 
 ### Added

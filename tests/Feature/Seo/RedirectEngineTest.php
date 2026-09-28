@@ -8,6 +8,7 @@ use App\Models\Redirect;
 use App\Services\Content\RedirectSuggestionService;
 
 use function Pest\Laravel\get;
+use function Pest\Laravel\getJson;
 
 /**
  * Requirement 7.5.
@@ -120,6 +121,78 @@ it('counts hits without firing model events', function (): void {
     // Makes dead redirects visible so the table can be pruned on evidence.
     expect($redirect->hits)->toBe(2)
         ->and($redirect->last_hit_at)->not->toBeNull();
+});
+
+it('does not touch updated_at when counting a hit', function (): void {
+    /*
+     * The resolver counted through the Eloquent builder, which adds updated_at to every
+     * UPDATE — so each visit read as an edit to the panel's concurrent-edit guard.
+     */
+    $redirect = Redirect::query()->create([
+        'from_path' => '/fa/stat-only',
+        'to_path' => '/fa/news/target',
+        'type' => RedirectType::Permanent,
+    ]);
+    $before = $redirect->fresh()->updated_at;
+
+    $this->travel(5)->minutes();
+
+    get('/fa/stat-only')->assertStatus(301);
+    getJson('/api/v1/redirects/resolve?from=/fa/stat-only')->assertOk();
+
+    $redirect->refresh();
+
+    expect($redirect->hits)->toBe(2)
+        ->and($redirect->updated_at->equalTo($before))->toBeTrue();
+});
+
+it('redirects a Persian path however the browser encodes it', function (): void {
+    /*
+     * Browsers send non-ASCII paths percent-encoded and the request path keeps them that
+     * way, while the slug-change offer stores Unicode — so every Persian redirect
+     * answered 404 to a real visitor.
+     */
+    Redirect::query()->create([
+        'from_path' => '/fa/news/عنوان-قدیم',
+        'to_path' => '/fa/news/عنوان-جدید',
+        'type' => RedirectType::Permanent,
+    ]);
+
+    get('/fa/news/'.rawurlencode('عنوان-قدیم'))->assertStatus(301);
+    get('/fa/news/عنوان-قدیم')->assertStatus(301);
+    getJson('/api/v1/redirects/resolve?from='.rawurlencode('/fa/news/'.rawurlencode('عنوان-قدیم')))->assertOk();
+
+    expect(Redirect::query()->sole()->hits)->toBe(3);
+});
+
+it('stores a pasted percent-encoded path in the same form as a typed one', function (): void {
+    // Copying a URL from the address bar gives the encoded form.
+    $redirect = Redirect::query()->create([
+        'from_path' => 'https://example.test/fa/'.rawurlencode('درباره-ما').'/',
+        'to_path' => '/fa/about',
+        'type' => RedirectType::Permanent,
+    ]);
+
+    expect($redirect->from_path)->toBe('/fa/درباره-ما')
+        // %2F would split one segment into two, and invalid UTF-8 must not be stored.
+        ->and(Redirect::normalisePath('/fa/a%2Fb'))->toBe('/fa/a%2Fb')
+        ->and(Redirect::normalisePath('/fa/%FF'))->toBe('/fa/%FF');
+});
+
+it('still matches a row stored percent-encoded before paths were decoded', function (): void {
+    // Written through the query builder, bypassing the mutator, as an old row would be.
+    Redirect::query()->toBase()->insert([
+        'from_path' => '/fa/'.rawurlencode('قدیمی'),
+        'to_path' => '/fa/news/new',
+        'type' => RedirectType::Permanent->value,
+        'hits' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    get('/fa/'.rawurlencode('قدیمی'))->assertStatus(301);
+
+    expect(Redirect::query()->sole()->hits)->toBe(1);
 });
 
 it('leaves unmatched paths alone', function (): void {

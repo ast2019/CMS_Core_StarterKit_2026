@@ -7,7 +7,6 @@ namespace App\Services\Content;
 use App\Models\Redirect;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 /**
  * "Where should this path go?" — answered identically for both consumers.
@@ -47,7 +46,7 @@ class RedirectResolver
      * request; the instance memo is what stops the export endpoint doing one cache read
      * per row while it collapses a page of 100 redirects.
      *
-     * @var array<string, array{to: string, type: int}>|null
+     * @var array<string, array{to: string, type: int, from_path: string}>|null
      */
     private ?array $map = null;
 
@@ -88,7 +87,8 @@ class RedirectResolver
             $target = Redirect::normalisePath($map[$current]['to']);
 
             if (! isset($map[$target])) {
-                return ['from' => $from, 'to' => $target, 'status' => $status, 'hops' => $hop];
+                // `from` is the row's STORED path, so callers can find the row by it.
+                return ['from' => $map[$from]['from_path'], 'to' => $target, 'status' => $status, 'hops' => $hop];
             }
 
             if (isset($seen[$target])) {
@@ -159,12 +159,19 @@ class RedirectResolver
      */
     public function recordHit(string $from): void
     {
+        /*
+         * $from is the stored from_path that resolve() returned, matched as-is.
+         *
+         * Through the BASE query builder, as in Redirect::recordHit(): the Eloquent
+         * builder's update() adds `updated_at` to every UPDATE, so each public hit
+         * rewrote the redirect's "last modified" time and tripped the panel's
+         * concurrent-edit guard for anyone editing a redirect people were following.
+         * A hit is a statistic, not an edit.
+         */
         Redirect::query()
-            ->where('from_path', Redirect::normalisePath($from))
-            ->update([
-                'hits' => DB::raw('hits + 1'),
-                'last_hit_at' => now(),
-            ]);
+            ->where('from_path', $from)
+            ->toBase()
+            ->increment('hits', 1, ['last_hit_at' => now()]);
     }
 
     public function enabled(): bool
@@ -180,7 +187,7 @@ class RedirectResolver
      * beats a database round trip on every miss. Redirect::booted() forgets this key on
      * save and delete.
      *
-     * @return array<string, array{to: string, type: int}>
+     * @return array<string, array{to: string, type: int, from_path: string}>
      */
     public function map(): array
     {
@@ -188,14 +195,20 @@ class RedirectResolver
             return $this->map;
         }
 
-        /** @var array<string, array{to: string, type: int}> $map */
+        /** @var array<string, array{to: string, type: int, from_path: string}> $map */
         $map = Cache::rememberForever(Redirect::CACHE_KEY, function (): array {
             return Redirect::query()
                 ->get(['from_path', 'to_path', 'type'])
                 ->mapWithKeys(fn (Redirect $redirect): array => [
-                    $redirect->from_path => [
+                    /*
+                     * Keyed by the NORMALISED path, so a row saved before paths were
+                     * percent-decoded still matches; `from_path` keeps the stored value,
+                     * which is what identifies the row for hit counting.
+                     */
+                    Redirect::normalisePath($redirect->from_path) => [
                         'to' => $redirect->to_path,
                         'type' => $redirect->type->statusCode(),
+                        'from_path' => $redirect->from_path,
                     ],
                 ])
                 ->all();

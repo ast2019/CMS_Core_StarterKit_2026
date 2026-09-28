@@ -43,6 +43,21 @@ it('includes live articles in the source locale sitemap', function (): void {
         ->and($xml)->not->toContain($draft->getTranslation('slug', 'fa'));
 });
 
+it('leaves out a live article the editor marked noindex', function (): void {
+    /*
+     * The sitemap ignored robots_meta, so an article an editor explicitly set to
+     * noindex was still submitted — Search Console's "Submitted URL marked noindex".
+     */
+    $hidden = Content::factory()->published()->create(['robots_meta' => ['fa' => 'noindex, follow']]);
+    $shown = Content::factory()->published()->create(['robots_meta' => ['fa' => 'index, nofollow']]);
+
+    $xml = urldecode(get('/sitemap-fa.xml')->assertOk()->content());
+
+    expect($xml)->not->toContain($hidden->getTranslation('slug', 'fa'))
+        // nofollow alone is about links, not indexing.
+        ->and($xml)->toContain($shown->getTranslation('slug', 'fa'));
+});
+
 it('excludes a locale whose translation is not reviewed', function (): void {
     /*
      * Decision D-5. Submitting unreviewed machine output invites a quality

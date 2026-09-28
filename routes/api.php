@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Management\TranslationReviewController;
 use App\Http\Middleware\AddDeliveryCacheValidators;
 use App\Http\Middleware\AuthenticateDeliveryApi;
 use App\Http\Middleware\EnsureMaintenanceModeAllowsDelivery;
+use App\Http\Middleware\NormaliseNumericQuery;
 use App\Http\Middleware\ResolveApiLocale;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +52,7 @@ Route::prefix('v1')->group(function (): void {
         AuthenticateDeliveryApi::class,
         EnsureMaintenanceModeAllowsDelivery::class,
         ResolveApiLocale::class,
+        NormaliseNumericQuery::class,
 
         /*
          * INNERMOST, on purpose. Response middleware runs outward, so

@@ -36,6 +36,7 @@ class SlugGenerator
      */
     private const NORMALISATIONS_FA = [
         'ي' => 'ی',   // Arabic yeh -> Persian yeh
+        'ى' => 'ی',   // alef maksura: Arabic keyboards' final yeh, never Persian
         'ك' => 'ک',   // Arabic kaf -> Persian keheh
         'ة' => 'ه',   // teh marbuta: not used in Persian
         'أ' => 'ا',   // hamza forms: Arabic orthography, Persian writes bare alef
@@ -109,6 +110,25 @@ class SlugGenerator
         return $this->isRtl($locale)
             ? $this->generateUnicodeSlug($value, $locale)
             : Str::slug($value);
+    }
+
+    /**
+     * Fold a slug an editor TYPED (or a visitor sent) into the form a generated one has.
+     *
+     * Not generate(): that also lowercases, strips punctuation and rewrites spacing,
+     * which is right for a title and wrong for a slug someone chose on purpose. This
+     * only folds what is an input-method difference rather than a choice — Persian or
+     * Arabic-Indic digits to ASCII, and the locale's letter variants — so «خبر-۱۴۰۳»
+     * typed by hand and «خبر-1403» generated from a title are one URL, not two that
+     * look identical in the address bar and both pass the uniqueness check.
+     */
+    public function normalise(string $slug, string $locale): string
+    {
+        $slug = strtr($slug, self::DIGIT_NORMALISATIONS);
+
+        return $this->isRtl($locale)
+            ? strtr($slug, $this->normalisationsFor($locale))
+            : $slug;
     }
 
     /**

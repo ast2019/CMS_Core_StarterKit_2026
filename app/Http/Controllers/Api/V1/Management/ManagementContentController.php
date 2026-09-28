@@ -13,6 +13,7 @@ use App\Models\Content;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Full CRUD over news articles for the Management API.
@@ -78,13 +79,34 @@ class ManagementContentController extends Controller
     {
         $this->authorize('create', Content::class);
 
-        $content = Content::query()->create([
-            ...$request->validated(),
-            // Authorship is assigned, not chosen, exactly as in the panel — so the
-            // policy's `content.update.own` boundary means the same thing on both
-            // surfaces.
-            'author_id' => $request->user()->getKey(),
-        ]);
+        $target = $this->requestedStatus($request);
+
+        /*
+         * A requested status goes through the same gate and the same transition as on
+         * update. Mass-assigning it let an Author — who holds `content.create` but not
+         * `content.publish` — create an article already live, and skipped the
+         * "published" audit entry for everyone.
+         */
+        if ($target !== null) {
+            $this->authorizeStatusChange(new Content(['status' => ContentStatus::Draft]), $target);
+        }
+
+        $content = DB::transaction(function () use ($request, $target): Content {
+            $content = Content::query()->create([
+                ...$request->safe()->except(['categories', 'tags', 'status']),
+                // Authorship is assigned, not chosen, exactly as in the panel — so the
+                // policy's `content.update.own` boundary means the same thing on both
+                // surfaces.
+                'author_id' => $request->user()->getKey(),
+                'status' => ContentStatus::Draft,
+            ]);
+
+            if ($target !== null) {
+                $content->transitionTo($target, $request->user()->getKey());
+            }
+
+            return $content;
+        });
 
         $this->syncRelations($content, $request->validated());
 
@@ -98,6 +120,14 @@ class ManagementContentController extends Controller
     {
         $this->authorize('update', $content);
 
+        $target = $this->requestedStatus($request);
+
+        // Checked before any write, so a refused status change leaves the other
+        // fields in the same PATCH unapplied too.
+        if ($target !== null) {
+            $this->authorizeStatusChange($content, $target);
+        }
+
         $content->update($request->safe()->except(['categories', 'tags', 'status']));
 
         /*
@@ -106,11 +136,8 @@ class ManagementContentController extends Controller
          * API move an archived article straight back to published, bypassing review
          * — a path the panel cannot take.
          */
-        if ($request->filled('status')) {
-            $content->transitionTo(
-                ContentStatus::from($request->string('status')->toString()),
-                $request->user()->getKey(),
-            );
+        if ($target !== null) {
+            $content->transitionTo($target, $request->user()->getKey());
         }
 
         $this->syncRelations($content, $request->validated());
@@ -143,6 +170,32 @@ class ManagementContentController extends Controller
         $content->archive($request->user()->getKey());
 
         return ContentResource::make($content->fresh()->load(self::EAGER));
+    }
+
+    private function requestedStatus(Request $request): ?ContentStatus
+    {
+        return $request->filled('status')
+            ? ContentStatus::from($request->string('status')->toString())
+            : null;
+    }
+
+    /**
+     * Putting an article live, archiving it, or taking a live one down needs the
+     * `publish` ability — the same one the /publish and /archive endpoints check.
+     * Moving between draft and review stays an ordinary edit, so an Author can still
+     * submit their own work for review.
+     */
+    private function authorizeStatusChange(Content $content, ContentStatus $target): void
+    {
+        if ($content->status === $target) {
+            return;
+        }
+
+        $gated = [ContentStatus::Published, ContentStatus::Archived];
+
+        if (in_array($target, $gated, strict: true) || in_array($content->status, $gated, strict: true)) {
+            $this->authorize('publish', $content);
+        }
     }
 
     /**

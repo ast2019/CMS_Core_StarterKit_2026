@@ -215,7 +215,9 @@ it('accepts phone numbers in Persian digits and refuses letters', function (): v
         ->assertStatus(422)
         ->assertJsonValidationErrors(['phone']);
 
-    expect(ContactSubmission::query()->sole()->phone)->toBe('۰۹۱۲ ۱۲۳ ۴۵۶۷');
+    // Accepted as typed, stored with ASCII digits: ۰۹۱۲ and 0912 are one number, and
+    // storing both spellings split one caller in two (see PersianDigitsTest).
+    expect(ContactSubmission::query()->sole()->phone)->toBe('0912 123 4567');
 });
 
 it('keeps the contact form\'s own rules on the generic endpoint too', function (): void {

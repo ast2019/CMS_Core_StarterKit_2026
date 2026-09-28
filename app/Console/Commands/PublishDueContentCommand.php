@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\IsSearchable;
 use App\Enums\ContentStatus;
 use App\Jobs\NotifyFrontendOfChange;
+use App\Jobs\SyncSearchIndexes;
 use App\Services\Api\DeliveryCache;
 use App\Support\ScheduledPublishing;
 use Illuminate\Console\Command;
@@ -105,6 +107,21 @@ class PublishDueContentCommand extends Command
                 foreach ($records as $key) {
                     /** @var int|string $key */
                     NotifyFrontendOfChange::dispatch($model, $key, 'published');
+                }
+            }
+
+            /*
+             * THE SEARCH INDEX, FOR THE SAME REASON.
+             *
+             * SearchIndexObserver also syncs only on writes. When a scheduled record was
+             * saved, shouldBeSearchable() was false (not live yet), so the save took it
+             * OUT of the index — and with no write when the embargo elapses, it stayed
+             * out of search until someone happened to edit it again.
+             */
+            if (in_array(IsSearchable::class, class_uses_recursive($model), strict: true)) {
+                foreach ($records as $key) {
+                    /** @var int|string $key */
+                    SyncSearchIndexes::dispatch($model, $key);
                 }
             }
         }

@@ -62,7 +62,10 @@ trait HasPublishStatus
             return false;
         }
 
-        return $this->publish_date === null || $this->publish_date->isPast();
+        // Not isPast(): that is strict, while scopeLive() — and cms:publish-due's window —
+        // treat publish_date == now as live. The two must agree at the boundary, or the
+        // index sync the command dispatches can judge a just-due record not yet live.
+        return $this->publish_date === null || ! $this->publish_date->isFuture();
     }
 
     public function isScheduled(): bool
