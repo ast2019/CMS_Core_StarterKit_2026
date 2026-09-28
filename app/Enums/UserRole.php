@@ -42,6 +42,12 @@ enum UserRole: string
      * `content.update.own` / `content.update.any` are deliberately separate so
      * an Author cannot edit a colleague's article.
      *
+     * `form.manage` (build and edit forms) is given to every role that can change anything —
+     * Admin, Editor and Author — by the owner's decision: a form's wording is editorial copy, not
+     * site configuration. Viewer stays read-only, as the role's name promises; it can still open
+     * the submissions inbox (`contact.view`). The contact form's STRUCTURE stays fixed whoever
+     * edits it (ContactFormStructure), so this cannot break POST /api/v1/contact.
+     *
      * `media.restore` mirrors `content.restore` and exists because item 11 gave media assets
      * a trash. It was missing while MediaAssetPolicy already inherited a restore() method
      * from AuthorizesCmsAbilities that checked for it — so the ability no role could hold made
@@ -69,6 +75,7 @@ enum UserRole: string
                 'menu.manage',
                 'settings.manage',
                 'contact.view',
+                'form.manage',
                 'user.manage',
                 'audit.view',
                 'release.manage',
@@ -83,12 +90,14 @@ enum UserRole: string
                 'redirect.manage',
                 'menu.manage',
                 'contact.view',
+                'form.manage',
             ],
             self::Author => [
                 'panel.access',
                 'content.view', 'content.create', 'content.update.own',
                 'media.view', 'media.upload', 'media.update.own',
                 'translation.view',
+                'form.manage',
             ],
             self::Viewer => [
                 'panel.access',

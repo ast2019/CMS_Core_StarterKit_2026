@@ -6,7 +6,7 @@ inclusion: always
 
 Handoff for AI assistants working on this repo. It records how the owner wants work done, what has
 already been decided, and the traps that caused real bugs. Read it before proposing or changing
-anything. It was last updated after PR #27.
+anything. It was last updated after PR #29.
 
 ## How to work
 
@@ -61,10 +61,15 @@ set is fixed by `ContactFormStructure`. The frontend contract is `docs/forms.md`
   `form_labels`, deprecated, built from the contact form's schema plus any legacy-only keys
   (`docs/forms.md`). Do not re-add a Settings field for it.
 
-No approved work is outstanding. **Waiting on the owner** (ask, do not decide):
-- Let editors manage forms (a `form.manage` ability) rather than admins only.
-- A separate `forms` module switch (forms currently follow `cms.modules.contact`).
-- Rename the "Contact messages" inbox, which now holds every form's submissions.
+**Decided after 0.9.0, done in 0.10.0:** forms are built and edited by Admin, Editor and Author
+(`form.manage`; Viewer stays read-only). The form builder has its own switch
+`cms.modules.forms` (`CMS_MODULE_FORMS`) under `contact` — read it only through
+`Form::builderEnabled()`; with forms off the Forms screen shows only the contact form (its
+wording has no other editor). Forms have no owner, so any `form.manage` holder — Authors
+included — may edit, deactivate, re-key or delete any form; accepted knowingly, do not narrow it
+without asking. The inbox is named «پیام‌های فرم‌ها» / "Form submissions".
+
+No approved work is outstanding. **Waiting on the owner** (ask, do not decide): item 45 above.
 
 ## Traps that caused real bugs here
 

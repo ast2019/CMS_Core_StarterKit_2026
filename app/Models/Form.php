@@ -86,6 +86,18 @@ class Form extends Model
     }
 
     /**
+     * Whether the form builder is on: its own switch, `cms.modules.forms`, AND the contact module
+     * it belongs to. With forms off the built-in contact form and the inbox keep working —
+     * POST /api/v1/contact is the contact module's — but the Forms screens and
+     * /api/v1/forms/* are gone.
+     */
+    public static function builderEnabled(): bool
+    {
+        return (bool) config('cms.modules.contact', true)
+            && (bool) config('cms.modules.forms', true);
+    }
+
+    /**
      * The seeded contact form, which the create_forms_table migration guarantees exists.
      */
     public static function contact(): self

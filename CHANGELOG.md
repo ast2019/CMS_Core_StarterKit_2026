@@ -9,6 +9,17 @@ Entries are written by `php artisan cms:release`, which also bumps the version i
 `system_info` and inserts a row into the `changelogs` table (RULES #1 and #2).
 Editing this file by hand will make the three sources disagree.
 
+## [0.10.0] - 2026-09-28
+
+### Added
+
+- A separate forms module switch (CMS_MODULE_FORMS) for the form builder and /api/v1/forms, under the contact module; with it off the built-in contact form keeps working and stays editable under System > Forms, which then lists only it.
+
+### Changed
+
+- Forms can be built and edited by Admins, Editors and Authors (new form.manage ability); Viewers stay read-only.
+- The submissions inbox is renamed Form submissions, since it holds every form's submissions.
+
 ## [0.9.0] - 2026-09-28
 
 ### Added

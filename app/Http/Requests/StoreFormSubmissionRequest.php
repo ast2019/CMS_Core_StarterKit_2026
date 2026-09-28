@@ -45,12 +45,12 @@ class StoreFormSubmissionRequest extends FormRequest
         }
 
         /*
-         * The contact module gates every form, not only `contact`: the builder generalises the
-         * contact form and its inbox, and a site that switched "contact" off has no inbox for any
-         * of these submissions to land in.
+         * The `forms` switch, nested under `contact` (Form::builderEnabled()). Checked before
+         * validation, so a switched-off endpoint answers 404 rather than 422. The contact form
+         * itself is still accepted on POST /api/v1/contact with forms off.
          */
-        if (! (bool) config('cms.modules.contact', true)) {
-            throw new NotFoundHttpException('The [contact] module is not enabled on this site.');
+        if (! Form::builderEnabled()) {
+            throw new NotFoundHttpException('The [forms] module is not enabled on this site.');
         }
 
         $key = $this->route('key');

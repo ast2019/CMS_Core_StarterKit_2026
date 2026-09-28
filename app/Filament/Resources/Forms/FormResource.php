@@ -11,19 +11,27 @@ use App\Filament\Resources\Forms\Pages\ListForms;
 use App\Filament\Resources\Forms\Schemas\FormForm;
 use App\Filament\Resources\Forms\Tables\FormsTable;
 use App\Models\Form;
+use App\Services\Forms\ContactFormStructure;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 /**
  * Item 15 — the form builder.
  *
- * Part of the CONTACT module rather than a module of its own: the builder is the contact form
- * generalised, its submissions arrive in the contact inbox, and a site with the inbox switched
- * off has nowhere for them to go.
+ * Two switches, nested: `cms.modules.contact` (the contact form and the inbox) and, under it,
+ * `cms.modules.forms` (building other forms). Read the second only through
+ * Form::builderEnabled().
+ *
+ * With the contact module on and forms off, this screen still opens, but lists and edits ONLY
+ * the built-in contact form: since 0.9.0 its wording lives nowhere else (GET /api/v1/contact
+ * serves `form_labels` from it), so hiding the screen would freeze that text. No other form
+ * can be created, listed or opened. With contact off, nothing here exists.
  */
 class FormResource extends Resource
 {
@@ -32,7 +40,8 @@ class FormResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
 
     /**
-     * After Redirects, before Users: site configuration rather than content.
+     * After Redirects, before Users, in the System group — where the owner found it. It is
+     * editorial copy (see UserRole, `form.manage`), but moving the menu entry is not part of that.
      */
     protected static ?int $navigationSort = 45;
 
@@ -62,6 +71,26 @@ class FormResource extends Resource
     public static function canAccess(): bool
     {
         return config('cms.modules.contact', true) && parent::canAccess();
+    }
+
+    /**
+     * With the builder off, only the contact form is reachable — in the list and by URL, since
+     * Filament resolves the edit page's record through this query.
+     *
+     * @return Builder<Model>
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        return Form::builderEnabled()
+            ? $query
+            : $query->where('key', ContactFormStructure::KEY);
+    }
+
+    public static function canCreate(): bool
+    {
+        return Form::builderEnabled() && parent::canCreate();
     }
 
     public static function form(Schema $schema): Schema

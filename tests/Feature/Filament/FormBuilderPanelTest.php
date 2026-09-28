@@ -167,18 +167,102 @@ it('never deletes the contact form or a form that has submissions', function ():
         ->and(fn () => Form::contact()->delete())->toThrow(ValidationException::class);
 });
 
-it('keeps form building to the roles that manage site settings', function (): void {
+it('lets every role that edits content build forms, and keeps viewers read-only', function (string $role, bool $allowed): void {
+    // The owner's decision: a form's wording is editorial copy, not site configuration.
+    $user = User::factory()->{$role}()->create();
+    actingAs($user);
+
+    $form = Form::factory()->create();
+
+    expect(FormResource::canAccess())->toBe($allowed)
+        ->and($user->can('create', Form::class))->toBe($allowed)
+        ->and($user->can('update', $form))->toBe($allowed);
+})->with([
+    'admin' => ['admin', true],
+    'editor' => ['editor', true],
+    'author' => ['author', true],
+    'viewer' => ['viewer', false],
+]);
+
+it('lets an editor save the contact form\'s wording but not its structure', function (): void {
     actingAs(User::factory()->editor()->create());
 
-    expect(FormResource::canAccess())->toBeFalse();
+    $contact = Form::contact();
 
+    Livewire::test(EditForm::class, ['record' => $contact->getKey()])
+        ->assertOk()
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect(Form::contact()->fieldKeys())->toBe($contact->fieldKeys());
+});
+
+it('hides everything to do with forms when the contact module is off', function (): void {
     actingAs(User::factory()->admin()->create());
-
-    expect(FormResource::canAccess())->toBeTrue();
-
     config()->set('cms.modules.contact', false);
 
-    expect(FormResource::canAccess())->toBeFalse();
+    expect(FormResource::canAccess())->toBeFalse()
+        ->and(FormResource::shouldRegisterNavigation())->toBeFalse();
+});
+
+it('keeps only the contact form editable when the forms module is off', function (): void {
+    /*
+     * GET /api/v1/contact serves the contact form's labels, and this screen is their only editor,
+     * so switching the builder off must not freeze them.
+     */
+    // Enrolled: the direct GET below goes through mandatory two-factor.
+    actingAs(User::factory()->editor()->withMfaEnrolled()->create());
+    $other = Form::factory()->create();
+    config()->set('cms.modules.forms', false);
+
+    expect(FormResource::canAccess())->toBeTrue()
+        ->and(FormResource::canCreate())->toBeFalse();
+
+    Livewire::test(ListForms::class)
+        ->assertCanSeeTableRecords([Form::contact()])
+        ->assertCanNotSeeTableRecords([$other]);
+
+    Livewire::test(EditForm::class, ['record' => Form::contact()->getKey()])->assertOk();
+
+    $this->get(FormResource::getUrl('edit', ['record' => $other]))->assertNotFound();
+});
+
+it('still lets an editor or author change only the contact form\'s wording, never its structure', function (string $role): void {
+    actingAs(User::factory()->{$role}()->create());
+
+    $contact = Form::contact();
+    $fields = $contact->fields;
+    $fields[0]['type'] = 'textarea';
+    $fields[0]['required'] = ! $fields[0]['required'];
+    $fields[0]['label'] = ['fa' => 'نام کامل'];
+
+    $contact->update(['fields' => $fields]);
+
+    $saved = Form::contact()->fields[0];
+
+    expect($saved['label']['fa'])->toBe('نام کامل')
+        ->and($saved['type'])->toBe($contact->fields[0]['type'])
+        ->and($saved['required'])->toBe($contact->fields[0]['required']);
+})->with(['editor', 'author']);
+
+it('lets an editor delete a form with no submissions, but never the contact form', function (): void {
+    $editor = User::factory()->editor()->create();
+    actingAs($editor);
+    $form = Form::factory()->create();
+
+    expect($editor->can('delete', $form))->toBeTrue()
+        ->and($editor->can('delete', Form::contact()))->toBeFalse();
+});
+
+it('keeps the inbox and its form filter working with the forms module off', function (): void {
+    actingAs(User::factory()->admin()->create());
+    $submission = ContactSubmission::factory()->create();
+    config()->set('cms.modules.forms', false);
+
+    Livewire::test(ListContactSubmissions::class)
+        ->assertOk()
+        ->filterTable('form_id', Form::contact()->getKey())
+        ->assertCanSeeTableRecords([$submission]);
 });
 
 it('filters the inbox by form', function (): void {
