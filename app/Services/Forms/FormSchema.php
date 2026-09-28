@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Forms;
 
 use App\Enums\FormFieldType;
+use App\Support\Digits;
 
 /**
  * Item 15 — the one definition of what a form field looks like.
@@ -219,9 +220,19 @@ final class FormSchema
                 continue;
             }
 
-            $payload[$key] = $field['type'] === FormFieldType::Checkbox->value
-                ? filter_var($value, FILTER_VALIDATE_BOOL)
-                : (is_scalar($value) ? (string) $value : '');
+            $payload[$key] = match (true) {
+                $field['type'] === FormFieldType::Checkbox->value => filter_var($value, FILTER_VALIDATE_BOOL),
+
+                /*
+                 * A phone number is stored with ASCII digits whatever keyboard typed it.
+                 * The rule accepts ۰۹۱۲ and 0912 alike (FormSubmissionRules), so storing
+                 * them as typed made one caller two numbers — in the inbox, in its search,
+                 * in an export and in a tel: link.
+                 */
+                $field['type'] === FormFieldType::Tel->value && is_string($value) => Digits::toAscii($value),
+
+                default => is_scalar($value) ? (string) $value : '',
+            };
         }
 
         return $payload;

@@ -65,10 +65,10 @@ class ContentController extends Controller
                         $request->filled('category'),
                         fn (Builder $query) => $query->whereHas(
                             'categories',
-                            fn (Builder $inner) => $inner->whereJsonContainsLocale(
-                                'slug',
-                                $locale,
-                                (string) $request->query('category'),
+                            // Every spelling of the slug, so ?category=…-۱۴۰۳ finds …-1403.
+                            fn (Builder $inner) => $inner->whereIn(
+                                "slug->{$locale}",
+                                $this->slugCandidates((string) $request->query('category'), $locale),
                             ),
                         ),
                     )
@@ -76,16 +76,30 @@ class ContentController extends Controller
                         $request->filled('tag'),
                         fn (Builder $query) => $query->whereHas(
                             'tags',
-                            fn (Builder $inner) => $inner->whereJsonContainsLocale(
-                                'slug',
-                                $locale,
-                                (string) $request->query('tag'),
+                            // Every spelling of the slug, so ?tag=…-۱۴۰۳ finds …-1403.
+                            fn (Builder $inner) => $inner->whereIn(
+                                "slug->{$locale}",
+                                $this->slugCandidates((string) $request->query('tag'), $locale),
                             ),
                         ),
                     )
                     ->orderByDesc('publish_date')
                     ->paginate($perPage)
-                    ->withQueryString();
+                    /*
+                     * Only what the cache key is made of, never withQueryString().
+                     * This body is cached and served to everyone with the same key, so
+                     * echoing the request's own query string put the FIRST caller's
+                     * arbitrary parameters (?utm_source=…&x=…) into every later
+                     * caller's next/prev links for the whole TTL. The locale is written
+                     * out too, so a link works the same whether the first request
+                     * chose it by ?locale= or by Accept-Language.
+                     */
+                    ->appends(array_filter([
+                        'locale' => $locale,
+                        'category' => $request->filled('category') ? (string) $request->query('category') : null,
+                        'tag' => $request->filled('tag') ? (string) $request->query('tag') : null,
+                        'per_page' => $perPage,
+                    ], fn (mixed $value): bool => $value !== null));
 
                 return ContentResource::collection($paginator);
             },

@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Enums\ContentStatus;
+use App\Jobs\SyncSearchIndexes;
 use App\Models\Content;
 use App\Models\Gallery;
 use App\Models\Page;
 use App\Services\Api\DeliveryCache;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 
 use function Pest\Laravel\artisan;
 
@@ -207,6 +209,56 @@ it('makes a scheduled article visible to the Delivery API once its time passes',
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $content->getKey());
+});
+
+it('puts a scheduled article into the search index once its time passes', function (): void {
+    /*
+     * Saving a scheduled article took it OUT of the index (not live yet), and nothing
+     * wrote to it when the embargo elapsed — so it stayed missing from search until the
+     * next edit. The command has to sync the index as it does the caches and webhook.
+     */
+    $article = Content::factory()->create([
+        'status' => ContentStatus::Published,
+        'publish_date' => now()->addSeconds(10),
+    ]);
+    $draft = Content::factory()->create(['publish_date' => now()->addSeconds(10)]);
+
+    $this->travel(30)->seconds();
+
+    Queue::fake();
+
+    artisan('cms:publish-due')->assertSuccessful();
+
+    Queue::assertPushed(
+        SyncSearchIndexes::class,
+        function (SyncSearchIndexes $job) use ($article): bool {
+            $read = fn (string $property): mixed => (new ReflectionProperty($job, $property))->getValue($job);
+
+            return $read('modelClass') === Content::class
+                && $read('modelKey') === $article->getKey()
+                && $read('remove') === false;
+        },
+    );
+    Queue::assertPushed(SyncSearchIndexes::class, 1);
+
+    // And by the time the job runs, the record counts as searchable.
+    expect($article->fresh()->forSearchLocale('fa')->shouldBeSearchable())->toBeTrue()
+        ->and($draft->fresh()->forSearchLocale('fa')->shouldBeSearchable())->toBeFalse();
+});
+
+it('treats a record due exactly now as live everywhere', function (): void {
+    // scopeLive() uses <=; isLive() used isPast(), which is strict. They must agree.
+    // A whole second, because the column drops microseconds: a frozen now() with a
+    // fraction would store a publish_date already in the past and miss the boundary.
+    $this->travelTo(now()->startOfSecond());
+
+    $content = Content::factory()->create([
+        'status' => ContentStatus::Published,
+        'publish_date' => now(),
+    ]);
+
+    expect(Content::query()->live()->whereKey($content->getKey())->exists())->toBeTrue()
+        ->and($content->fresh()->isLive())->toBeTrue();
 });
 
 it('registers the scheduled tasks the deployment guide tells operators to run', function (): void {

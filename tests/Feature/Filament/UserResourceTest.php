@@ -119,6 +119,40 @@ it('denies a non-admin the assignRole and deactivate abilities on their own reco
         ->and($editor->can('update', $editor))->toBeTrue();
 });
 
+it('denies an admin deleting, deactivating or re-roling their own account', function (): void {
+    /*
+     * Gate::before answered `true` for admins before UserPolicy ran, so its self-action
+     * denials never applied to the one role that can manage users — the sole admin could
+     * delete or demote themselves and leave the install with nobody to manage it.
+     */
+    $admin = $this->admin;
+    $other = User::factory()->admin()->create();
+
+    expect($admin->can('delete', $admin))->toBeFalse()
+        ->and($admin->can('forceDelete', $admin))->toBeFalse()
+        ->and($admin->can('deactivate', $admin))->toBeFalse()
+        ->and($admin->can('assignRole', $admin))->toBeFalse()
+        ->and($admin->can('update', $admin))->toBeTrue()
+        // Other accounts, including other admins, stay manageable.
+        ->and($admin->can('delete', $other))->toBeTrue()
+        ->and($admin->can('deactivate', $other))->toBeTrue()
+        ->and($admin->can('assignRole', $other))->toBeTrue();
+});
+
+it('hides delete and locks role and active on an admin\'s own edit page', function (): void {
+    actingAs($this->admin);
+
+    Livewire::test(EditUser::class, ['record' => $this->admin->getRouteKey()])
+        ->assertActionHidden('delete')
+        ->assertFormFieldIsDisabled('role')
+        ->assertFormFieldIsDisabled('is_active')
+        ->fillForm(['role' => UserRole::Viewer->value, 'is_active' => false])
+        ->call('save');
+
+    expect($this->admin->fresh()->role)->toBe(UserRole::Admin)
+        ->and($this->admin->fresh()->is_active)->toBeTrue();
+});
+
 it('lets an admin change another user role on the edit page', function (): void {
     actingAs($this->admin);
 

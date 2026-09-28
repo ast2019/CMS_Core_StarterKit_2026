@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\ContentStatus;
 use App\Enums\UserRole;
 use App\Filament\Pages\AuditLog;
 use App\Models\Content;
@@ -101,6 +102,39 @@ it('snapshots the previous state on update and can restore it', function (): voi
     $content->restoreVersion($version);
 
     expect($content->fresh()->getTranslation('title', 'fa'))->toBe('عنوان اولیه');
+});
+
+it('restores content but never the workflow status, publish date or slug', function (): void {
+    /*
+     * Restore used to forceFill every snapshotted column. The version taken just before
+     * an archive holds status=published, so restoring it put an archived article live
+     * again — past the transition map and the publish ability — and an old slug moved
+     * the URL without a redirect.
+     */
+    $content = Content::factory()->published()->create(['title' => ['fa' => 'عنوان منتشرشده']]);
+    $slug = $content->getTranslation('slug', 'fa');
+    $publishedAt = $content->publish_date;
+
+    $content->archive();
+
+    $content = $content->fresh();
+    $content->setTranslation('title', 'fa', 'عنوان پس از آرشیو');
+    $content->setTranslation('slug', 'fa', 'نشانی-تازه');
+    $content->publish_date = now()->addMonth();
+    $content->save();
+
+    // Oldest snapshot: before the archive — published, original title and slug.
+    $beforeArchive = $content->versions()->reorder('version_number')->firstOrFail();
+    expect($beforeArchive->payload['status'])->toBe(ContentStatus::Published->value);
+
+    $content->restoreVersion($beforeArchive);
+    $content = $content->fresh();
+
+    expect($content->getTranslation('title', 'fa'))->toBe('عنوان منتشرشده')
+        ->and($content->status)->toBe(ContentStatus::Archived)
+        ->and($content->getTranslation('slug', 'fa'))->toBe('نشانی-تازه')
+        ->and($content->getTranslation('slug', 'fa'))->not->toBe($slug)
+        ->and($content->publish_date->equalTo($publishedAt))->toBeFalse();
 });
 
 it('keeps a restore reversible by versioning the state it replaced', function (): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Delivery\Concerns;
 
+use App\Services\Content\SlugGenerator;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -96,7 +97,7 @@ trait ResolvesDeliveryRequest
      */
     protected function resolveBySlug(Closure $query, string $locale, string $slug): ?Model
     {
-        $record = $query()->whereJsonContainsLocale('slug', $locale, $slug)->first();
+        $record = $this->firstBySlug($query, $locale, $slug);
 
         if ($record !== null) {
             return $record;
@@ -108,6 +109,43 @@ trait ResolvesDeliveryRequest
             return null;
         }
 
-        return $query()->whereJsonContainsLocale('slug', $source, $slug)->first();
+        return $this->firstBySlug($query, $source, $slug);
+    }
+
+    /**
+     * The spellings of one slug a visitor may send, most literal first.
+     *
+     * Stored slugs have ASCII digits and Persian letter forms (SlugGenerator), but a
+     * visitor typing /fa/news/خبر-۱۴۰۳ on a Persian keyboard sends Persian digits and
+     * got a 404 for a page that exists. The literal form is still tried first, so a
+     * slug stored before typed slugs were normalised keeps resolving too.
+     *
+     * @return list<string>
+     */
+    protected function slugCandidates(string $slug, string $locale): array
+    {
+        return array_values(array_unique([
+            $slug,
+            app(SlugGenerator::class)->normalise($slug, $locale),
+        ]));
+    }
+
+    /**
+     * @template TModel of Model
+     *
+     * @param  Closure(): Builder<TModel>  $query
+     * @return TModel|null
+     */
+    private function firstBySlug(Closure $query, string $locale, string $slug): ?Model
+    {
+        foreach ($this->slugCandidates($slug, $locale) as $candidate) {
+            $record = $query()->whereJsonContainsLocale('slug', $locale, $candidate)->first();
+
+            if ($record !== null) {
+                return $record;
+            }
+        }
+
+        return null;
     }
 }

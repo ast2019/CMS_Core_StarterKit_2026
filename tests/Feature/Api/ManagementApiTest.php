@@ -141,6 +141,96 @@ it('lets an author edit their own article', function (): void {
     expect($own->fresh()->getTranslation('title', 'fa'))->toBe('عنوان اصلاح‌شده');
 });
 
+it('forbids an author from creating an article that is already published', function (): void {
+    /*
+     * status used to be mass-assigned on create, checked only against `create` — so an
+     * Author, who cannot publish, could create an article already live on /api/v1/news.
+     */
+    Sanctum::actingAs(User::factory()->author()->create(), ['manage']);
+
+    postJson('/api/v1/manage/news', [
+        'title' => ['fa' => 'انتشار مستقیم'],
+        'status' => ContentStatus::Published->value,
+    ])->assertForbidden();
+
+    expect(Content::query()->count())->toBe(0);
+});
+
+it('lets an author create an article straight into review', function (): void {
+    Sanctum::actingAs(User::factory()->author()->create(), ['manage']);
+
+    postJson('/api/v1/manage/news', [
+        'title' => ['fa' => 'برای بازبینی'],
+        'status' => ContentStatus::Review->value,
+    ])->assertCreated();
+
+    expect(Content::query()->firstOrFail()->status)->toBe(ContentStatus::Review);
+});
+
+it('publishes on create through the workflow, so the go-live is audited', function (): void {
+    $editor = User::factory()->editor()->create();
+    Sanctum::actingAs($editor, ['manage']);
+
+    postJson('/api/v1/manage/news', [
+        'title' => ['fa' => 'خبر فوری'],
+        'status' => ContentStatus::Published->value,
+    ])->assertCreated();
+
+    $content = Content::query()->firstOrFail();
+
+    expect($content->status)->toBe(ContentStatus::Published)
+        ->and($content->publish_date)->not->toBeNull()
+        ->and($content->activitiesAsSubject()->where('event', 'published')->count())->toBe(1);
+});
+
+it('refuses an illegal status on create', function (): void {
+    Sanctum::actingAs(User::factory()->admin()->create(), ['manage']);
+
+    // Draft -> archived is not in the transition map, on create any more than on update.
+    postJson('/api/v1/manage/news', [
+        'title' => ['fa' => 'آرشیو مستقیم'],
+        'status' => ContentStatus::Archived->value,
+    ])->assertStatus(422);
+
+    expect(Content::query()->count())->toBe(0);
+});
+
+it('forbids an author from publishing, archiving or unpublishing their own article via PATCH', function (): void {
+    /*
+     * update() authorised only `update`, which an Author holds for their own work, and
+     * then applied any legal transition — so PATCH {status: published} did what the
+     * /publish endpoint refuses.
+     */
+    $author = User::factory()->author()->create();
+    Sanctum::actingAs($author, ['manage']);
+
+    $draft = Content::factory()->for($author, 'author')->create();
+    $live = Content::factory()->for($author, 'author')->published()->create();
+
+    patchJson("/api/v1/manage/news/{$draft->id}", [
+        'title' => ['fa' => 'نباید ذخیره شود'],
+        'status' => ContentStatus::Published->value,
+    ])->assertForbidden();
+
+    patchJson("/api/v1/manage/news/{$live->id}", ['status' => ContentStatus::Archived->value])->assertForbidden();
+    patchJson("/api/v1/manage/news/{$live->id}", ['status' => ContentStatus::Draft->value])->assertForbidden();
+
+    expect($draft->fresh()->status)->toBe(ContentStatus::Draft)
+        ->and($draft->fresh()->getTranslation('title', 'fa'))->not->toBe('نباید ذخیره شود')
+        ->and($live->fresh()->status)->toBe(ContentStatus::Published);
+});
+
+it('lets an author submit their own article for review via PATCH', function (): void {
+    $author = User::factory()->author()->create();
+    Sanctum::actingAs($author, ['manage']);
+
+    $draft = Content::factory()->for($author, 'author')->create();
+
+    patchJson("/api/v1/manage/news/{$draft->id}", ['status' => ContentStatus::Review->value])->assertOk();
+
+    expect($draft->fresh()->status)->toBe(ContentStatus::Review);
+});
+
 it('forbids an author from deleting content', function (): void {
     $author = User::factory()->author()->create();
     Sanctum::actingAs($author, ['manage']);

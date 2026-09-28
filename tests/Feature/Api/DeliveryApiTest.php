@@ -141,6 +141,41 @@ it('filters articles by category slug', function (): void {
         ->and($response->json('data.0.id'))->toBe($inCategory->id);
 });
 
+it('never serves one caller\'s query string in a cached listing\'s page links', function (): void {
+    /*
+     * The listing is cached per filters, but its links used withQueryString(): the
+     * first caller's arbitrary parameters then sat in every later caller's next/prev
+     * links for the cache's lifetime.
+     */
+    config()->set('cache.default', 'array');
+    config()->set('cms.api.delivery.cache_ttl', 300);
+
+    Content::factory()->published()->count(3)->create();
+
+    getJson('/api/v1/news?per_page=1&utm_source=INJECTED')->assertOk();
+
+    $response = getJson('/api/v1/news?per_page=1')->assertOk();
+    $next = (string) $response->json('links.next');
+
+    expect($next)->not->toContain('INJECTED')
+        // The filters that define the listing survive, so the next page is the same list.
+        ->and($next)->toContain('per_page=1')
+        ->and($next)->toContain('page=2')
+        ->and($next)->toContain('locale=fa');
+});
+
+it('keeps the category filter in the page links', function (): void {
+    $category = Category::factory()->create();
+
+    Content::factory()->published()->count(2)->create()
+        ->each(fn (Content $content) => $content->categories()->attach($category));
+
+    $slug = $category->getTranslation('slug', 'fa');
+    $next = (string) getJson('/api/v1/news?per_page=1&category='.rawurlencode($slug))->json('links.next');
+
+    expect(urldecode($next))->toContain('category='.$slug);
+});
+
 it('bounds the page size so a public endpoint cannot be asked for everything', function (): void {
     Content::factory()->published()->count(5)->create();
 

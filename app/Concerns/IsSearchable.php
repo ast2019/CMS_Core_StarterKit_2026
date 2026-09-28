@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Concerns;
 
+use App\Support\Digits;
 use App\Support\TipTap;
 use Laravel\Scout\Searchable;
 
@@ -66,7 +67,13 @@ trait IsSearchable
     {
         $locale = $this->indexingLocale ?? app()->getLocale();
 
-        return [
+        /*
+         * Digits folded to ASCII in the INDEX copy only — the article keeps whatever an
+         * editor typed. Otherwise «بودجه ۱۴۰۳» was unfindable by «1403» and vice versa:
+         * the same number, and a different string to the engine. The search endpoint
+         * folds the query the same way.
+         */
+        return $this->foldDigitsForSearch([
             'id' => (string) $this->getKey(),
             'locale' => $locale,
 
@@ -92,7 +99,22 @@ trait IsSearchable
             // Sortable, and lets the endpoint exclude scheduled content without a
             // second database round trip per hit.
             'publish_timestamp' => $this->publish_date?->getTimestamp(),
-        ];
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $document
+     * @return array<string, mixed>
+     */
+    private function foldDigitsForSearch(array $document): array
+    {
+        foreach (['title', 'excerpt', 'body', 'tags', 'categories'] as $field) {
+            $document[$field] = is_array($document[$field])
+                ? array_map(Digits::toAsciiIfString(...), $document[$field])
+                : Digits::toAsciiIfString($document[$field]);
+        }
+
+        return $document;
     }
 
     /**

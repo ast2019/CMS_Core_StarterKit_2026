@@ -20,6 +20,7 @@ use BladeUI\Icons\Factory as IconFactory;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Filament\Support\Assets\AlpineComponent;
+use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Events\Failed;
@@ -39,6 +40,17 @@ class CmsServiceProvider extends ServiceProvider
      * @var list<string>
      */
     public const FORBIDDEN_DISK_DRIVERS = ['s3', 'gcs', 'azure', 'ftp', 'sftp'];
+
+    /**
+     * User abilities no one may exercise on their own account, admins included
+     * (UserPolicy). Enforced in Gate::before because the admin bypass would otherwise
+     * answer before the policy is ever asked.
+     *
+     * @var list<string>
+     */
+    public const SELF_PROTECTED_USER_ABILITIES = ['delete', 'forceDelete', 'deactivate', 'assignRole'];
+
+    public const PERSIAN_DIGITS_ASSET_ID = 'persian-digits';
 
     public function register(): void
     {
@@ -152,6 +164,12 @@ class CmsServiceProvider extends ServiceProvider
                     LocalizedDateTimePicker::ASSET_ID,
                     resource_path('js/filament/localized-date-time-picker.js'),
                 ),
+                /*
+                 * On every panel page, sign-in included: Persian digits typed into a
+                 * one-time code or a number field become ASCII (see the file). Without
+                 * it an editor on a Persian keyboard could not type the sign-in code.
+                 */
+                Js::make(self::PERSIAN_DIGITS_ASSET_ID, resource_path('js/filament/persian-digits.js')),
             ],
             package: LocalizedDateTimePicker::ASSET_PACKAGE,
         );
@@ -275,10 +293,24 @@ class CmsServiceProvider extends ServiceProvider
             });
         }
 
-        // Admins bypass individual ability checks, but this runs *after*
-        // explicit denials so it cannot resurrect a revoked account.
-        Gate::before(function (User $user, string $ability): ?bool {
+        /*
+         * Admins bypass individual ability checks. A non-null answer here settles the
+         * check WITHOUT running the policy, so any denial a policy makes for admins too
+         * has to be made here, before the bypass:
+         *
+         *  - an inactive account is refused everything;
+         *  - nobody deletes, deactivates or re-roles their OWN account (UserPolicy). For
+         *    an admin those policy lines were dead code, so the only admin of an install
+         *    could delete or demote themselves and leave nobody able to manage users.
+         */
+        Gate::before(function (User $user, string $ability, array $arguments = []): ?bool {
             if (! $user->is_active) {
+                return false;
+            }
+
+            if (in_array($ability, self::SELF_PROTECTED_USER_ABILITIES, strict: true)
+                && ($arguments[0] ?? null) instanceof User
+                && $user->is($arguments[0])) {
                 return false;
             }
 
