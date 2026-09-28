@@ -588,7 +588,7 @@ return [
          */
         'status' => [
             'scheduler' => 'زمان‌بند (cron)',
-            'queue' => 'کارگر صف',
+            'queue' => 'صف',
             'cache_store' => 'انبارهٔ کش',
             'running' => 'در حال اجرا',
             'stopped' => 'متوقف',
