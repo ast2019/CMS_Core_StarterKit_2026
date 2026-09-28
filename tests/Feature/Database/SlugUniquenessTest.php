@@ -25,6 +25,13 @@ use Illuminate\Support\Facades\Schema;
  * The MySQL tests SKIP on SQLite rather than pretending to pass. A test that silently
  * verifies nothing on the developer's machine is worse than an absent one, because it
  * reads as coverage.
+ *
+ * Nothing runs them automatically: the GitHub Actions MySQL job was removed at the owner's
+ * request (no paid Actions plan). Run them by hand against a MySQL 8 database before changing
+ * slugs or their migration:
+ *
+ *     DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cms_test DB_USERNAME=root \
+ *         DB_PASSWORD=secret php artisan test tests/Feature/Database/SlugUniquenessTest.php
  */
 function isMySql(): bool
 {
