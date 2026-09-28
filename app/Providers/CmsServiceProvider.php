@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Observers\DeliveryCacheObserver;
 use App\Observers\FrontendWebhookObserver;
 use App\Observers\SearchIndexObserver;
+use App\Observers\TranslationStateObserver;
 use App\Policies;
 use App\Support\AuthorisationProbe;
 use App\Support\Dates\LocalizedDate;
@@ -120,6 +121,7 @@ class CmsServiceProvider extends ServiceProvider
         $this->registerDeliveryCacheInvalidation();
         $this->registerFrontendWebhooks();
         $this->registerSearchIndexing();
+        $this->registerTranslationStateSideEffects();
         $this->registerSpecVersion();
         $this->registerVideoMetadataExtraction();
         $this->registerDisplayTimezone();
@@ -301,7 +303,9 @@ class CmsServiceProvider extends ServiceProvider
          *  - an inactive account is refused everything;
          *  - nobody deletes, deactivates or re-roles their OWN account (UserPolicy). For
          *    an admin those policy lines were dead code, so the only admin of an install
-         *    could delete or demote themselves and leave nobody able to manage users.
+         *    could delete or demote themselves and leave nobody able to manage users;
+         *  - nobody deletes a system page (404 / maintenance / home). PagePolicy already
+         *    says no, but without this the admin bypass made that line dead code too.
          */
         Gate::before(function (User $user, string $ability, array $arguments = []): ?bool {
             if (! $user->is_active) {
@@ -311,6 +315,12 @@ class CmsServiceProvider extends ServiceProvider
             if (in_array($ability, self::SELF_PROTECTED_USER_ABILITIES, strict: true)
                 && ($arguments[0] ?? null) instanceof User
                 && $user->is($arguments[0])) {
+                return false;
+            }
+
+            if (in_array($ability, ['delete', 'forceDelete'], strict: true)
+                && ($arguments[0] ?? null) instanceof Models\Page
+                && $arguments[0]->isSystemPage()) {
                 return false;
             }
 
@@ -428,5 +438,15 @@ class CmsServiceProvider extends ServiceProvider
             $model::disableSearchSyncing();
             $model::observe(SearchIndexObserver::class);
         }
+    }
+
+    /**
+     * Reviewing a translation only writes TranslationState. Without a dedicated
+     * observer, search stays empty for the newly eligible locale and Delivery keeps
+     * serving cached noindex SEO until TTL.
+     */
+    protected function registerTranslationStateSideEffects(): void
+    {
+        Models\TranslationState::observe(TranslationStateObserver::class);
     }
 }

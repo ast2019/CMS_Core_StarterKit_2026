@@ -91,9 +91,13 @@ it('counts a trashed page as still holding the role', function (): void {
      * Because the unique index does. Without checking trashed rows the editor would be
      * told the role is free, and the save would then fail against a page they cannot see
      * anywhere in the panel.
+     *
+     * System pages can no longer be deleted through the model (admin Gate bypass used
+     * to allow it), so the soft-delete here goes through withoutEvents to simulate a
+     * legacy trashed row that still holds the key — the uniqueness check must still see it.
      */
     $home = Page::factory()->homePage()->create();
-    $home->delete();
+    Page::withoutEvents(fn () => $home->delete());
 
     expect(Page::otherPageWithSystemKey(Page::SYSTEM_HOME))->not->toBeNull()
         ->and(fn () => Page::factory()->homePage()->create())

@@ -448,12 +448,17 @@ class SitemapGenerator
     }
 
     /**
-     * Whether a designated homepage already contributes /{locale} to this sitemap.
+     * Whether a designated homepage already contributes /{locale} to this sitemap —
+     * or intentionally suppresses it.
      *
-     * Three conditions, all necessary: a homepage exists, it is live (an unpublished
-     * homepage contributes nothing), and it is eligible for this locale under Decision
-     * D-5 — so `sitemap-en.xml` falls back to the synthetic root entry until the English
-     * homepage has been reviewed, rather than losing its root altogether.
+     * A live homepage that passes Decision D-5 either:
+     *  - is indexable, and the walk below adds the real /{locale} entry with lastmod
+     *    and hreflang; or
+     *  - is noindex, in which case the root must stay out entirely. Falling through
+     *    to the synthetic entry would undo the editor's robots directive.
+     *
+     * An unpublished homepage, or one whose translation is not yet reviewed for this
+     * locale, still needs the synthetic root so the locale sitemap is not a dead end.
      */
     private function homePageCoversLocaleRoot(string $locale): bool
     {
@@ -463,9 +468,20 @@ class SitemapGenerator
 
         $home = Page::homePage();
 
-        return $home !== null
-            && $home->isLive()
-            && $this->isEligible($home, $locale);
+        if ($home === null || ! $home->isLive()) {
+            return false;
+        }
+
+        // Decision D-5: until the locale is reviewed, the synthetic root stays.
+        if ($locale !== $this->sourceLocale()
+            && $home instanceof TracksTranslationStatus
+            && ! $home->isSitemapEligibleFor($locale)) {
+            return false;
+        }
+
+        // Live + D-5 OK: either the walk adds the real entry, or noindex suppresses it.
+        // Either way, do not synthesise a competing root.
+        return true;
     }
 
     /**

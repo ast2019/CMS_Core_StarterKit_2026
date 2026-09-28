@@ -13,6 +13,7 @@ use App\Models\Content;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -128,6 +129,8 @@ class ManagementContentController extends Controller
             $this->authorizeStatusChange($content, $target);
         }
 
+        $this->authorizePublishDateChange($content, $request, $target);
+
         $content->update($request->safe()->except(['categories', 'tags', 'status']));
 
         /*
@@ -196,6 +199,43 @@ class ManagementContentController extends Controller
         if (in_array($target, $gated, strict: true) || in_array($content->status, $gated, strict: true)) {
             $this->authorize('publish', $content);
         }
+    }
+
+    /**
+     * Changing publish_date on a published (or soon-to-be-published) article is the
+     * same decision as publishing: it moves the record across the live() boundary.
+     * Without this check, an Author who cannot change status could still take a
+     * scheduled article live — or take a live one offline — by PATCHing the date.
+     */
+    private function authorizePublishDateChange(
+        Content $content,
+        Request $request,
+        ?ContentStatus $target,
+    ): void {
+        if (! $request->exists('publish_date')) {
+            return;
+        }
+
+        $statusAfter = $target ?? $content->status;
+        $gated = [ContentStatus::Published, ContentStatus::Archived];
+
+        if (! in_array($statusAfter, $gated, strict: true)
+            && ! in_array($content->status, $gated, strict: true)) {
+            return;
+        }
+
+        $incoming = $request->input('publish_date');
+
+        if ($incoming === null && $content->publish_date === null) {
+            return;
+        }
+
+        if (is_string($incoming) && $content->publish_date !== null
+            && $content->publish_date->equalTo(Carbon::parse($incoming))) {
+            return;
+        }
+
+        $this->authorize('publish', $content);
     }
 
     /**

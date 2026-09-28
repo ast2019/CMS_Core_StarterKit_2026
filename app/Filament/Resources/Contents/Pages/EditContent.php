@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Contents\Pages;
 
+use App\Filament\Concerns\AppliesPublishingWorkflow;
 use App\Filament\Concerns\GuardsAgainstConcurrentEdits;
 use App\Filament\Concerns\InteractsWithTranslatableRecord;
 use App\Filament\Concerns\ManagesContentVersions;
@@ -20,6 +21,8 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditContent extends EditRecord
 {
+    use AppliesPublishingWorkflow;
+
     /*
      * Item 35 — refuse to silently overwrite someone else's save made while this form was open.
      */
@@ -68,7 +71,9 @@ class EditContent extends EditRecord
         // baseline.
         $this->captureSlugsBeforeSave();
 
-        return $this->normaliseTranslatablePayload($data);
+        $data = $this->normaliseTranslatablePayload($data);
+
+        return $this->extractStatusForWorkflow($data, $this->getRecord());
     }
 
     protected function afterSave(): void
@@ -78,12 +83,11 @@ class EditContent extends EditRecord
         $record = $this->getRecord();
 
         // getRecord() is typed to Model, so narrow before using Content's API.
-        if (! $record instanceof Content) {
-            return;
+        if ($record instanceof Content) {
+            $record->syncPrimaryCategory();
+            $this->offerRedirectsForChangedSlugs($record);
         }
 
-        $record->syncPrimaryCategory();
-
-        $this->offerRedirectsForChangedSlugs($record);
+        $this->applyPendingStatusTransition();
     }
 }
