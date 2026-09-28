@@ -44,8 +44,10 @@ namespace App\Support;
  *    look identical to the editor and differ only in one zero-width codepoint.
  *  - Arabic-Indic and Persian digits to ASCII, so «۱۴۰۴» matches «1404».
  *  - Case, for the Latin locale.
- *  - All whitespace runs to a single space, and the result is padded with spaces
- *    by wordBoundedContains() so a phrase can be matched on word boundaries.
+ *  - All whitespace runs to a single space, and the result is trimmed. Matching
+ *    is then done by contains() as a plain substring test over the folded text.
+ *    There is no word-boundary matching (see the contains() docblock for why
+ *    substring matching is the deliberate choice for agglutinative Persian).
  */
 final class ScriptFolding
 {
