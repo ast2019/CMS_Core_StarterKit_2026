@@ -22,6 +22,12 @@ use Illuminate\Support\Facades\Cache;
  * `database` stores do not, and `database` is this project's local default so the
  * test suite runs without Redis. So this class degrades to untagged caching rather
  * than throwing, and invalidation falls back to a full flush of its own prefix.
+ *
+ * That fallback flushes the whole DEFAULT store, which also holds the rate-limiter
+ * counters whenever the limiter shares it. Production should therefore set
+ * CACHE_STORE=redis (tag-capable, so this fallback never runs) AND point
+ * CACHE_LIMITER_STORE at a separate store (see config/cache.php) so that even if the
+ * flush ever does run it cannot reach the limiter counters.
  */
 class DeliveryCache
 {
@@ -109,8 +115,10 @@ class DeliveryCache
         /*
          * Without tag support the store cannot enumerate keys by tag, and iterating
          * every possible key is not feasible. Flushing the whole store is heavy but
-         * correct; serving stale content after a publish is not. Production should
-         * use Redis (blueprint §13), where this branch never runs.
+         * correct; serving stale content after a publish is not. This flushes the
+         * DEFAULT store only, so a limiter store named by config('cache.limiter') is
+         * untouched. Production should use Redis (blueprint §13), where this branch
+         * never runs.
          */
         Cache::flush();
     }

@@ -19,6 +19,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Rate Limiter Cache Store
+    |--------------------------------------------------------------------------
+    |
+    | Laravel's RateLimiter resolves its backing store from this key
+    | (Illuminate\Cache\CacheServiceProvider registers it as
+    | `cache.driver(config('cache.limiter'))`); a null value means it shares
+    | the DEFAULT store above.
+    |
+    | Why it can matter: a content publish triggers
+    | App\Services\Api\DeliveryCache::invalidate(), and on a tagless store
+    | (the local `database` default) that degrades to Cache::flush() on the
+    | whole default store. When the limiter shares that store, the flush takes
+    | every rate-limiter counter with it, so a publish silently resets the
+    | Delivery API's throttle. Pointing this at a store the content cache never
+    | flushes (see the `limiter` store below) keeps those counters alive.
+    |
+    | Left null by default so local and test runs behave exactly as before;
+    | production sets CACHE_LIMITER_STORE=limiter.
+    |
+    */
+
+    'limiter' => env('CACHE_LIMITER_STORE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache Stores
     |--------------------------------------------------------------------------
     |
@@ -82,6 +107,21 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_CACHE_CONNECTION', 'cache'),
             'lock_connection' => env('REDIS_CACHE_LOCK_CONNECTION', 'default'),
+        ],
+
+        /*
+         * Dedicated store for the rate limiter (see the `limiter` config key above).
+         * Only used in production when CACHE_LIMITER_STORE=limiter; unused otherwise.
+         *
+         * It sits on its own Redis connection so that a flush of the content/default
+         * store cannot reach it. On a single-Redis deployment the isolation is by cache
+         * PREFIX/connection rather than a second server — DeliveryCache::invalidate()
+         * only ever flushes the DEFAULT store, never this one, so the counters survive.
+         */
+        'limiter' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_LIMITER_CONNECTION', 'default'),
+            'lock_connection' => env('REDIS_LIMITER_LOCK_CONNECTION', 'default'),
         ],
 
         'dynamodb' => [
