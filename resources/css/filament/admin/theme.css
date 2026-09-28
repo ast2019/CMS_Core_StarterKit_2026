@@ -84,9 +84,11 @@
     /* Fill and read the digit boxes left-to-right. */
     direction: ltr;
 
-    /* The OTP row is a `w-fit` flex block; keep it anchored to the start
-       (right) edge of the RTL card rather than drifting to the visual left. */
-    margin-inline-end: auto;
+    /* The OTP row is a `w-fit` flex block; centre it horizontally within the
+       card. Auto margins on BOTH inline sides do this regardless of the
+       `direction: ltr` above; anchoring only one side (as before) pinned the
+       box to an edge instead. The digits still fill and read left-to-right. */
+    margin-inline: auto;
 }
 
 /* Tabular numerals for table cells and badges. */
